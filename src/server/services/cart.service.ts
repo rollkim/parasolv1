@@ -25,8 +25,8 @@ import {
 import { getSiteSetting } from "@/server/services/site-setting.service";
 
 /**
- * 카트 도메인 서비스 — 비회원 카트(sessionToken) 기준.
- * customerId는 3주차 인증 후 병합용이라 지금은 채우지 않는다.
+ * 카트 도메인 서비스 — 조회·변경은 비회원 카트(sessionToken) 기준.
+ * customerId는 로그인·가입 시 mergeGuestCartIntoCustomer가 채운다(귀속 표시).
  * 쿠키 발급 등 HTTP 관심사는 라우터가 담당하고, 여기는 DB·규칙만 다룬다(RULE-14).
  */
 
@@ -659,4 +659,143 @@ export async function removeCartItem(
     quantity: itemRow.quantity,
     addons: addonRows,
   };
+}
+
+// =============================================================
+// 회원 병합 (로그인·가입 시)
+// =============================================================
+
+/**
+ * 게스트 카트를 회원에게 귀속시킨다 — 로그인·가입 직후 auth 라우터가 부른다.
+ * - 회원 카트가 없으면: 게스트 카트에 customerId만 세팅 (토큰 조회는 그대로 동작).
+ * - 회원 카트가 있으면: 게스트 라인을 회원 카트로 이동하되, 동일 variant+addon 조합은
+ *   수량을 합산 병합하고, 빈 게스트 카트를 삭제한 뒤 회원 카트가 현재 브라우저의
+ *   토큰으로 조회되도록 sessionToken을 승계한다 (카트 조회가 토큰 기준이므로).
+ * - 게스트 카트가 이미 "다른" 회원 소유면 건드리지 않는다 — 공용 브라우저에서
+ *   앞사람 카트를 뒷사람이 흡수하는 사고 방지.
+ * 병합 수량은 재고로 보정하지 않는다 — 카트 화면이 stock 초과를 안내·조정한다.
+ */
+export async function mergeGuestCartIntoCustomer(
+  database: DatabaseClient,
+  input: { cartToken: string; customerId: number },
+): Promise<void> {
+  await database.transaction(async (tx) => {
+    const [guestCartRow] = await tx
+      .select({ id: cart.id, ownerCustomerId: cart.customerId })
+      .from(cart)
+      .where(eq(cart.sessionToken, input.cartToken))
+      .orderBy(desc(cart.id))
+      .limit(1);
+    if (!guestCartRow) return;
+    if (guestCartRow.ownerCustomerId === input.customerId) return; // 재로그인 — 이미 본인 카트
+    if (guestCartRow.ownerCustomerId !== null) return; // 다른 회원 소유 — 흡수 금지
+
+    const [customerCartRow] = await tx
+      .select({ id: cart.id })
+      .from(cart)
+      .where(eq(cart.customerId, input.customerId))
+      .orderBy(desc(cart.id))
+      .limit(1);
+
+    // 회원 카트가 없으면 게스트 카트를 그대로 귀속 — 라인 이동 불필요
+    if (!customerCartRow) {
+      await tx
+        .update(cart)
+        .set({ customerId: input.customerId })
+        .where(eq(cart.id, guestCartRow.id));
+      return;
+    }
+
+    const guestLineRows = await tx
+      .select({
+        cartItemId: cartItem.id,
+        variantId: cartItem.variantId,
+        quantity: cartItem.quantity,
+      })
+      .from(cartItem)
+      .where(eq(cartItem.cartId, guestCartRow.id));
+    const customerLineRows = await tx
+      .select({
+        cartItemId: cartItem.id,
+        variantId: cartItem.variantId,
+        quantity: cartItem.quantity,
+      })
+      .from(cartItem)
+      .where(eq(cartItem.cartId, customerCartRow.id));
+
+    // 양쪽 라인의 addon을 한 번에 로드 — 조합 비교(sameAddonCombination)와 수량 합산에 쓴다
+    const allCartItemIds = [...guestLineRows, ...customerLineRows].map(
+      (row) => row.cartItemId,
+    );
+    const mergeAddonRows =
+      allCartItemIds.length === 0
+        ? []
+        : await tx
+            .select({
+              cartItemId: cartItemAddon.cartItemId,
+              addonId: cartItemAddon.addonId,
+              quantity: cartItemAddon.quantity,
+            })
+            .from(cartItemAddon)
+            .where(inArray(cartItemAddon.cartItemId, allCartItemIds));
+    const addonsByCartItemId = new Map<number, { addonId: number; quantity: number }[]>();
+    for (const row of mergeAddonRows) {
+      const addons = addonsByCartItemId.get(row.cartItemId) ?? [];
+      addons.push({ addonId: row.addonId, quantity: row.quantity });
+      addonsByCartItemId.set(row.cartItemId, addons);
+    }
+
+    for (const guestLine of guestLineRows) {
+      const guestAddons = addonsByCartItemId.get(guestLine.cartItemId) ?? [];
+      const mergeTarget = customerLineRows.find(
+        (customerLine) =>
+          customerLine.variantId === guestLine.variantId &&
+          sameAddonCombination(
+            addonsByCartItemId.get(customerLine.cartItemId) ?? [],
+            guestAddons,
+          ),
+      );
+
+      if (!mergeTarget) {
+        // 조합이 다르면 라인째 이동 — addon 라인은 cartItemId에 묶여 있어 함께 따라간다
+        await tx
+          .update(cartItem)
+          .set({ cartId: customerCartRow.id })
+          .where(eq(cartItem.id, guestLine.cartItemId));
+        continue;
+      }
+
+      await tx
+        .update(cartItem)
+        .set({ quantity: mergeTarget.quantity + guestLine.quantity })
+        .where(eq(cartItem.id, mergeTarget.cartItemId));
+
+      // 같은 조합이므로 addon 집합은 일치 — 수량만 각각 합산한다 (addCartItem 병합과 동일 규약)
+      const targetAddons = addonsByCartItemId.get(mergeTarget.cartItemId) ?? [];
+      for (const guestAddon of guestAddons) {
+        const targetAddon = targetAddons.find(
+          (addon) => addon.addonId === guestAddon.addonId,
+        );
+        await tx
+          .update(cartItemAddon)
+          .set({ quantity: (targetAddon?.quantity ?? 0) + guestAddon.quantity })
+          .where(
+            and(
+              eq(cartItemAddon.cartItemId, mergeTarget.cartItemId),
+              eq(cartItemAddon.addonId, guestAddon.addonId),
+            ),
+          );
+      }
+
+      // 병합된 게스트 라인 삭제 — addon은 FK cascade
+      await tx.delete(cartItem).where(eq(cartItem.id, guestLine.cartItemId));
+    }
+
+    // 빈 게스트 카트 정리 후, 회원 카트가 현재 토큰으로 조회되게 승계
+    await tx.delete(cart).where(eq(cart.id, guestCartRow.id));
+    await tx
+      .update(cart)
+      .set({ sessionToken: input.cartToken })
+      .where(eq(cart.id, customerCartRow.id));
+  });
 }

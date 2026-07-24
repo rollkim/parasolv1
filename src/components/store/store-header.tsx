@@ -54,6 +54,8 @@ export type StoreHeaderProps = {
   activeCategorySlug?: string
   cartCount?: number
   utilLinks?: StoreNavLink[]
+  /** 유틸바 끝의 동작 요소 슬롯(로그아웃 버튼 등) — 링크가 아니어서 utilLinks로 표현할 수 없다 */
+  utilTrailing?: React.ReactNode
   drawerQuickLinks?: StoreNavLink[]
   searchPlaceholder?: string
   /** 모바일 폼은 폭이 좁아 축약 문구를 따로 받는다(미지정 시 데스크톱 문구 사용). */
@@ -61,14 +63,16 @@ export type StoreHeaderProps = {
 }
 
 // 스토어프론트 라우트가 아직 확정되지 않아 잠정값 — 확정되면 이 상수만 교체한다.
-const STORE_ROUTE = {
+// (store) 레이아웃이 로그인 상태별 utilLinks를 조립할 때도 이 상수를 쓴다.
+export const STORE_ROUTE = {
   home: "/",
   products: "/products",
   search: "/search",
   cart: "/cart",
   wishlist: "/wishlist",
   login: "/login",
-  signup: "/signup",
+  // 회원가입은 별도 화면이 아니라 로그인 화면의 탭이다
+  signup: "/login?tab=signup",
   mypage: "/mypage",
   coupons: "/mypage/coupons",
   support: "/support",
@@ -203,6 +207,7 @@ export function StoreHeader({
   activeCategorySlug,
   cartCount = 0,
   utilLinks = DEFAULT_UTIL_LINKS,
+  utilTrailing,
   drawerQuickLinks = DEFAULT_DRAWER_QUICK_LINKS,
   searchPlaceholder = "상품을 검색해 보세요",
   searchPlaceholderMobile,
@@ -257,6 +262,12 @@ export function StoreHeader({
               </Link>
             </React.Fragment>
           ))}
+          {utilTrailing != null && (
+            <>
+              {utilLinks.length > 0 && <span aria-hidden="true">·</span>}
+              {utilTrailing}
+            </>
+          )}
         </div>
 
         <div className="flex items-center gap-3 py-3">

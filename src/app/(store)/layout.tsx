@@ -1,11 +1,18 @@
 import { cookies } from "next/headers";
 
+import { LogoutButton } from "@/components/store/logout-button";
 import { StoreFooter } from "@/components/store/store-footer";
-import { StoreHeader } from "@/components/store/store-header";
+import {
+  STORE_ROUTE,
+  StoreHeader,
+  type StoreNavLink,
+} from "@/components/store/store-header";
 import { ToastProvider } from "@/components/ui/toast";
 import { db } from "@/db";
+import { readSessionCustomerId } from "@/server/auth/session";
 import { getCartItemCount } from "@/server/services/cart.service";
 import { getStoreNavCategories } from "@/server/services/category.service";
+import { getCustomerSessionProfile } from "@/server/services/customer.service";
 import { getBusinessInfo } from "@/server/services/site-setting.service";
 import { CART_COOKIE_NAME } from "@/server/trpc/context";
 
@@ -34,11 +41,31 @@ export default async function StoreLayout({
   const cookieStore = await cookies();
   const cartToken = cookieStore.get(CART_COOKIE_NAME)?.value ?? null;
 
-  const [businessInfo, navCategories, cartItemCount] = await Promise.all([
-    getBusinessInfo(db),
-    getStoreNavCategories(db),
-    getCartItemCount(db, cartToken),
-  ]);
+  // 헤더 유틸바의 로그인 상태 — 쿠키 해석만으로 끝내지 않고 프로필까지 확인해
+  // 탈퇴·비활성 계정(쿠키는 유효)을 비로그인으로 취급한다(auth.sessionInfo와 동일 기준).
+  const sessionCustomerId = await readSessionCustomerId();
+
+  const [businessInfo, navCategories, cartItemCount, sessionProfile] =
+    await Promise.all([
+      getBusinessInfo(db),
+      getStoreNavCategories(db),
+      getCartItemCount(db, cartToken),
+      sessionCustomerId !== null
+        ? getCustomerSessionProfile(db, sessionCustomerId)
+        : null,
+    ]);
+
+  // 로그아웃은 링크가 아니라 동작이라 utilLinks가 아닌 트레일링 슬롯(LogoutButton)으로 배선한다
+  const utilLinks: StoreNavLink[] = [
+    { label: "고객센터", href: STORE_ROUTE.support },
+    { label: "자주 묻는 질문", href: STORE_ROUTE.faq },
+    ...(sessionProfile
+      ? [{ label: "마이페이지", href: STORE_ROUTE.mypage }]
+      : [
+          { label: "로그인", href: STORE_ROUTE.login },
+          { label: "회원가입", href: STORE_ROUTE.signup },
+        ]),
+  ];
 
   return (
     <ToastProvider>
@@ -47,6 +74,8 @@ export default async function StoreLayout({
           siteName={businessInfo.brandName}
           categories={navCategories}
           cartCount={cartItemCount}
+          utilLinks={utilLinks}
+          utilTrailing={sessionProfile ? <LogoutButton /> : undefined}
         />
         {/* id는 헤더의 '본문 바로가기' 앵커 목적지 — 함께 바뀌어야 한다 */}
         <main id="store-main" tabIndex={-1} className="flex-1">
