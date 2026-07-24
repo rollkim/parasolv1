@@ -573,19 +573,27 @@ export const banner = pgTable("banner", {
   kicker: text("kicker"),                       // 히어로 윗줄 문구 (메인 히어로가 라이브 텍스트 렌더 — 띠배너는 미사용)
   subtitle: text("subtitle"),                   // 히어로 부제
   ctaLabel: text("cta_label"),                  // 히어로 CTA 버튼 문구
-  imagePath: text("image_path").notNull(),
+  // 띠배너(strip)는 이미지 없이 문구·색만 쓴다 — 슬롯에 따라 이미지 유무가 갈리므로 nullable
+  imagePath: text("image_path"),
   mobileImagePath: text("mobile_image_path"),
-  alt: text("alt").notNull(),
+  alt: text("alt"),
+  // 띠배너 배경 톤 — 색상값이 아니라 토큰명(primary/accent/foreground)을 저장한다.
+  // 색을 직접 넣으면 리스킨 시 따라오지 않는다(RULE-11).
+  toneCode: text("tone_code"),
   linkUrl: text("link_url"),
   sortOrder: integer("sort_order").notNull().default(0),
   isActive: boolean("is_active").notNull().default(true),
   startsAt: timestamp("starts_at", { withTimezone: true }),
   endsAt: timestamp("ends_at", { withTimezone: true }),
   ...audit,
-});
+}, (t) => [
+  // 이미지가 있으면 대체텍스트는 필수 — 접근성 요구를 DB가 강제한다(KWCAG)
+  check("banner_alt_required_ck", sql`${t.imagePath} IS NULL OR ${t.alt} IS NOT NULL`),
+]);
 
 export const displaySection = pgTable("display_section", {
   id: bigserial("id", { mode: "number" }).primaryKey(),
+  kicker: text("kicker"),                         // 섹션 제목 윗줄 문구 (메인의 "CURATED" 등)
   title: text("title").notNull(),
   kind: text("kind").notNull().default("manual"), // manual / new / best
   sortOrder: integer("sort_order").notNull().default(0),
