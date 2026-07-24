@@ -10,7 +10,11 @@ import { getBusinessInfo } from "@/server/services/site-setting.service";
  *
  * 관리자는 공통 푸터 대신 셸 하단 미니 표기로 대체한다(스펙서 §3).
  * 인증 가드는 5주차(관리자)에서 이 레이아웃에 붙인다 — 지금은 셸만 세운다.
+ *
+ * 관리자는 항상 요청 시 렌더(스펙서: 관리자 CSR) — 빌드 시 DB 접근도 함께 차단된다.
  */
+export const dynamic = "force-dynamic";
+
 export default async function AdminLayout({
   children,
 }: {

@@ -13,9 +13,13 @@ import { getBusinessInfo } from "@/server/services/site-setting.service";
  * 업체 정보·카테고리는 여기서 1회 조회해 내려준다. 컴포넌트가 db를 직접
  * 임포트하면 레이어 경계가 무너지므로(RULE-14) 데이터는 항상 이 지점에서 주입한다.
  *
- * 렌더링 전략: 지금은 요청 시 DB를 읽어 동적이다. 스펙서의 메인 SSG·목록 ISR은
- * 실제 화면을 붙이는 2주차에 revalidate 정책과 함께 정한다.
+ * 렌더링 전략: 요청 시 렌더(force-dynamic)를 명시한다.
+ * 선언이 없으면 빌드가 이 레이아웃을 정적으로 구우려고 빌드 시점에 DB를 읽는데,
+ * CI(GitHub Actions)에는 DB 터널이 없어 빌드가 깨지고, 구워진 화면은 설정 변경을
+ * 반영하지 못한다. 스펙서의 SSG·ISR 최적화는 런칭 준비(마감주) 때 캐시 계층과 함께 도입한다.
  */
+export const dynamic = "force-dynamic";
+
 export default async function StoreLayout({
   children,
 }: {
