@@ -1,4 +1,5 @@
 import { createCallerFactory, router } from "../init";
+import { cartRouter } from "./cart";
 import { siteSettingRouter } from "./site-setting";
 
 /**
@@ -6,6 +7,7 @@ import { siteSettingRouter } from "./site-setting";
  * 화면·기능이 늘면 이 목록에 라우터를 추가한다(product·cart·order…).
  */
 export const appRouter = router({
+  cart: cartRouter,
   siteSetting: siteSettingRouter,
 });
 

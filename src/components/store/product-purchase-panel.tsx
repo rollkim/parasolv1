@@ -13,9 +13,14 @@
 //  - 모바일 하단 바의 담기·구매는 목업의 즉시 실행 대신 바텀시트로 같은 패널을 연다(지시 사양).
 //  - '누적 판매 N' 표기는 ProductDetail에 판매량 필드가 없어 생략(서비스 읽기 전용 — 필드 추가 시 복원).
 //  - 컨테이너 쿼리(@container store)는 헤더 선례를 따라 뷰포트 기준(md:768px / min-[1040px])으로 환산.
-//  - 찜·장바구니·바로 구매·재입고 알림은 3주차 스텁 — 클릭 시 안내 토스트만. TODO(3주차)
+//  - 장바구니 담기는 cart.addItem 실배선. '바로 구매'는 체크아웃 미구현이라 담기 후 /cart 이동으로
+//    대체한다 — TODO(체크아웃 배선 시 직행으로 교체).
+//  - 찜·재입고 알림은 3주차 스텁 — 클릭 시 안내 토스트만. TODO(3주차)
 
 import * as React from "react"
+
+import { useMutation, useQueryClient } from "@tanstack/react-query"
+import { useRouter } from "next/navigation"
 
 import { Button } from "@/components/ui/button"
 import {
@@ -30,6 +35,7 @@ import { discountRate, findVariantByOptionValues } from "@/domain/product"
 import { formatKrw } from "@/lib/format"
 import { cn } from "@/lib/utils"
 import type { ProductDetail } from "@/server/services/product.service"
+import { useTRPC } from "@/trpc/client"
 
 import { ImagePlaceholder } from "./image-placeholder"
 
@@ -240,20 +246,52 @@ export function ProductPurchasePanel({
       [addonId]: Math.max(0, (prev[addonId] ?? 0) - 1),
     }))
 
-  // TODO(3주차): 장바구니·주문·찜·재입고 알림 실배선으로 교체 — 지금은 안내 토스트만
-  const stubTargetLabel = variantLabel || name
-  const handleAddCartClick = () => {
-    if (!variantBuyable) return
-    showToast(`장바구니 기능은 3주차에 열려요 · ${stubTargetLabel}`, {
-      toastVariant: "info",
-    })
+  // ── 장바구니 담기 (cart.addItem 실배선) ─────────────────────────
+  const trpc = useTRPC()
+  const queryClient = useQueryClient()
+  const router = useRouter()
+  const addCartItemMutation = useMutation(trpc.cart.addItem.mutationOptions())
+
+  const submitAddToCart = (afterAdd: "stay" | "goCart") => {
+    if (!confirmedVariant || !variantBuyable || addCartItemMutation.isPending) return
+    const selectedAddons = addons
+      .filter((addon) => (addonQuantityById[addon.addonId] ?? 0) > 0)
+      .map((addon) => ({
+        addonId: addon.addonId,
+        quantity: addonQuantityById[addon.addonId],
+      }))
+    addCartItemMutation.mutate(
+      {
+        variantId: confirmedVariant.variantId,
+        quantity,
+        addons: selectedAddons.length > 0 ? selectedAddons : undefined,
+      },
+      {
+        onSuccess: (addResult) => {
+          // 서버가 재고 초과를 보정해 담은 경우 — 원인+해결을 함께 안내(RULE-11)
+          if (addResult.stockLimited) {
+            showToast(
+              `재고가 ${addResult.availableStock}개 남아 ${addResult.appliedQuantity}개로 담았어요.`,
+              { toastVariant: "info" }
+            )
+          } else {
+            showToast("장바구니에 담았어요")
+          }
+          // 카트 화면 캐시 + 헤더 뱃지(서버 렌더 (store) 레이아웃)를 함께 갱신한다
+          void queryClient.invalidateQueries(trpc.cart.pathFilter())
+          router.refresh()
+          if (afterAdd === "goCart") router.push("/cart")
+        },
+        onError: (addError) =>
+          showToast(addError.message, { toastVariant: "error" }),
+      }
+    )
   }
-  const handleBuyNowClick = () => {
-    if (!variantBuyable) return
-    showToast(`바로 구매는 3주차에 열려요 · ${stubTargetLabel}`, {
-      toastVariant: "info",
-    })
-  }
+
+  const handleAddCartClick = () => submitAddToCart("stay")
+  // 체크아웃 미구현 — 담기 후 장바구니로 이동해 흐름을 잇는다. TODO(체크아웃 배선 시 /checkout 직행으로 교체)
+  const handleBuyNowClick = () => submitAddToCart("goCart")
+  // TODO(3주차): 찜·재입고 알림 실배선으로 교체 — 지금은 안내 토스트만
   const handleWishClick = () =>
     showToast(`찜 기능은 3주차에 열려요 · ${name}`, { toastVariant: "info" })
   const handleRestockNotifyClick = () =>
@@ -630,12 +668,15 @@ export function ProductPurchasePanel({
             >
               <HeartMark className="size-6" />
             </Button>
+            {/* pending은 hard disabled가 아니라 aria-disabled — disabled는 포커스를 body로
+                떨어뜨려 키보드 완주(RULE-11)를 깬다. 재진입은 submitAddToCart 가드가 막는다 */}
             <Button
               type="button"
               variant="primary-outline"
               size="xl-56"
               className="flex-1"
               disabled={!variantBuyable}
+              aria-disabled={addCartItemMutation.isPending}
               onClick={handleAddCartClick}
             >
               장바구니 담기
@@ -646,6 +687,7 @@ export function ProductPurchasePanel({
               size="xl-56"
               className="flex-1"
               disabled={!variantBuyable}
+              aria-disabled={addCartItemMutation.isPending}
               onClick={handleBuyNowClick}
             >
               바로 구매하기
@@ -717,7 +759,7 @@ export function ProductPurchasePanel({
               variant="primary"
               size="lg-52"
               className="w-full"
-              disabled={!variantBuyable}
+              disabled={!variantBuyable || addCartItemMutation.isPending}
               onClick={handleSheetConfirm}
             >
               {sheetIntent === "cart" ? "장바구니 담기" : "바로 구매하기"}

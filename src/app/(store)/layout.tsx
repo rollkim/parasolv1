@@ -1,9 +1,13 @@
+import { cookies } from "next/headers";
+
 import { StoreFooter } from "@/components/store/store-footer";
 import { StoreHeader } from "@/components/store/store-header";
 import { ToastProvider } from "@/components/ui/toast";
 import { db } from "@/db";
+import { getCartItemCount } from "@/server/services/cart.service";
 import { getStoreNavCategories } from "@/server/services/category.service";
 import { getBusinessInfo } from "@/server/services/site-setting.service";
+import { CART_COOKIE_NAME } from "@/server/trpc/context";
 
 /**
  * 스토어프론트 공통 레이아웃.
@@ -25,9 +29,15 @@ export default async function StoreLayout({
 }: {
   children: React.ReactNode;
 }) {
-  const [businessInfo, navCategories] = await Promise.all([
+  // 헤더 카트 뱃지 — 쿠키의 비회원 카트 토큰으로 라인 수를 센다.
+  // 담기·삭제 후에는 클라이언트가 router.refresh()로 이 레이아웃을 다시 렌더해 뱃지를 갱신한다.
+  const cookieStore = await cookies();
+  const cartToken = cookieStore.get(CART_COOKIE_NAME)?.value ?? null;
+
+  const [businessInfo, navCategories, cartItemCount] = await Promise.all([
     getBusinessInfo(db),
     getStoreNavCategories(db),
+    getCartItemCount(db, cartToken),
   ]);
 
   return (
@@ -36,6 +46,7 @@ export default async function StoreLayout({
         <StoreHeader
           siteName={businessInfo.brandName}
           categories={navCategories}
+          cartCount={cartItemCount}
         />
         {/* id는 헤더의 '본문 바로가기' 앵커 목적지 — 함께 바뀌어야 한다 */}
         <main id="store-main" tabIndex={-1} className="flex-1">
