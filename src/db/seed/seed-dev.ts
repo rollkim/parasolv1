@@ -12,6 +12,7 @@ import { asc, count, eq, inArray } from "drizzle-orm";
 
 import { db } from "@/db";
 import {
+  banner,
   category,
   displaySection,
   displaySectionProduct,
@@ -139,13 +140,84 @@ const CURATION_SLUGS = [
   "cranberry-granola",
 ];
 
+// =============================================================
+// 샘플 배너 — 메인.dc.html 히어로 3장(L541-543) + 띠배너(L309-320)
+// 실사진이 없어 imagePath는 null — 히어로가 플레이스홀더를 렌더한다.
+// 띠배너는 이미지 대신 토큰 톤(accent) 배경 — 스키마 v0.5 toneCode의 사용처.
+// =============================================================
+
+const SAMPLE_BANNERS = [
+  {
+    slot: "hero",
+    kicker: "이달의 큐레이션 · ~7/31",
+    title: "정성을 굽는\n작은 작업장에서",
+    subtitle: "매일 손으로 반죽하고 구운 것들. 파라솔이 하나씩 맛보고 골라 담았습니다.",
+    ctaLabel: "베스트 쿠키 보기",
+    linkUrl: "/products?sort=popular",
+  },
+  {
+    slot: "hero",
+    kicker: "선물 시즌",
+    title: "명절 선물,\n마음까지 포장했습니다",
+    subtitle: "단체·기업 선물 문의 환영. 정성스러운 포장으로 안전하게 보내드려요.",
+    ctaLabel: "선물세트 둘러보기",
+    linkUrl: "/products?category=gift",
+  },
+  {
+    slot: "hero",
+    kicker: "파라솔 이야기",
+    title: "느리지만\n정직한 속도로",
+    subtitle: "각자의 속도로 일하는 사람들이 만든 건강한 먹거리를 소개합니다.",
+    ctaLabel: "만든 사람들",
+    // 브랜드 스토리 라우트는 2차(이야기) — 그때까지 404 빈 상태로 안내된다
+    linkUrl: "/story",
+  },
+  {
+    slot: "strip",
+    kicker: null,
+    title: "명절 선물세트 · 단체·기업 구매 문의 환영",
+    subtitle: "10개 이상 구매 시 맞춤 포장과 견적을 도와드려요.",
+    ctaLabel: "문의하기 →",
+    toneCode: "accent",
+    // 단체구매문의 라우트는 1차 후반 — 그때까지 404 빈 상태로 안내된다
+    linkUrl: "/bulk-inquiry",
+  },
+] as const;
+
+/** 배너는 상품과 별개 가드 — 상품이 이미 있어도 배너만 새로 넣을 수 있다 */
+async function seedSampleBanners() {
+  const [{ bannerCount }] = await db.select({ bannerCount: count() }).from(banner);
+  if (bannerCount > 0) {
+    console.log("  이미 배너가 있습니다 — 배너 시드 건너뜀");
+    return;
+  }
+
+  await db.insert(banner).values(
+    SAMPLE_BANNERS.map((bannerSeed, index) => ({
+      slot: bannerSeed.slot,
+      kicker: bannerSeed.kicker,
+      title: bannerSeed.title,
+      subtitle: bannerSeed.subtitle,
+      ctaLabel: bannerSeed.ctaLabel,
+      toneCode: "toneCode" in bannerSeed ? bannerSeed.toneCode : null,
+      linkUrl: bannerSeed.linkUrl,
+      sortOrder: index + 1,
+      createdBy: SEED_ACTOR,
+    })),
+  );
+  console.log(`  배너 ${SAMPLE_BANNERS.length}건 (히어로 3 · 띠배너 1)`);
+}
+
 async function runDevSeed() {
   console.log("\nPaRaSOL 개발용 샘플 상품 시드 실행\n");
+
+  // 배너는 상품 가드보다 먼저 — 상품이 이미 있어도 배너만 추가 실행이 가능해야 한다
+  await seedSampleBanners();
 
   // 가드: 이 스크립트는 빈 상품 테이블 전용 — 멱등 병합이 아니라 통째로 넣거나 말거나다
   const [{ productCount }] = await db.select({ productCount: count() }).from(product);
   if (productCount > 0) {
-    console.log("  이미 상품이 있습니다 — 건너뜀\n");
+    console.log("  이미 상품이 있습니다 — 상품 시드 건너뜀\n\n완료.\n");
     return;
   }
 
