@@ -159,6 +159,18 @@ export default function TokensPage() {
         </div>
       </section>
 
+      {/* 모션 토큰 — 오버레이 애니메이션이 실제로 생성되는지 확인 */}
+      <section className="space-y-3">
+        <h2 className="font-heading text-lg font-bold">모션 토큰</h2>
+        <div className="flex flex-wrap gap-3 text-xs">
+          <div className="animate-pop-in rounded-lg border border-border bg-card px-4 py-3">animate-pop-in</div>
+          <div className="animate-fade-in rounded-lg border border-border bg-card px-4 py-3">animate-fade-in</div>
+          <div className="animate-sheet-in rounded-lg border border-border bg-card px-4 py-3">animate-sheet-in</div>
+          <div className="animate-shimmer rounded-lg border border-border bg-muted px-4 py-3">animate-shimmer</div>
+          <div className="animate-spin-slow size-8 rounded-full border-[3px] border-muted border-t-primary" />
+        </div>
+      </section>
+
       {/* 타이포그래피 */}
       <section className="space-y-3">
         <h2 className="font-heading text-lg font-bold">타이포그래피</h2>

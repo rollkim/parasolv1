@@ -1,4 +1,12 @@
 @import "tailwindcss";
+@import "tw-animate-css";        /* shadcn 컴포넌트가 쓰는 애니메이션 유틸리티 */
+@import "shadcn/tailwind.css";   /* shadcn v4 커스텀 variant(data-open 등)·유틸리티 */
+
+/* 다크모드 무력화 장치 — 핸드오프에 다크 테마가 없다.
+   이 선언이 있어야 shadcn 컴포넌트의 dark: 스타일이 '.dark 클래스가 있을 때만' 켜진다.
+   우리는 .dark를 부착하지 않으므로 결과적으로 비활성. (제거하면 사용자 OS 다크 설정에
+   반응해 디자인이 깨진다.) 관리자 다크 셸은 dark 모드가 아니라 --nav-* 토큰으로 구현. */
+@custom-variant dark (&:is(.dark *));
 
 /* ================================================================
    PaRaSOL 디자인 토큰
@@ -116,6 +124,36 @@
   --radius-md: calc(var(--radius) - 2px);
   --radius-sm: calc(var(--radius) - 4px);
   --radius-xl: calc(var(--radius) + 8px);
+
+  /* 오버레이 모션 — 핸드오프 오버레이모음.dc.html의 @keyframes를 단일 정의.
+     각 컴포넌트가 개별 선언하지 않고 animate-* 유틸리티로 참조한다. */
+  --animate-toast-in: toastIn 0.22s ease;
+  --animate-sheet-in: sheetIn 0.26s cubic-bezier(0.22, 1, 0.36, 1);
+  --animate-pop-in: popIn 0.18s ease;
+  --animate-fade-in: fadeIn 0.15s ease;
+  --animate-spin-slow: spin 0.8s linear infinite;
+  --animate-shimmer: shimmer 1.3s infinite linear;
+
+  @keyframes toastIn {
+    from { opacity: 0; transform: translate(-50%, 12px); }
+    to { opacity: 1; transform: translate(-50%, 0); }
+  }
+  @keyframes sheetIn {
+    from { transform: translateY(100%); }
+    to { transform: translateY(0); }
+  }
+  @keyframes popIn {
+    from { opacity: 0; transform: scale(0.94); }
+    to { opacity: 1; transform: scale(1); }
+  }
+  @keyframes fadeIn {
+    from { opacity: 0; }
+    to { opacity: 1; }
+  }
+  @keyframes shimmer {
+    0% { background-position: -200px 0; }
+    100% { background-position: 200px 0; }
+  }
 }
 
 @layer base {
