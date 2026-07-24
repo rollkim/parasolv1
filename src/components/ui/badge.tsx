@@ -1,4 +1,9 @@
 // 핸드오프 규격: 관리자 상품목록·주문관리·클레임 + 스토어프론트 상품목록(카드 태그·장바구니 카운트)
+"use client"
+
+// radix-ui의 Slot(asChild 지원)이 내부에서 createContext를 쓴다 —
+// 서버 컴포넌트가 이 파일을 임포트하면 런타임 오류가 나므로 클라이언트 경계를 명시한다.
+
 import * as React from "react"
 import { cva, type VariantProps } from "class-variance-authority"
 import { Slot } from "radix-ui"

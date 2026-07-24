@@ -1,5 +1,10 @@
 // PaRaSOL 커머스 버튼 — 핸드오프 실측 규격(상품상세·체크아웃·로그인·오버레이모음·관리자 화면)으로 shadcn Button의 색·크기 프리셋을 재정의
 
+"use client"
+
+// radix-ui의 Slot(asChild 지원)이 내부에서 createContext를 쓴다 —
+// 서버 컴포넌트가 이 파일을 임포트하면 런타임 오류가 나므로 클라이언트 경계를 명시한다.
+
 import * as React from "react"
 import { cva, type VariantProps } from "class-variance-authority"
 import { Slot } from "radix-ui"

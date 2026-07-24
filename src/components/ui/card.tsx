@@ -1,5 +1,10 @@
 // 핸드오프 규격: PaRaSOL 상품목록/메인(상품 카드) · 인덱스(링크 카드) · 이야기(스토리 카드) · 패널/빈 상태 카드 계열
 
+"use client"
+
+// radix-ui의 Slot(asChild 지원)이 내부에서 createContext를 쓴다 —
+// 서버 컴포넌트가 이 파일을 임포트하면 런타임 오류가 나므로 클라이언트 경계를 명시한다.
+
 import * as React from "react"
 import { cva, type VariantProps } from "class-variance-authority"
 import { Slot } from "radix-ui"
