@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import { fontBody, fontDisplay, fontDisplayGrape } from "./fonts";
 import "./globals.css";
+import { TRPCReactProvider } from "@/trpc/client";
 
 export const metadata: Metadata = {
   title: "PaRaSOL",
@@ -17,7 +18,9 @@ export default function RootLayout({
       lang="ko"
       className={`${fontBody.variable} ${fontDisplay.variable} ${fontDisplayGrape.variable} h-full antialiased`}
     >
-      <body className="min-h-full flex flex-col">{children}</body>
+      <body className="min-h-full flex flex-col">
+        <TRPCReactProvider>{children}</TRPCReactProvider>
+      </body>
     </html>
   );
 }
