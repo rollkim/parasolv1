@@ -1,26 +1,149 @@
 @import "tailwindcss";
 
+/* ================================================================
+   PaRaSOL 디자인 토큰
+   원본: 핸드오프 design_handoff_parasol/tokens-reference.css
+   구조:
+     ① :root            — 시맨틱 토큰. 업체 교체(리스킨) 시 여기만 바꾼다
+     ② [data-theme=...] — 리스킨 프리셋 (coral / grape)
+     ③ @theme inline    — 토큰 → Tailwind 클래스 연결 (bg-primary 등)
+   규칙: 컴포넌트에 색·서체 직접 하드코딩 금지 — 토큰만 참조 (RULE-11)
+   서체 주입: --font-body, --font-display-* 는 layout.tsx의 next/font가 정의
+   ================================================================ */
+
 :root {
-  --background: #ffffff;
-  --foreground: #171717;
+  --font-display: var(--font-display-gothic), var(--font-body);
+
+  /* 스토어프론트 라이트 테마 (기본 프리셋 = 솔 그린) */
+  --background: oklch(0.99 0.006 95);
+  --foreground: oklch(0.24 0.02 60);
+  --card: oklch(1 0 0);
+  --card-foreground: oklch(0.24 0.02 60);
+  --primary: oklch(0.45 0.082 158);
+  --primary-foreground: oklch(0.99 0.012 150);
+  --secondary: oklch(0.95 0.022 155);
+  --secondary-foreground: oklch(0.34 0.05 158);
+  --muted: oklch(0.965 0.006 95);
+  --muted-foreground: oklch(0.45 0.02 75);
+  --accent: oklch(0.80 0.135 78);
+  --accent-foreground: oklch(0.27 0.035 60);
+  --destructive: oklch(0.505 0.18 27);
+  --destructive-foreground: oklch(0.99 0.01 60);
+  --border: oklch(0.90 0.008 90);
+  --input: oklch(0.88 0.01 90);
+  --ring: oklch(0.52 0.11 158);
+  --radius: 12px; /* 라운드 단일 소스 — 파생값은 @theme --radius-* */
+
+  /* 상태색 — 토스트·뱃지용 (레퍼런스 권고에 따라 전역 승격) */
+  --success: oklch(0.55 0.11 158);
+  --info: oklch(0.55 0.10 240);
+
+  /* 관리자 다크 셸 확장 토큰 (사이드바·GNB 전용)
+     관리자 로그인 화면의 --adm-* 변수는 핸드오프 권고대로 --nav-*로 통합 */
+  --nav-bg: oklch(0.23 0.021 160);
+  --nav-panel: oklch(0.28 0.024 160);
+  --nav-fg: oklch(0.97 0.01 150);
+  --nav-muted: oklch(0.70 0.02 150);
+  --nav-line: oklch(0.36 0.02 160);
+  --pos: oklch(0.58 0.13 150); /* 대시보드 '상승' 지표 전용 — 성공색과 별개 */
 }
 
+/* ── 리스킨 프리셋 2: 감귤 코랄 ── */
+[data-theme="coral"] {
+  --primary: oklch(0.50 0.16 30);
+  --primary-foreground: oklch(0.99 0.01 60);
+  --secondary: oklch(0.95 0.03 45);
+  --secondary-foreground: oklch(0.42 0.12 34);
+  --accent: oklch(0.72 0.10 205);
+  --accent-foreground: oklch(0.24 0.04 240);
+  --ring: oklch(0.56 0.16 30);
+  --background: oklch(0.995 0.005 60);
+  --muted: oklch(0.965 0.008 55);
+}
+
+/* ── 리스킨 프리셋 3: 자두 그레이프 (디스플레이 서체까지 교체 · 관리자 기본 테마) ── */
+[data-theme="grape"] {
+  --primary: oklch(0.46 0.15 300);
+  --primary-foreground: oklch(0.99 0.01 300);
+  --secondary: oklch(0.95 0.03 310);
+  --secondary-foreground: oklch(0.40 0.12 300);
+  --accent: oklch(0.82 0.13 85);
+  --accent-foreground: oklch(0.26 0.04 70);
+  --ring: oklch(0.54 0.16 300);
+  --background: oklch(0.995 0.004 300);
+  --muted: oklch(0.965 0.006 300);
+  --font-display: var(--font-display-black-han), var(--font-display-gothic), var(--font-body);
+}
+
+/* ── 토큰 → Tailwind 클래스 연결 ──
+   여기 등록된 이름이 bg-primary, text-muted-foreground, rounded-md 같은
+   유틸리티 클래스가 된다. inline: 클래스가 var()를 그대로 참조하게 해서
+   data-theme 전환이 즉시 반영되도록 한다. */
 @theme inline {
   --color-background: var(--background);
   --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-popover: var(--card); /* 핸드오프 미정의 — 카드 준용 */
+  --color-popover-foreground: var(--card-foreground);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-destructive: var(--destructive);
+  --color-destructive-foreground: var(--destructive-foreground);
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+  --color-success: var(--success);
+  --color-info: var(--info);
+  --color-nav: var(--nav-bg);
+  --color-nav-panel: var(--nav-panel);
+  --color-nav-foreground: var(--nav-fg);
+  --color-nav-muted: var(--nav-muted);
+  --color-nav-line: var(--nav-line);
+  --color-pos: var(--pos);
+
+  --font-sans: var(--font-body);
+  --font-heading: var(--font-display);
+
+  /* 라운드 파생 — 핸드오프: 카드 = 기본 / 버튼 −2px / 인풋 −4px, 칩·뱃지는 rounded-full */
+  --radius-lg: var(--radius);
+  --radius-md: calc(var(--radius) - 2px);
+  --radius-sm: calc(var(--radius) - 4px);
+  --radius-xl: calc(var(--radius) + 8px);
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
+@layer base {
+  * {
+    border-color: var(--border);
   }
-}
 
-body {
-  background: var(--background);
-  color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+  body {
+    background: var(--background);
+    color: var(--foreground);
+    font-family: var(--font-body);
+  }
+
+  /* 접근성(KWCAG): 포커스 링 상시 가시 — 핸드오프 전역 규칙 */
+  :focus-visible {
+    outline: 2px solid var(--ring);
+    outline-offset: 2px;
+  }
+
+  /* 움직임 최소화 설정 존중 (prefers-reduced-motion) */
+  @media (prefers-reduced-motion: reduce) {
+    *,
+    *::before,
+    *::after {
+      animation-duration: 0.01ms !important;
+      animation-iteration-count: 1 !important;
+      transition-duration: 0.01ms !important;
+      scroll-behavior: auto !important;
+    }
+  }
 }
