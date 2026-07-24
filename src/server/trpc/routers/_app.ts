@@ -2,6 +2,7 @@ import { createCallerFactory, router } from "../init";
 import { authRouter } from "./auth";
 import { cartRouter } from "./cart";
 import { siteSettingRouter } from "./site-setting";
+import { supportRouter } from "./support";
 
 /**
  * 최상위 라우터 — 도메인별 하위 라우터를 여기 합친다.
@@ -11,6 +12,7 @@ export const appRouter = router({
   auth: authRouter,
   cart: cartRouter,
   siteSetting: siteSettingRouter,
+  support: supportRouter,
 });
 
 /** 프론트엔드가 타입만 가져다 쓰는 계약. 런타임 코드는 포함되지 않는다. */

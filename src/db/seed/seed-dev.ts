@@ -13,10 +13,12 @@ import { asc, count, eq, inArray } from "drizzle-orm";
 import { db } from "@/db";
 import {
   banner,
+  board,
   category,
   displaySection,
   displaySectionProduct,
   maker,
+  post,
   product,
   productAddon,
   productCategory,
@@ -208,11 +210,136 @@ async function seedSampleBanners() {
   console.log(`  배너 ${SAMPLE_BANNERS.length}건 (히어로 3 · 띠배너 1)`);
 }
 
+// =============================================================
+// 샘플 게시글 — 공지FAQ.dc.html의 NOTICES·FAQS 데이터 발췌
+// categoryCode는 common_code(notice_category·faq_category)의 영문 code(기본 시드가 생성)
+// =============================================================
+
+/** 오래된 글부터 넣는다 — id 오름차순 = 등록순이 되어 최신순 정렬이 목업 날짜 순서와 일치한다 */
+const SAMPLE_NOTICES = [
+  {
+    categoryCode: "general",
+    title: "개인정보처리방침 개정 안내",
+    content: "개인정보처리방침이 일부 개정되어 안내드립니다.\n\n시행일: 2026년 7월 1일",
+    isPinned: false,
+  },
+  {
+    categoryCode: "maintenance",
+    title: "시스템 정기 점검 안내 (7/12 02:00~04:00)",
+    content:
+      "서비스 안정화를 위한 정기 점검이 진행됩니다.\n\n점검 시간 동안 주문 및 결제가 일시 중단됩니다.",
+    isPinned: false,
+  },
+  {
+    categoryCode: "event",
+    title: "PaRaSOL 정식 오픈 안내 및 첫 구매 적립 이벤트",
+    content:
+      "좋은 제품을 만드는 보호작업장의 먹거리를 소개하는 PaRaSOL이 정식 오픈했습니다.\n\n첫 구매 고객에게는 3,000원 적립금을 드립니다. 자세한 내용은 이벤트 페이지를 참고해 주세요.",
+    isPinned: false,
+  },
+  {
+    // 상단 고정 검증용 — 목업도 이 글을 고정으로 노출한다
+    categoryCode: "delivery",
+    title: "여름철 신선식품 배송 지연 안내 (7/21~7/25)",
+    content:
+      "폭염으로 인해 일부 지역의 신선·냉장 상품 배송이 하루 정도 지연될 수 있습니다.\n\n보냉 포장을 강화하여 상품 품질에는 문제가 없도록 준비하고 있습니다. 너른 양해 부탁드립니다.\n\n문의사항은 고객센터 또는 1:1 문의로 남겨 주세요.",
+    isPinned: true,
+  },
+];
+
+/** faq_category 5종을 모두 덮도록 분산(주문·결제만 2건) */
+const SAMPLE_FAQS = [
+  {
+    categoryCode: "delivery",
+    question: "배송은 얼마나 걸리나요?",
+    answer:
+      "평일 오후 2시 이전 결제 건은 당일 출고되며, 보통 1~2일 내 도착합니다. 신선·냉장 상품은 지역과 날씨에 따라 하루 정도 더 소요될 수 있어요.",
+  },
+  {
+    categoryCode: "order_payment",
+    question: "비회원으로도 주문할 수 있나요?",
+    answer:
+      "네, 회원가입 없이 비회원 주문이 가능합니다. 주문 시 입력한 주문번호와 연락처로 언제든 주문조회를 하실 수 있어요.",
+  },
+  {
+    categoryCode: "exchange_return",
+    question: "단순 변심으로 교환·환불이 되나요?",
+    answer:
+      "식품 특성상 단순 변심에 의한 교환·환불은 제한됩니다. 다만 상품 하자나 배송 중 파손은 수령 후 7일 이내 사진과 함께 문의 주시면 신속히 처리해 드립니다.",
+  },
+  {
+    categoryCode: "order_payment",
+    question: "어떤 결제 수단을 사용할 수 있나요?",
+    answer:
+      "신용·체크카드, 계좌이체, 토스페이, 카카오페이를 지원합니다. 결제는 토스페이먼츠를 통해 안전하게 처리됩니다.",
+  },
+  {
+    categoryCode: "member_benefit",
+    question: "적립금은 어떻게 사용하나요?",
+    answer:
+      "적립금은 1원 단위로 결제 시 사용할 수 있으며, 리뷰 작성·첫 구매 등으로 적립됩니다. 마이페이지에서 잔액과 내역을 확인하실 수 있어요.",
+  },
+  {
+    categoryCode: "product",
+    question: "선물 포장이 가능한가요?",
+    answer:
+      "대부분의 상품에서 선물 포장 옵션을 제공합니다. 상품 상세에서 포장 옵션을 선택하고, 손글씨 메시지 카드를 추가상품으로 함께 담으실 수 있어요.",
+  },
+];
+
+/** 게시글도 상품과 별개 가드 — 공지·FAQ 게시판이 비어 있을 때만 넣는다 */
+async function seedSampleBoardPosts() {
+  const boardRows = await db
+    .select({ id: board.id, slug: board.slug })
+    .from(board)
+    .where(inArray(board.slug, ["notice", "faq"]));
+  const boardIdBySlug = new Map(boardRows.map((row) => [row.slug, row.id]));
+  const noticeBoardId = boardIdBySlug.get("notice");
+  const faqBoardId = boardIdBySlug.get("faq");
+  if (noticeBoardId === undefined || faqBoardId === undefined) {
+    throw new Error(
+      "게시판(notice/faq)이 없습니다 — 기본 시드(npm run db:seed)를 먼저 실행하세요",
+    );
+  }
+
+  // qna 글(사용자 생성)은 세지 않는다 — 문의가 있어도 공지·FAQ 시드는 들어가야 한다
+  const [{ boardPostCount }] = await db
+    .select({ boardPostCount: count() })
+    .from(post)
+    .where(inArray(post.boardId, [noticeBoardId, faqBoardId]));
+  if (boardPostCount > 0) {
+    console.log("  이미 공지·FAQ 게시글이 있습니다 — 게시글 시드 건너뜀");
+    return;
+  }
+
+  await db.insert(post).values([
+    ...SAMPLE_NOTICES.map((noticeSeed) => ({
+      boardId: noticeBoardId,
+      categoryCode: noticeSeed.categoryCode,
+      authorType: "admin" as const,
+      title: noticeSeed.title,
+      content: noticeSeed.content,
+      isPinned: noticeSeed.isPinned,
+    })),
+    ...SAMPLE_FAQS.map((faqSeed) => ({
+      boardId: faqBoardId,
+      categoryCode: faqSeed.categoryCode,
+      authorType: "admin" as const,
+      title: faqSeed.question,
+      content: faqSeed.answer,
+    })),
+  ]);
+  console.log(
+    `  게시글 ${SAMPLE_NOTICES.length + SAMPLE_FAQS.length}건 (공지 ${SAMPLE_NOTICES.length} · FAQ ${SAMPLE_FAQS.length})`,
+  );
+}
+
 async function runDevSeed() {
   console.log("\nPaRaSOL 개발용 샘플 상품 시드 실행\n");
 
-  // 배너는 상품 가드보다 먼저 — 상품이 이미 있어도 배너만 추가 실행이 가능해야 한다
+  // 배너·게시글은 상품 가드보다 먼저 — 상품이 이미 있어도 각자 추가 실행이 가능해야 한다
   await seedSampleBanners();
+  await seedSampleBoardPosts();
 
   // 가드: 이 스크립트는 빈 상품 테이블 전용 — 멱등 병합이 아니라 통째로 넣거나 말거나다
   const [{ productCount }] = await db.select({ productCount: count() }).from(product);
