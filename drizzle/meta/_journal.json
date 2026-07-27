@@ -15,6 +15,13 @@
       "when": 1784881851744,
       "tag": "0001_banner_strip_and_section_kicker",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1785117570774,
+      "tag": "0002_order_domain_v06",
+      "breakpoints": true
     }
   ]
 }

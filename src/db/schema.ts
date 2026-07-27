@@ -330,7 +330,9 @@ export const restockNotification = pgTable("restock_notification", {
 
 export const orders = pgTable("orders", {
   id: bigserial("id", { mode: "number" }).primaryKey(),
-  orderNo: text("order_no").notNull(),          // YYYYMMDD-#### (전용 시퀀스 채번) — 토스 orderId 겸용
+  // "YYYYMMDD-####" — 날짜 접두(주문일 KST, 표시용) + 전역 시퀀스 order_no_seq 일련번호(리셋 없음).
+  // 토스 orderId 겸용. 채번은 order-number.service의 nextval — MAX+1 금지.
+  orderNo: text("order_no").notNull(),
   customerId: bigint("customer_id", { mode: "number" }).references(() => customer.id, { onDelete: "set null" }),
   guestToken: text("guest_token"),
   status: orderStatus("status").notNull().default("pending"),
@@ -352,12 +354,18 @@ export const orders = pgTable("orders", {
   couponDiscount: integer("coupon_discount").notNull().default(0),
   pointUsed: integer("point_used").notNull().default(0),
   grandTotal: integer("grand_total").notNull(),
+  // shipping→delivered 전이 시 세팅 — 자동 구매확정 배치의 기준 시각(confirmed_at과 대칭)
+  deliveredAt: timestamp("delivered_at", { withTimezone: true }),
   confirmedAt: timestamp("confirmed_at", { withTimezone: true }), // 구매확정 — 적립 트리거
   ...auditTimes,
 }, (t) => [
   uniqueIndex("orders_no_uq").on(t.orderNo),
   index("orders_customer_idx").on(t.customerId),
   index("orders_status_created_idx").on(t.status, t.createdAt),
+  // 비회원 주문조회 1차 수단 — 게스트 토큰 보유 행만
+  index("orders_guest_token_idx").on(t.guestToken).where(sql`${t.guestToken} IS NOT NULL`),
+  // 자동확정 배치 — 배송완료 건만 스캔
+  index("orders_delivered_at_idx").on(t.deliveredAt).where(sql`${t.status} = 'delivered'`),
 ]);
 
 export const orderItem = pgTable("order_item", {
@@ -380,12 +388,14 @@ export const orderItem = pgTable("order_item", {
 export const orderItemAddon = pgTable("order_item_addon", {
   id: bigserial("id", { mode: "number" }).primaryKey(),
   orderItemId: bigint("order_item_id", { mode: "number" }).notNull().references(() => orderItem.id, { onDelete: "cascade" }),
+  // 통계·클레임 복원용 참조(nullable) — 이름·가격은 아래 스냅샷이 진실. 추가상품 삭제돼도 주문 불변
+  addonId: bigint("addon_id", { mode: "number" }).references(() => productAddon.id, { onDelete: "set null" }),
   addonName: text("addon_name").notNull(),
   unitPrice: integer("unit_price").notNull(),
   quantity: integer("quantity").notNull(),
   lineTotal: integer("line_total").notNull(),
   ...createdOnly,
-});
+}, (t) => [index("order_item_addon_addon_idx").on(t.addonId)]);
 
 export const orderStatusHistory = pgTable("order_status_history", {
   id: bigserial("id", { mode: "number" }).primaryKey(),
@@ -411,6 +421,8 @@ export const payment = pgTable("payment", {
 }, (t) => [
   uniqueIndex("payment_key_uq").on(t.paymentKey),
   index("payment_order_idx").on(t.orderId),
+  // 주문당 유효 결제 1건 강제 — 실패 결제는 여러 번(재시도) 허용, 환불 대상 모호성 제거
+  uniqueIndex("payment_order_active_uq").on(t.orderId).where(sql`${t.status} <> 'failed'`),
 ]);
 
 export const paymentCancellation = pgTable("payment_cancellation", {
@@ -442,7 +454,7 @@ export const shipment = pgTable("shipment", {
 
 export const claim = pgTable("claim", {
   id: bigserial("id", { mode: "number" }).primaryKey(),
-  claimNo: text("claim_no").notNull(),          // CN-/EX-/RT- 접두
+  claimNo: text("claim_no").notNull(),          // "{CN|EX|RT}-YYYYMMDD-####" — 타입 접두 + 날짜 + 전역 시퀀스(claim_no_seq)
   orderId: bigint("order_id", { mode: "number" }).notNull().references(() => orders.id, { onDelete: "cascade" }),
   type: claimType("type").notNull(),
   status: claimStatus("status").notNull().default("requested"),
@@ -755,19 +767,24 @@ export const loginLog = pgTable("login_log", {
 
 export const inventoryLog = pgTable("inventory_log", {
   id: bigserial("id", { mode: "number" }).primaryKey(),
-  // 대상은 variant 또는 추가상품 중 정확히 하나 — 스펙 §7: 추가상품 재고 증감도 기록
-  variantId: bigint("variant_id", { mode: "number" }).references(() => productVariant.id, { onDelete: "cascade" }),
-  addonId: bigint("addon_id", { mode: "number" }).references(() => productAddon.id, { onDelete: "cascade" }),
+  // 대상은 variant 또는 추가상품. append-only 감사 원장이라 대상 상품이 하드삭제돼도
+  // 이력은 남겨야 한다(RULE-11 ⑧) → cascade가 아니라 set null. 삭제되면 둘 다 null이 될 수 있으므로
+  // 제약은 "동시에 둘 다 채워지지 않음"(NOT both)으로 완화한다(신규 기록은 여전히 정확히 하나).
+  variantId: bigint("variant_id", { mode: "number" }).references(() => productVariant.id, { onDelete: "set null" }),
+  addonId: bigint("addon_id", { mode: "number" }).references(() => productAddon.id, { onDelete: "set null" }),
   delta: integer("delta").notNull(),
   stockAfter: integer("stock_after").notNull(),  // 잔량 스냅샷 (감사 시 재계산 불필요)
   reason: text("reason").notNull(),              // order / cancel_restock / claim_restock / manual
-  refId: text("ref_id"),
+  refId: text("ref_id"),                         // 주문 복원 원천 — order_no 등
   memo: text("memo"),
   createdBy: text("created_by"),
   ...createdOnly,
 }, (t) => [
   index("inv_log_variant_idx").on(t.variantId),
-  check("inv_log_target_ck", sql`(${t.variantId} IS NOT NULL) <> (${t.addonId} IS NOT NULL)`),
+  index("inv_log_addon_idx").on(t.addonId),
+  // 전체취소 복원·감사 조회 — ref_id(주문번호)로 그 주문의 차감 이력을 되짚는다
+  index("inv_log_ref_idx").on(t.refId, t.reason),
+  check("inv_log_target_ck", sql`NOT (${t.variantId} IS NOT NULL AND ${t.addonId} IS NOT NULL)`),
 ]);
 
 export const adminUser = pgTable("admin_user", {
@@ -791,7 +808,9 @@ export const siteSetting = pgTable("site_setting", {
 // =============================================================
 // 추후 계획 (인덱스 · 시퀀스)
 // =============================================================
-// 주문/클레임 채번: 전용 시퀀스 order_no_seq, claim_no_seq — "YYYYMMDD-" || LPAD(nextval,4). MAX+1 금지.
+// 주문/클레임 채번: 전역 시퀀스 order_no_seq·claim_no_seq(일별 리셋 없음) — 날짜 접두는 표시용,
+//   일련번호는 전역 누적. order_no = to_char(now KST,'YYYYMMDD')||'-'||lpad(nextval,4). 4자리 최소·초과 시 자연 확장.
+//   claim_no = {CN|EX|RT}-||날짜||-||lpad(nextval,4). MAX+1 금지 — 시퀀스는 사용자 DDL로 생성(RULE-2).
 // 검색: product.name pg_trgm GIN — 통합검색 화면 착수 시. 인기검색어는 로그 집계(테이블 후행).
 // 최근 본 상품: 서버 테이블 없이 클라이언트 저장(비회원 포함, 개인정보 최소화) — 필요 시 후행 추가.
 // 로그 아카이브: login_log·admin_activity_log 100만 행 도달 시 연 단위 정리 배치.
