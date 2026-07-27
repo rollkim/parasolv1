@@ -8,6 +8,7 @@ import {
   cart,
   cartItem,
   cartItemAddon,
+  maker,
   product,
   productAddon,
   productImage,
@@ -41,7 +42,7 @@ type QueryClient = DatabaseClient | TransactionClient;
  */
 const FALLBACK_SHIPPING_POLICY: ShippingPolicy = { baseFee: 3000, freeThreshold: 30000 };
 
-async function loadShippingPolicy(database: DatabaseClient): Promise<ShippingPolicy> {
+async function loadShippingPolicy(database: QueryClient): Promise<ShippingPolicy> {
   const stored = await getSiteSetting(database, "shipping_policy");
   if (stored && typeof stored === "object") {
     const candidate = stored as Partial<ShippingPolicy>;
@@ -80,6 +81,8 @@ export type CartLine = {
   productSlug: string;
   thumbnailPath: string | null;
   thumbnailAlt: string | null;
+  /** 만든 곳 — 주문 스냅샷(order_item.maker_name)에 복사된다. 자사 상품은 null */
+  makerName: string | null;
   /** 옵션 조합 라벨(예: "24개입 / 선물 포장") — 옵션 없는 상품은 null */
   optionLabel: string | null;
   unitPrice: number;
@@ -116,7 +119,8 @@ async function findCartByToken(client: QueryClient, cartToken: string) {
  * 토큰이 없거나 카트가 비어도 summary는 항상 내려준다(무료배송 안내 바 표시용).
  */
 export async function getCartWithItems(
-  database: DatabaseClient,
+  // 주문 생성이 트랜잭션 안에서 가격·재고를 다시 읽어야 하므로 tx도 받는다(TOCTOU 차단)
+  database: QueryClient,
   cartToken: string | null,
 ): Promise<CartView> {
   const shippingPolicy = await loadShippingPolicy(database);
@@ -140,50 +144,55 @@ export async function getCartWithItems(
   const variantIds = [...new Set(itemRows.map((row) => row.variantId))];
   const cartItemIds = itemRows.map((row) => row.cartItemId);
 
-  const [variantRows, optionLabelRows, lineAddonRows] = await Promise.all([
-    database
-      .select({
-        variantId: productVariant.id,
-        unitPrice: productVariant.price,
-        stock: productVariant.stock,
-        variantActive: productVariant.isActive,
-        variantDeletedAt: productVariant.deletedAt,
-        productId: product.id,
-        productName: product.name,
-        productSlug: product.slug,
-        productStatus: product.status,
-        productDeletedAt: product.deletedAt,
-      })
-      .from(productVariant)
-      .innerJoin(product, eq(productVariant.productId, product.id))
-      .where(inArray(productVariant.id, variantIds)),
-    database
-      .select({
-        variantId: variantOptionValue.variantId,
-        valueLabel: productOptionValue.value,
-      })
-      .from(variantOptionValue)
-      .innerJoin(
-        productOptionValue,
-        eq(variantOptionValue.optionValueId, productOptionValue.id),
-      )
-      .innerJoin(productOption, eq(productOptionValue.optionId, productOption.id))
-      .where(inArray(variantOptionValue.variantId, variantIds))
-      .orderBy(asc(productOption.position)),
-    database
-      .select({
-        cartItemId: cartItemAddon.cartItemId,
-        addonId: cartItemAddon.addonId,
-        addonQuantity: cartItemAddon.quantity,
-        addonName: productAddon.name,
-        addonPrice: productAddon.price,
-        addonStock: productAddon.stock,
-        addonActive: productAddon.isActive,
-      })
-      .from(cartItemAddon)
-      .innerJoin(productAddon, eq(cartItemAddon.addonId, productAddon.id))
-      .where(inArray(cartItemAddon.cartItemId, cartItemIds)),
-  ]);
+  // 순차 실행 — 이 함수는 주문 생성 트랜잭션에서도 호출되는데(tx는 커넥션 1개),
+  // Promise.all로 겹쳐 보내면 pg가 쿼리 충돌을 경고하고 pg@9부터는 오류가 된다.
+  const variantRows = await database
+    .select({
+      variantId: productVariant.id,
+      unitPrice: productVariant.price,
+      stock: productVariant.stock,
+      variantActive: productVariant.isActive,
+      variantDeletedAt: productVariant.deletedAt,
+      productId: product.id,
+      productName: product.name,
+      productSlug: product.slug,
+      productStatus: product.status,
+      productDeletedAt: product.deletedAt,
+      makerName: maker.name,
+    })
+    .from(productVariant)
+    .innerJoin(product, eq(productVariant.productId, product.id))
+    // 자사 상품은 makerId가 없으므로 left join — 없으면 null
+    .leftJoin(maker, eq(product.makerId, maker.id))
+    .where(inArray(productVariant.id, variantIds));
+
+  const optionLabelRows = await database
+    .select({
+      variantId: variantOptionValue.variantId,
+      valueLabel: productOptionValue.value,
+    })
+    .from(variantOptionValue)
+    .innerJoin(
+      productOptionValue,
+      eq(variantOptionValue.optionValueId, productOptionValue.id),
+    )
+    .innerJoin(productOption, eq(productOptionValue.optionId, productOption.id))
+    .where(inArray(variantOptionValue.variantId, variantIds))
+    .orderBy(asc(productOption.position));
+
+  const lineAddonRows = await database
+    .select({
+      cartItemId: cartItemAddon.cartItemId,
+      addonId: cartItemAddon.addonId,
+      addonQuantity: cartItemAddon.quantity,
+      addonName: productAddon.name,
+      addonPrice: productAddon.price,
+      addonStock: productAddon.stock,
+      addonActive: productAddon.isActive,
+    })
+    .from(cartItemAddon)
+    .innerJoin(productAddon, eq(cartItemAddon.addonId, productAddon.id))
+    .where(inArray(cartItemAddon.cartItemId, cartItemIds));
 
   const productIds = [...new Set(variantRows.map((row) => row.productId))];
   const thumbnailRows =
@@ -257,6 +266,7 @@ export async function getCartWithItems(
       productSlug: variantRow.productSlug,
       thumbnailPath: thumbnail?.path ?? null,
       thumbnailAlt: thumbnail?.alt ?? null,
+      makerName: variantRow.makerName,
       optionLabel: optionLabels?.length ? optionLabels.join(" / ") : null,
       unitPrice: variantRow.unitPrice,
       quantity: itemRow.quantity,

@@ -2,8 +2,9 @@ import "server-only";
 
 import { eq } from "drizzle-orm";
 
-import type { db as Database } from "@/db";
 import { siteSetting } from "@/db/schema";
+
+import type { QueryClient } from "./db-client";
 
 /**
  * 사이트 설정 도메인 모듈.
@@ -81,15 +82,15 @@ type SiteSettingValueByKey = {
  * 제네릭 K로 알려진 key는 반환 타입이 좁혀지고, 그 외 key는 unknown이다.
  */
 export async function getSiteSetting<K extends keyof SiteSettingValueByKey>(
-  database: typeof Database,
+  database: QueryClient,
   settingKey: K,
 ): Promise<SiteSettingValueByKey[K] | null>;
 export async function getSiteSetting(
-  database: typeof Database,
+  database: QueryClient,
   settingKey: string,
 ): Promise<unknown>;
 export async function getSiteSetting(
-  database: typeof Database,
+  database: QueryClient,
   settingKey: string,
 ): Promise<unknown> {
   const [row] = await database
@@ -106,7 +107,7 @@ export async function getSiteSetting(
  * 푸터는 전 화면 필수(RULE-11)라 "값이 없으면 안 그린다"는 선택지가 없다.
  */
 export async function getBusinessInfo(
-  database: typeof Database,
+  database: QueryClient,
 ): Promise<BusinessInfo> {
   const stored = await getSiteSetting(database, "business_info");
   if (!stored || typeof stored !== "object") return FALLBACK_BUSINESS_INFO;
