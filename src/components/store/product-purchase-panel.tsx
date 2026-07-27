@@ -15,7 +15,8 @@
 //  - 컨테이너 쿼리(@container store)는 헤더 선례를 따라 뷰포트 기준(md:768px / min-[1040px])으로 환산.
 //  - 장바구니 담기는 cart.addItem 실배선. '바로 구매'는 체크아웃 미구현이라 담기 후 /cart 이동으로
 //    대체한다 — TODO(체크아웃 배선 시 직행으로 교체).
-//  - 찜·재입고 알림은 3주차 스텁 — 클릭 시 안내 토스트만. TODO(3주차)
+//  - 찜은 WishlistHeartButton 실배선 — 로그인 판별·토글·하트 규격은 그 컴포넌트가 소유한다.
+//  - 재입고 알림은 스텁 — 클릭 시 안내 토스트만. TODO(3주차)
 
 import * as React from "react"
 
@@ -38,6 +39,7 @@ import type { ProductDetail } from "@/server/services/product.service"
 import { useTRPC } from "@/trpc/client"
 
 import { ImagePlaceholder } from "./image-placeholder"
+import { WishlistHeartButton } from "./wishlist-heart-button"
 
 export type ProductPurchasePanelProps = {
   productDetail: ProductDetail
@@ -54,22 +56,6 @@ function stockNoticeText(stock: number) {
   return `재고 ${stock}개`
 }
 
-/** 하트 아이콘 — 데스크톱 CTA(24px)·모바일 바(22px) 공용. 카드의 찜 하트와 같은 path */
-function HeartMark({ className }: { className?: string }) {
-  return (
-    <svg
-      viewBox="0 0 24 24"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth={1.8}
-      className={className}
-      aria-hidden="true"
-    >
-      <path d="M12 20.5 4.2 12.9a4.6 4.6 0 0 1 6.5-6.5l1.3 1.3 1.3-1.3a4.6 4.6 0 0 1 6.5 6.5Z" />
-    </svg>
-  )
-}
-
 /* 추가상품 미니 스테퍼 공통 클래스 — 목업 38×40px 실측 유지 + after로 히트 영역 44×46px 확장(KWCAG) */
 const addonStepButtonClass =
   "relative flex h-10 w-[38px] cursor-pointer items-center justify-center border border-border bg-card text-lg after:absolute after:-inset-[3px] after:content-[''] disabled:cursor-not-allowed disabled:opacity-35"
@@ -80,6 +66,7 @@ export function ProductPurchasePanel({
 }: ProductPurchasePanelProps) {
   const { showToast } = useToast()
   const {
+    productId,
     name,
     makerName,
     reviewCount,
@@ -291,9 +278,7 @@ export function ProductPurchasePanel({
   const handleAddCartClick = () => submitAddToCart("stay")
   // 체크아웃 미구현 — 담기 후 장바구니로 이동해 흐름을 잇는다. TODO(체크아웃 배선 시 /checkout 직행으로 교체)
   const handleBuyNowClick = () => submitAddToCart("goCart")
-  // TODO(3주차): 찜·재입고 알림 실배선으로 교체 — 지금은 안내 토스트만
-  const handleWishClick = () =>
-    showToast(`찜 기능은 3주차에 열려요 · ${name}`, { toastVariant: "info" })
+  // TODO(3주차): 재입고 알림 실배선으로 교체 — 지금은 안내 토스트만
   const handleRestockNotifyClick = () =>
     showToast(`재입고 알림은 3주차에 열려요 · ${name}`, { toastVariant: "info" })
 
@@ -659,15 +644,11 @@ export function ProductPurchasePanel({
 
           {/* CTA — 데스크톱 전용(모바일은 하단 구매바) */}
           <div className="mt-5 hidden gap-2.5 md:flex">
-            <Button
-              type="button"
-              variant="outline"
-              size="icon"
-              aria-label="찜하기"
-              onClick={handleWishClick}
-            >
-              <HeartMark className="size-6" />
-            </Button>
+            <WishlistHeartButton
+              productId={productId}
+              productName={name}
+              heartAppearance="detailCta"
+            />
             {/* pending은 hard disabled가 아니라 aria-disabled — disabled는 포커스를 body로
                 떨어뜨려 키보드 완주(RULE-11)를 깬다. 재진입은 submitAddToCart 가드가 막는다 */}
             <Button
@@ -713,16 +694,11 @@ export function ProductPurchasePanel({
           </div>
         )}
         <div className="flex items-stretch gap-2">
-          <Button
-            type="button"
-            variant="outline"
-            size="md-50"
-            className="w-[50px] px-0"
-            aria-label="찜하기"
-            onClick={handleWishClick}
-          >
-            <HeartMark className="size-[22px]" />
-          </Button>
+          <WishlistHeartButton
+            productId={productId}
+            productName={name}
+            heartAppearance="detailBar"
+          />
           <Button
             type="button"
             variant="outline"

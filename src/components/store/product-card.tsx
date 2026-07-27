@@ -5,11 +5,11 @@
 // README L64: 카드 hover(그림자·이동)는 인덱스·이야기 카드 전용 — 상품 카드에는 카드 단위 hover 없음.
 //
 // 목업과 의도적으로 다르게 간 부분(사유):
-//  - "use client"인 이유: 찜·장바구니·재입고가 3주차 스텁(클릭 시 안내 토스트)이라 이벤트 핸들러가 필요하다.
+//  - "use client"인 이유: 장바구니·재입고가 스텁(클릭 시 안내 토스트)이라 이벤트 핸들러가 필요하다.
 //    직렬화 가능한 ProductCard 데이터만 받으므로 서버 페이지(메인·목록)가 그대로 임포트해 쓴다.
 //  - 목업에는 카드→상세 링크가 없으나(전 카드 공통) 상품명에 /products/[slug] 스트레치드 링크를 추가 —
 //    after 오버레이(z-1)가 카드 전체를 덮고, 하트(z-2)·CTA(z-2)만 그 위에서 클릭을 가로챈다.
-//  - 하트 버튼은 목업 실측 38px 유지 + after 의사요소로 히트 영역만 44px 확장(KWCAG 터치 타겟).
+//  - 찜 하트는 WishlistHeartButton 실배선 — 목업 38px + 44px 히트 확장·로그인 판별은 그 컴포넌트가 소유한다.
 //  - 품절 오버레이는 목업 DOM 순서(하트 위)를 따르되 pointer-events-none — 품절이어도 찜·상세 이동은 가능해야 한다.
 //  - 뱃지·CTA 라운드는 목업 리터럴(7px·radius-3px) 대신 디자인 시스템 프리셋(Badge tag=rounded-sm, Button rounded-md)으로 수렴.
 
@@ -23,6 +23,7 @@ import { formatKrw } from "@/lib/format"
 import type { ProductCard } from "@/server/services/product.service"
 
 import { ImagePlaceholder } from "./image-placeholder"
+import { WishlistHeartButton } from "./wishlist-heart-button"
 
 export type StoreProductCardProps = {
   productCard: ProductCard
@@ -33,6 +34,7 @@ export type StoreProductCardProps = {
 export function StoreProductCard({ productCard, rankNumber }: StoreProductCardProps) {
   const { showToast } = useToast()
   const {
+    productId,
     slug,
     name,
     makerName,
@@ -46,9 +48,7 @@ export function StoreProductCard({ productCard, rankNumber }: StoreProductCardPr
 
   const discountPercent = discountRate(sellingPrice, compareAtPrice)
 
-  // TODO(3주차): 찜 토글·장바구니 담기·재입고 알림 실배선으로 교체 — 지금은 안내 토스트만
-  const handleWishClick = () =>
-    showToast(`찜 기능은 3주차에 열려요 · ${name}`, { toastVariant: "info" })
+  // TODO(3주차): 장바구니 담기·재입고 알림 실배선으로 교체 — 지금은 안내 토스트만
   const handleAddCartClick = () =>
     showToast(`장바구니 기능은 3주차에 열려요 · ${name}`, { toastVariant: "info" })
   const handleRestockNotifyClick = () =>
@@ -97,25 +97,13 @@ export function StoreProductCard({ productCard, rankNumber }: StoreProductCardPr
           </div>
         )}
 
-        {/* [1b] 찜 버튼 — 반투명 유리 원형 38px, after로 히트 영역 44px 확보 */}
-        <button
-          type="button"
-          onClick={handleWishClick}
-          aria-label={`찜하기 ${name}`}
-          className="absolute top-1.5 right-1.5 z-[2] flex size-[38px] cursor-pointer items-center justify-center rounded-full border-none bg-[color-mix(in_oklch,var(--card)_78%,transparent)] text-muted-foreground backdrop-blur-[4px] after:absolute after:-inset-[3px] after:rounded-full after:content-['']"
-        >
-          <svg
-            width={20}
-            height={20}
-            viewBox="0 0 24 24"
-            fill="none"
-            stroke="currentColor"
-            strokeWidth={1.8}
-            aria-hidden="true"
-          >
-            <path d="M12 20.5 4.2 12.9a4.6 4.6 0 0 1 6.5-6.5l1.3 1.3 1.3-1.3a4.6 4.6 0 0 1 6.5 6.5Z" />
-          </svg>
-        </button>
+        {/* [1b] 찜 버튼 — 실배선(WishlistHeartButton). 목업 위치(top/right 6px)만 카드가 소유한다 */}
+        <WishlistHeartButton
+          productId={productId}
+          productName={name}
+          heartAppearance="cardOverlay"
+          className="absolute top-1.5 right-1.5 z-[2]"
+        />
 
         {/* [1c] 품절 오버레이 — 색+텍스트 병행(KWCAG). 클릭은 아래 하트·링크로 통과시킨다 */}
         {soldOut && (

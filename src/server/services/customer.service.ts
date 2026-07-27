@@ -5,7 +5,7 @@ import bcrypt from "bcryptjs";
 import { and, desc, eq, inArray, isNull } from "drizzle-orm";
 
 import type { db as Database } from "@/db";
-import { customer, customerAuth, loginLog, termsDocument, termsAgreement } from "@/db/schema";
+import { address, customer, customerAuth, loginLog, termsDocument, termsAgreement } from "@/db/schema";
 
 /**
  * 회원 도메인 서비스 — 로컬(아이디/비밀번호) 가입·로그인 검증.
@@ -14,6 +14,9 @@ import { customer, customerAuth, loginLog, termsDocument, termsAgreement } from 
  */
 
 type DatabaseClient = typeof Database;
+// 트랜잭션 안팎에서 같은 헬퍼(소유 검증)를 쓰기 위한 클라이언트 타입 — cart.service와 동일 규약
+type TransactionClient = Parameters<Parameters<DatabaseClient["transaction"]>[0]>[0];
+type QueryClient = DatabaseClient | TransactionClient;
 
 const BCRYPT_ROUNDS = 12;
 
@@ -249,4 +252,268 @@ export async function getCustomerSessionProfile(
 
   if (!customerRow) return null;
   return { customerId: customerRow.customerId, name: customerRow.customerName };
+}
+
+// =============================================================
+// 마이페이지 프로필
+// =============================================================
+
+export type MyProfile = {
+  customerId: number;
+  /** 로컬 로그인 아이디 — 소셜 전용 계정은 null */
+  loginId: string | null;
+  name: string;
+  email: string | null;
+  phone: string | null;
+};
+
+/** 회원정보 화면용 프로필 — 세션이 유효해도 그 사이 탈퇴·비활성됐을 수 있어 DB 상태로 거른다 */
+export async function getMyProfile(
+  database: DatabaseClient,
+  customerId: number,
+): Promise<MyProfile> {
+  const [profileRow] = await database
+    .select({
+      customerId: customer.id,
+      loginId: customerAuth.providerUid,
+      name: customer.name,
+      email: customer.email,
+      phone: customer.phone,
+    })
+    .from(customer)
+    .leftJoin(
+      customerAuth,
+      and(eq(customerAuth.customerId, customer.id), eq(customerAuth.provider, "local")),
+    )
+    .where(
+      and(
+        eq(customer.id, customerId),
+        eq(customer.isActive, true),
+        isNull(customer.deletedAt),
+      ),
+    )
+    .limit(1);
+
+  if (!profileRow) {
+    throw new TRPCError({
+      code: "UNAUTHORIZED",
+      message: "회원 정보를 확인할 수 없습니다. 다시 로그인해 주세요.",
+    });
+  }
+  return profileRow;
+}
+
+export type UpdateMyProfileInput = {
+  customerId: number;
+  name: string;
+  email: string;
+  phone: string;
+};
+
+/** 회원정보 수정 — 이메일 형식 등 입력 검증은 라우터(zod)가 끝낸 뒤 들어온다 */
+export async function updateMyProfile(
+  database: DatabaseClient,
+  input: UpdateMyProfileInput,
+): Promise<MyProfile> {
+  const updatedRows = await database
+    .update(customer)
+    .set({ name: input.name, email: input.email, phone: input.phone })
+    .where(
+      and(
+        eq(customer.id, input.customerId),
+        eq(customer.isActive, true),
+        isNull(customer.deletedAt),
+      ),
+    )
+    .returning({ customerId: customer.id });
+  if (updatedRows.length === 0) {
+    throw new TRPCError({
+      code: "UNAUTHORIZED",
+      message: "회원 정보를 확인할 수 없습니다. 다시 로그인해 주세요.",
+    });
+  }
+
+  // loginId까지 포함한 최신 프로필로 응답 — 화면이 그대로 갱신에 쓴다
+  return getMyProfile(database, input.customerId);
+}
+
+// =============================================================
+// 배송지
+// =============================================================
+
+export type CustomerAddress = {
+  addressId: number;
+  label: string | null;
+  recipient: string;
+  phone: string;
+  zipcode: string;
+  addr1: string;
+  addr2: string | null;
+  isDefault: boolean;
+};
+
+const customerAddressSelection = {
+  addressId: address.id,
+  label: address.label,
+  recipient: address.recipient,
+  phone: address.phone,
+  zipcode: address.zipcode,
+  addr1: address.addr1,
+  addr2: address.addr2,
+  isDefault: address.isDefault,
+};
+
+/** 배송지 목록 — 기본 배송지가 항상 맨 위, 나머지는 최근 등록순 */
+export async function listMyAddresses(
+  database: DatabaseClient,
+  customerId: number,
+): Promise<CustomerAddress[]> {
+  return database
+    .select(customerAddressSelection)
+    .from(address)
+    .where(eq(address.customerId, customerId))
+    .orderBy(desc(address.isDefault), desc(address.id));
+}
+
+/**
+ * 배송지 소유 검증 — 남의 addressId를 보내는 IDOR을 막는다.
+ * 존재하지 않으면 NOT_FOUND, 남의 것이면 FORBIDDEN으로 구분한다.
+ */
+async function assertOwnedAddress(
+  client: QueryClient,
+  customerId: number,
+  addressId: number,
+): Promise<void> {
+  const [addressRow] = await client
+    .select({ ownerCustomerId: address.customerId })
+    .from(address)
+    .where(eq(address.id, addressId))
+    .limit(1);
+  if (!addressRow) {
+    throw new TRPCError({
+      code: "NOT_FOUND",
+      message: "배송지를 찾을 수 없습니다. 목록을 새로고침해 주세요.",
+    });
+  }
+  if (addressRow.ownerCustomerId !== customerId) {
+    throw new TRPCError({
+      code: "FORBIDDEN",
+      message: "본인의 배송지만 관리할 수 있습니다.",
+    });
+  }
+}
+
+export type SaveAddressFields = {
+  label?: string | null;
+  recipient: string;
+  phone: string;
+  zipcode: string;
+  addr1: string;
+  addr2?: string | null;
+  isDefault?: boolean;
+};
+
+/**
+ * 배송지 등록 — 기본 배송지는 단일 보장: 기본 지정 시 기존 기본을 같은 트랜잭션에서 해제한다.
+ * 첫 배송지는 자동으로 기본이 된다 — 체크아웃에서 "기본 배송지 없음" 상태를 만들지 않기 위해.
+ */
+export async function createAddress(
+  database: DatabaseClient,
+  input: { customerId: number } & SaveAddressFields,
+): Promise<CustomerAddress> {
+  return database.transaction(async (tx) => {
+    const [existingAddressRow] = await tx
+      .select({ addressId: address.id })
+      .from(address)
+      .where(eq(address.customerId, input.customerId))
+      .limit(1);
+    const shouldBeDefault = input.isDefault === true || existingAddressRow === undefined;
+
+    if (shouldBeDefault) {
+      await tx
+        .update(address)
+        .set({ isDefault: false })
+        .where(
+          and(eq(address.customerId, input.customerId), eq(address.isDefault, true)),
+        );
+    }
+
+    const [createdAddressRow] = await tx
+      .insert(address)
+      .values({
+        customerId: input.customerId,
+        // 빈 문자열 별칭·상세주소는 null로 통일 — "" 와 null이 섞이지 않게
+        label: input.label || null,
+        recipient: input.recipient,
+        phone: input.phone,
+        zipcode: input.zipcode,
+        addr1: input.addr1,
+        addr2: input.addr2 || null,
+        isDefault: shouldBeDefault,
+      })
+      .returning(customerAddressSelection);
+    return createdAddressRow;
+  });
+}
+
+/** 배송지 수정 — isDefault를 보내지 않으면 기본 여부는 건드리지 않는다 */
+export async function updateAddress(
+  database: DatabaseClient,
+  input: { customerId: number; addressId: number } & SaveAddressFields,
+): Promise<CustomerAddress> {
+  return database.transaction(async (tx) => {
+    await assertOwnedAddress(tx, input.customerId, input.addressId);
+
+    // 기본 지정이면 기존 기본을 먼저 해제 — 단일 보장
+    if (input.isDefault === true) {
+      await tx
+        .update(address)
+        .set({ isDefault: false })
+        .where(
+          and(eq(address.customerId, input.customerId), eq(address.isDefault, true)),
+        );
+    }
+
+    const [updatedAddressRow] = await tx
+      .update(address)
+      .set({
+        label: input.label || null,
+        recipient: input.recipient,
+        phone: input.phone,
+        zipcode: input.zipcode,
+        addr1: input.addr1,
+        addr2: input.addr2 || null,
+        ...(input.isDefault === undefined ? {} : { isDefault: input.isDefault }),
+      })
+      .where(eq(address.id, input.addressId))
+      .returning(customerAddressSelection);
+    return updatedAddressRow;
+  });
+}
+
+/** 배송지 삭제 — 기본 배송지를 지우면 새 기본은 사용자가 직접 지정한다 */
+export async function deleteAddress(
+  database: DatabaseClient,
+  input: { customerId: number; addressId: number },
+): Promise<void> {
+  await assertOwnedAddress(database, input.customerId, input.addressId);
+  await database.delete(address).where(eq(address.id, input.addressId));
+}
+
+/** 기본 배송지 지정 — 전체 해제 후 대상만 지정. 같은 트랜잭션이라 중간 상태가 노출되지 않는다 */
+export async function setDefaultAddress(
+  database: DatabaseClient,
+  input: { customerId: number; addressId: number },
+): Promise<void> {
+  await database.transaction(async (tx) => {
+    await assertOwnedAddress(tx, input.customerId, input.addressId);
+    await tx
+      .update(address)
+      .set({ isDefault: false })
+      .where(and(eq(address.customerId, input.customerId), eq(address.isDefault, true)));
+    await tx
+      .update(address)
+      .set({ isDefault: true })
+      .where(eq(address.id, input.addressId));
+  });
 }
