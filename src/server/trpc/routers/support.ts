@@ -1,6 +1,8 @@
 import { TRPCError } from "@trpc/server";
+import { headers } from "next/headers";
 import { z } from "zod";
 
+import { assertQnaAllowed } from "@/server/security/rate-limit";
 import { createQnaPost } from "@/server/services/board.service";
 
 import { publicProcedure, router } from "../init";
@@ -57,7 +59,12 @@ export const supportRouter = router({
     /** 문의 등록 — 회원은 세션으로 귀속, 비회원은 이름·연락처·비밀번호로 등록 */
     create: publicProcedure
       .input(qnaCreateInputSchema)
-      .mutation(({ ctx, input }) => {
+      .mutation(async ({ ctx, input }) => {
+        // 문의 스팸 억제 — IP 기준 시간당 한도
+        const forwardedFor = (await headers()).get("x-forwarded-for");
+        const clientIp = forwardedFor ? forwardedFor.split(",")[0].trim() : null;
+        assertQnaAllowed(clientIp);
+
         if (ctx.customerId !== null) {
           // 회원 문의 — 클라이언트가 보낸 guest 필드는 신뢰하지 않고 버린다
           return createQnaPost(ctx.db, {

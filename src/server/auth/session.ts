@@ -11,7 +11,9 @@ import { cookies } from "next/headers";
  */
 
 export const SESSION_COOKIE_NAME = "parasol_session";
-const SESSION_MAX_AGE_SECONDS = 60 * 60 * 24 * 30; // 30일
+// 보안 감사 권고(2026-07-27): 커머스 기준 30일은 길어 14일로 단축.
+// 유휴 타임아웃·서버측 무효화(jti)는 별도 결정 사항으로 남김.
+const SESSION_MAX_AGE_SECONDS = 60 * 60 * 24 * 14; // 14일
 
 /**
  * 서명 키 — 짧은 시크릿은 HS256 무차별 대입에 취약하므로 32자 미만이면 기동을 막는다.

@@ -5,6 +5,12 @@ import {
   clearSessionCookie,
   issueSessionCookie,
 } from "@/server/auth/session";
+import {
+  assertLoginAllowed,
+  assertSignupAllowed,
+  clearLoginAttempts,
+  recordLoginFailure,
+} from "@/server/security/rate-limit";
 import { mergeGuestCartIntoCustomer } from "@/server/services/cart.service";
 import {
   getCustomerSessionProfile,
@@ -66,6 +72,7 @@ export const authRouter = router({
     )
     .mutation(async ({ ctx, input }) => {
       const { clientIp } = await readClientRequestInfo();
+      assertSignupAllowed(clientIp);
       const sessionProfile = await signupLocalCustomer(ctx.db, {
         ...input,
         ip: clientIp,
@@ -92,11 +99,23 @@ export const authRouter = router({
     )
     .mutation(async ({ ctx, input }) => {
       const { clientIp, clientUserAgent } = await readClientRequestInfo();
-      const sessionProfile = await verifyLocalLogin(ctx.db, {
-        ...input,
-        ip: clientIp,
-        userAgent: clientUserAgent,
-      });
+      // 실패 누적이 한도를 넘으면 자격증명 확인 전에 차단(무차별 대입 방어)
+      assertLoginAllowed(input.loginId, clientIp);
+
+      let sessionProfile;
+      try {
+        sessionProfile = await verifyLocalLogin(ctx.db, {
+          ...input,
+          ip: clientIp,
+          userAgent: clientUserAgent,
+        });
+      } catch (loginError) {
+        // 실패만 카운트해 정상 사용자를 막지 않는다
+        recordLoginFailure(input.loginId, clientIp);
+        throw loginError;
+      }
+      // 성공하면 카운터를 비운다
+      clearLoginAttempts(input.loginId, clientIp);
 
       await issueSessionCookie(sessionProfile.customerId);
       if (ctx.cartToken) {
