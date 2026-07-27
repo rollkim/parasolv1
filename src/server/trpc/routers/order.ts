@@ -1,3 +1,4 @@
+import { cookies } from "next/headers";
 import { z } from "zod";
 
 import { getPaymentGateway } from "@/server/payments";
@@ -10,8 +11,34 @@ import {
 import { createPendingOrder } from "@/server/services/order.service";
 import { confirmPayment } from "@/server/services/payment.service";
 
+import { GUEST_ORDER_COOKIE_NAME } from "../context";
 import { publicProcedure, router } from "../init";
 import { withOrderErrorMapping } from "../order-error";
+
+/** 주문 직후 완료 화면을 보는 동안만 필요하다 — 오래 두면 공용 PC에서 남의 주문이 열린다 */
+const GUEST_ORDER_COOKIE_MAX_AGE_SECONDS = 60 * 60;
+
+/**
+ * 비회원 주문완료 화면의 본인 확인 수단 — URL이 아니라 쿠키로 넘긴다.
+ * 쿼리스트링에 실으면 Referer 헤더·브라우저 기록·공유 링크로 새어 남의 주문이 열린다.
+ *
+ * HTTP 요청 밖(서버 컴포넌트 caller·배치·검증)에서는 쿠키를 실을 응답 자체가 없다.
+ * 그 경우 발급을 건너뛰는 것이 맞다 — 주문 생성은 이미 성공했으므로 실패로 만들지 않는다.
+ */
+async function issueGuestOrderCookie(guestToken: string): Promise<void> {
+  try {
+    const cookieStore = await cookies();
+    cookieStore.set(GUEST_ORDER_COOKIE_NAME, guestToken, {
+      httpOnly: true,
+      sameSite: "lax",
+      path: "/",
+      maxAge: GUEST_ORDER_COOKIE_MAX_AGE_SECONDS,
+      secure: process.env.NODE_ENV === "production",
+    });
+  } catch {
+    // 요청 스코프 밖 — 쿠키를 받을 브라우저가 없다
+  }
+}
 
 /**
  * 주문 라우터 — 체크아웃·결제 승인·주문 조회의 HTTP 표면.
@@ -88,8 +115,8 @@ export const orderRouter = router({
         agreedTermsDocumentIds: z.array(z.number().int().positive()),
       }),
     )
-    .mutation(({ ctx, input }) => {
-      return withOrderErrorMapping(() =>
+    .mutation(async ({ ctx, input }) => {
+      const created = await withOrderErrorMapping(() =>
         createPendingOrder(ctx.db, {
           // 토큰이 없으면 카트도 없다 — 서비스의 CartNotFoundError에 맡긴다
           cartToken: ctx.cartToken ?? "",
@@ -112,6 +139,9 @@ export const orderRouter = router({
           agreementIp: ctx.clientIp,
         }),
       );
+
+      if (created.guestToken) await issueGuestOrderCookie(created.guestToken);
+      return created;
     }),
 
   /**
@@ -143,18 +173,14 @@ export const orderRouter = router({
    * 회원은 세션으로, 비회원은 주문 생성 때 받은 guestToken으로 소유를 증명한다.
    */
   getOrderResult: publicProcedure
-    .input(
-      z.object({
-        orderNo: orderNoSchema,
-        guestToken: z.string().trim().min(1).max(100).optional(),
-      }),
-    )
+    .input(z.object({ orderNo: orderNoSchema }))
     .query(({ ctx, input }) =>
       withOrderErrorMapping(() =>
         getOrderResult(ctx.db, {
           orderNo: input.orderNo,
           customerId: ctx.customerId,
-          guestToken: input.guestToken ?? null,
+          // 비회원 소유 증명은 주문 생성 때 발급한 쿠키가 한다 — 화면이 토큰을 다루지 않는다
+          guestToken: ctx.guestOrderToken,
         }),
       ),
     ),

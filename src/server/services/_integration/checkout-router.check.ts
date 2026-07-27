@@ -14,7 +14,11 @@ import { eq, inArray } from "drizzle-orm";
 
 import { db } from "@/db";
 import { cart, cartItem, orders, productVariant } from "@/db/schema";
-import { CART_COOKIE_NAME, createTRPCContext } from "@/server/trpc/context";
+import {
+  CART_COOKIE_NAME,
+  createTRPCContext,
+  GUEST_ORDER_COOKIE_NAME,
+} from "@/server/trpc/context";
 import { createCaller } from "@/server/trpc/routers/_app";
 
 let passCount = 0;
@@ -31,8 +35,10 @@ function check(condition: boolean, label: string, detail?: unknown) {
 }
 
 /** 비회원 방문자 컨텍스트 — 카트 쿠키만 있고 세션은 없다 */
-async function guestCaller(cartToken: string) {
-  const headers = new Headers({ cookie: `${CART_COOKIE_NAME}=${cartToken}` });
+async function guestCaller(cartToken: string, guestOrderToken?: string) {
+  const cookieParts = [`${CART_COOKIE_NAME}=${cartToken}`];
+  if (guestOrderToken) cookieParts.push(`${GUEST_ORDER_COOKIE_NAME}=${guestOrderToken}`);
+  const headers = new Headers({ cookie: cookieParts.join("; ") });
   return createCaller(await createTRPCContext({ headers }));
 }
 
@@ -133,11 +139,18 @@ async function main() {
     await db.delete(cart).where(eq(cart.id, secondCartRow.id));
 
     console.log("\n[4] 조회 — 주문완료·비회원조회 경로 기대");
-    const result = await caller.order.getOrderResult({
-      orderNo: created.orderNo,
-      guestToken: created.guestToken ?? undefined,
-    });
+    // 주문완료는 발급받은 게스트 쿠키로 본인을 증명한다(URL에 토큰을 싣지 않는다)
+    const completedCaller = await guestCaller(cartToken, created.guestToken ?? undefined);
+    const result = await completedCaller.order.getOrderResult({ orderNo: created.orderNo });
     check(result.orderer.name === ORDERER.name, "주문완료는 마스킹 없음", result.orderer.name);
+
+    let noCookieDenied = false;
+    try {
+      await caller.order.getOrderResult({ orderNo: created.orderNo });
+    } catch {
+      noCookieDenied = true;
+    }
+    check(noCookieDenied, "쿠키 없는 주문완료 조회 거부");
 
     const lookup = await caller.order.lookupGuestOrder({
       orderNo: created.orderNo,

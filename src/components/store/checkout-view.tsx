@@ -20,6 +20,8 @@
 
 import * as React from "react"
 
+import Link from "next/link"
+
 import { useMutation, useQuery } from "@tanstack/react-query"
 
 import { Button } from "@/components/ui/button"
@@ -144,20 +146,21 @@ export function CheckoutView() {
 
   const fieldRefs = React.useRef<Partial<Record<FieldKey, HTMLInputElement | null>>>({})
   const checkoutView = checkoutQuery.data
-  const prefillApplied = React.useRef(false)
+  const [prefillAppliedFor, setPrefillAppliedFor] = React.useState<"member" | "guest" | null>(null)
 
-  // 회원 프로필로 주문자 정보를 채운다 — 최초 1회만(사용자가 고친 값을 덮어쓰지 않는다)
-  React.useEffect(() => {
-    if (!checkoutView || prefillApplied.current) return
-    prefillApplied.current = true
-    setOrderMode(checkoutView.isMember ? "member" : "guest")
+  // 회원 프로필로 주문자 정보를 채운다 — 데이터가 도착한 최초 1회만.
+  // effect가 아니라 렌더 중 조정이다: effect로 하면 이미 그린 화면을 다시 그려 값이 한 번 깜빡인다.
+  const prefillTarget = checkoutView ? (checkoutView.isMember ? "member" : "guest") : null
+  if (checkoutView && prefillTarget !== null && prefillTarget !== prefillAppliedFor) {
+    setPrefillAppliedFor(prefillTarget)
+    setOrderMode(prefillTarget)
     if (checkoutView.isMember) {
       setOrderer(checkoutView.ordererPrefill)
       const defaultAddress =
         checkoutView.addresses.find((candidate) => candidate.isDefault) ?? checkoutView.addresses[0]
       if (defaultAddress) setSelectedAddressValue(String(defaultAddress.addressId))
     }
-  }, [checkoutView])
+  }
 
   const savedAddresses = checkoutView?.addresses ?? []
   const isGuestMode = orderMode === "guest"
@@ -272,7 +275,14 @@ export function CheckoutView() {
       {
         onSuccess: (created) => {
           setCreatedOrder({ orderNo: created.orderNo, grandTotal: created.grandTotal })
-          showToast("주문이 생성되었습니다. 결제를 진행해 주세요.", { toastVariant: "info" })
+          if (checkoutView?.tossClientKey) {
+            // 결제위젯 연동 시 이 자리에서 위젯을 띄우고, 승인 콜백이 완료 화면으로 보낸다
+            showToast("결제를 진행해 주세요.", { toastVariant: "info" })
+            return
+          }
+          // 위젯 미연동 구간 — 주문서가 만들어진 것까지 확인할 수 있도록 완료 화면으로 보낸다.
+          // 완료 화면은 결제 전 주문을 '주문서가 만들어졌어요'로 구분해 표시한다.
+          window.location.assign(`/order/complete?orderNo=${encodeURIComponent(created.orderNo)}`)
         },
         onError: (createError) => showToast(createError.message, { toastVariant: "error" }),
       },
@@ -386,7 +396,7 @@ export function CheckoutView() {
                 </Button>
               ) : (
                 <Button type="button" variant="outline" size="sm-44" asChild>
-                  <a href="/login?next=/checkout">로그인하고 주문</a>
+                  <Link href="/login?next=/checkout">로그인하고 주문</Link>
                 </Button>
               )}
               <Button

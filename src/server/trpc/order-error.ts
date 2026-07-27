@@ -11,7 +11,8 @@ import {
   PaymentRejectedError,
 } from "@/server/payments/payment-gateway";
 import { StockShortageError } from "@/server/services/inventory.service";
-import { CartNotFoundError } from "@/server/services/order.service";
+import { OrderAccessDeniedError } from "@/server/services/order-query.service";
+import { CartNotFoundError, TermsNotAgreedError } from "@/server/services/order.service";
 import {
   OrderNotFoundError,
   OrderNotPayableError,
@@ -39,6 +40,14 @@ export function toOrderTRPCError(error: unknown): unknown {
     return new TRPCError({
       code: "NOT_FOUND",
       message: "장바구니를 찾을 수 없습니다. 상품을 다시 담아 주세요.",
+      cause: error,
+    });
+  }
+
+  if (error instanceof TermsNotAgreedError) {
+    return new TRPCError({
+      code: "BAD_REQUEST",
+      message: "필수 약관에 모두 동의해야 주문할 수 있습니다.",
       cause: error,
     });
   }
@@ -83,6 +92,15 @@ export function toOrderTRPCError(error: unknown): unknown {
     return new TRPCError({
       code: "NOT_FOUND",
       message: "주문을 찾을 수 없습니다. 주문번호를 다시 확인해 주세요.",
+      cause: error,
+    });
+  }
+
+  // 미존재와 권한 없음을 구분해 알리지 않는다 — 구분되면 주문번호 대입으로 존재 여부를 캐낼 수 있다
+  if (error instanceof OrderAccessDeniedError) {
+    return new TRPCError({
+      code: "NOT_FOUND",
+      message: "입력하신 정보와 일치하는 주문이 없어요. 주문번호와 연락처를 다시 확인해 주세요.",
       cause: error,
     });
   }

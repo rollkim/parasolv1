@@ -10,6 +10,12 @@ import {
 export const CART_COOKIE_NAME = "parasol_cart";
 
 /**
+ * 방금 만든 비회원 주문의 조회 토큰 — 주문완료 화면이 본인 확인에 쓴다.
+ * 쿼리스트링으로 넘기면 Referer 헤더·브라우저 기록·공유 링크로 새어 남의 주문이 열린다.
+ */
+export const GUEST_ORDER_COOKIE_NAME = "parasol_guest_order";
+
+/**
  * Cookie 헤더에서 카트 토큰만 꺼낸다 — 없으면 null(카트 미보유).
  * 깨진 퍼센트 인코딩도 null — 판독 실패로 컨텍스트 생성을 500으로 만들지 않는다.
  */
@@ -17,6 +23,14 @@ function readCartToken(requestHeaders: Headers): string | null {
   const cookieHeader = requestHeaders.get("cookie");
   return cookieHeader
     ? readCookieValueFromHeader(cookieHeader, CART_COOKIE_NAME)
+    : null;
+}
+
+/** 방금 만든 비회원 주문 토큰 — 없으면 null(회원이거나 주문 직후가 아님) */
+function readGuestOrderToken(requestHeaders: Headers): string | null {
+  const cookieHeader = requestHeaders.get("cookie");
+  return cookieHeader
+    ? readCookieValueFromHeader(cookieHeader, GUEST_ORDER_COOKIE_NAME)
     : null;
 }
 
@@ -43,6 +57,7 @@ export async function createTRPCContext(opts: { headers: Headers }) {
     customerId: await readSessionCustomerId(opts.headers.get("cookie")),
     adminUserId: null as number | null,
     cartToken: readCartToken(opts.headers),
+    guestOrderToken: readGuestOrderToken(opts.headers),
     clientIp: readClientIp(opts.headers),
   };
 }
