@@ -9,7 +9,8 @@
     "lint": "eslint",
     "db:generate": "drizzle-kit generate",
     "db:seed": "tsx src/db/seed/index.ts",
-    "db:seed:dev": "tsx src/db/seed/seed-dev.ts"
+    "db:seed:dev": "tsx src/db/seed/seed-dev.ts",
+    "test": "vitest run"
   },
   "dependencies": {
     "@tanstack/react-query": "^5.101.4",
@@ -48,6 +49,7 @@
     "eslint-config-next": "16.2.11",
     "tailwindcss": "^4",
     "tsx": "^4.20.6",
-    "typescript": "^5"
+    "typescript": "^5",
+    "vitest": "^3.2.4"
   }
 }
