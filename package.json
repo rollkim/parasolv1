@@ -10,7 +10,8 @@
     "db:generate": "drizzle-kit generate",
     "db:seed": "tsx src/db/seed/index.ts",
     "db:seed:dev": "tsx src/db/seed/seed-dev.ts",
-    "test": "vitest run"
+    "test": "vitest run",
+    "check:order2": "tsx src/server/services/_integration/order-phase2.check.ts"
   },
   "dependencies": {
     "@tanstack/react-query": "^5.101.4",
