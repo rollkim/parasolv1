@@ -171,13 +171,26 @@ export type OrderItemSnapshot = {
   productName: string;
   makerName: string | null;
   variantName: string | null;
+  /** 주문 시점 정가 — 없으면 할인 없음. 상품 정가가 바뀌어도 주문은 불변(RULE-11) */
+  listPrice: number | null;
   unitPrice: number;
   quantity: number;
   lineTotal: number;
+  /** 주문 시점 대표 이미지 — 상품이 삭제돼도 주문 화면이 유지된다 */
+  thumbnailPath: string | null;
+  thumbnailAlt: string | null;
   addons: OrderDraftAddon[];
 };
 
 export type OrderDraft = {
+  /** 정가 합계(추가상품 제외) — 화면의 '총 상품금액' */
+  listTotal: number;
+  /** 상품 할인(정가 - 판매가) */
+  productDiscount: number;
+  /** 판매가 상품 합계(추가상품 제외) */
+  goodsTotal: number;
+  /** 추가상품 합계 */
+  addonTotal: number;
   subtotal: number;
   shippingFee: number;
   couponDiscount: 0; // [2차] — 1차는 항상 0
@@ -193,8 +206,13 @@ export type OrderDraftLine = {
   productName: string;
   makerName: string | null;
   variantName: string | null;
+  /** 정가(할인 전) — 주문에 복사된다 */
+  listPrice: number | null;
   unitPrice: number;
   quantity: number;
+  /** 대표 이미지 — 주문에 복사된다 */
+  thumbnailPath: string | null;
+  thumbnailAlt: string | null;
   addons: { addonId: number; addonName: string; addonPrice: number; addonQuantity: number }[];
   /** 품절·판매중지 등으로 주문 불가한 라인 */
   orderable: boolean;
@@ -238,6 +256,7 @@ export function buildOrderDraft(
 
   const summaryLines: CartLineForSummary[] = lines.map((line) => ({
     unitPrice: line.unitPrice,
+    listPrice: line.listPrice,
     quantity: line.quantity,
     addons: line.addons.map((addon) => ({
       addonPrice: addon.addonPrice,
@@ -253,8 +272,11 @@ export function buildOrderDraft(
     productName: line.productName,
     makerName: line.makerName,
     variantName: line.variantName,
+    listPrice: line.listPrice,
     unitPrice: line.unitPrice,
     quantity: line.quantity,
+    thumbnailPath: line.thumbnailPath,
+    thumbnailAlt: line.thumbnailAlt,
     lineTotal:
       line.unitPrice * line.quantity +
       line.addons.reduce((sum, addon) => sum + addonLineTotal(addon), 0),
@@ -268,6 +290,10 @@ export function buildOrderDraft(
   }));
 
   return {
+    listTotal: summary.listTotal,
+    productDiscount: summary.productDiscount,
+    goodsTotal: summary.goodsTotal,
+    addonTotal: summary.addonTotal,
     subtotal: summary.subtotal,
     shippingFee: summary.shippingFee,
     couponDiscount: 0,

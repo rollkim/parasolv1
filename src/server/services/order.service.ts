@@ -62,8 +62,11 @@ function toDraftLine(line: CartLine): OrderDraftLine {
     productName: line.productName,
     makerName: line.makerName,
     variantName: line.optionLabel,
+    listPrice: line.listPrice,
     unitPrice: line.unitPrice,
     quantity: line.quantity,
+    thumbnailPath: line.thumbnailPath,
+    thumbnailAlt: line.thumbnailAlt,
     addons: line.addons.map((addon) => ({
       addonId: addon.addonId,
       addonName: addon.addonName,
@@ -261,9 +264,12 @@ export async function createPendingOrder(
           productName: item.productName,
           makerName: item.makerName,
           variantName: item.variantName,
+          listPrice: item.listPrice,
           unitPrice: item.unitPrice,
           quantity: item.quantity,
           lineTotal: item.lineTotal,
+          thumbnailPath: item.thumbnailPath,
+          thumbnailAlt: item.thumbnailAlt,
         })
         .returning({ id: orderItem.id });
 

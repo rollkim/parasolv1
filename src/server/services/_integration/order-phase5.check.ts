@@ -3,7 +3,7 @@
  * 실행: npm run check:order5   (SSH 터널 켠 상태)
  *
  * 시나리오: [1]주문완료 조회(무마스킹·소유검증) [2]비회원조회(2요소·마스킹) [3]조회 실패 구분 없음
- *           [4]선택 라인만 주문 [5]전화번호 정규화 왕복
+ *           [4]선택 라인만 주문 [5]전화번호 정규화 [6]정가·썸네일 스냅샷 불변성
  * `tsx --conditions=react-server`로 도는 이유는 order-phase2.check.ts 주석 참조.
  */
 
@@ -11,10 +11,17 @@ import "dotenv/config";
 
 import { randomUUID } from "node:crypto";
 
-import { and, eq, inArray, lte } from "drizzle-orm";
+import { and, asc, desc, eq, inArray, isNotNull, lte } from "drizzle-orm";
 
 import { db } from "@/db";
-import { cart, cartItem, orders, productVariant, termsDocument } from "@/db/schema";
+import {
+  cart,
+  cartItem,
+  orders,
+  productImage,
+  productVariant,
+  termsDocument,
+} from "@/db/schema";
 import { maskOrdererName, maskPhone } from "@/domain/order";
 import { normalizePhone } from "@/domain/phone";
 
@@ -243,6 +250,134 @@ async function checkSelectedLinesOnly(
   check(insertedItems.length === 2, "카트 라인 2건 생성 확인");
 }
 
+/**
+ * ⑥ 정가·썸네일 스냅샷 — 주문 이후 상품이 바뀌어도 주문 화면이 흔들리지 않아야 한다.
+ * 이 시나리오가 스냅샷 컬럼을 추가한 이유 그 자체다.
+ */
+async function checkPriceSnapshotSurvivesProductChange(leftovers: Leftovers) {
+  console.log("\n[6] 정가·썸네일 스냅샷 — 상품 변경 후에도 불변 기대");
+
+  // 정가가 설정된 variant를 고른다 (시드: compare_at_price 있는 상품들)
+  const [variant] = await db
+    .select({
+      id: productVariant.id,
+      productId: productVariant.productId,
+      price: productVariant.price,
+      listPrice: productVariant.compareAtPrice,
+      stock: productVariant.stock,
+    })
+    .from(productVariant)
+    .where(and(eq(productVariant.isActive, true), isNotNull(productVariant.compareAtPrice)))
+    .orderBy(productVariant.id)
+    .limit(1);
+  if (!variant || variant.listPrice === null) {
+    console.log("  – 정가(compare_at_price) 설정된 variant가 없어 건너뜀");
+    return;
+  }
+
+  /**
+   * 상품 이미지는 5주차 업로드 기능 소관이라 개발 시드에 없다.
+   * 원본이 없으면 "복사됐는지"를 물을 수 없으므로(빈 검증), 임시 이미지를 만들어
+   * 카트→주문 복사 경로 자체를 증명하고 끝나면 지운다.
+   */
+  const [existingImage] = await db
+    .select({ id: productImage.id, path: productImage.path, alt: productImage.alt })
+    .from(productImage)
+    .where(and(eq(productImage.productId, variant.productId), eq(productImage.kind, "thumbnail")))
+    .orderBy(desc(productImage.isPrimary), asc(productImage.position))
+    .limit(1);
+
+  let temporaryImageId: number | null = null;
+  let expectedThumbnail = existingImage
+    ? { path: existingImage.path, alt: existingImage.alt }
+    : { path: "/uploads/check5-temp.webp", alt: "검증용 임시 썸네일" };
+
+  if (!existingImage) {
+    const [inserted] = await db
+      .insert(productImage)
+      .values({
+        productId: variant.productId,
+        kind: "thumbnail",
+        path: expectedThumbnail.path,
+        alt: expectedThumbnail.alt,
+        isPrimary: true,
+        position: 0,
+      })
+      .returning({ id: productImage.id });
+    temporaryImageId = inserted.id;
+    console.log("  – 시드에 상품 이미지가 없어 임시 썸네일 생성(종료 시 삭제)");
+  }
+
+  try {
+    await runSnapshotAssertions(variant, expectedThumbnail, leftovers);
+  } finally {
+    if (temporaryImageId !== null) {
+      await db.delete(productImage).where(eq(productImage.id, temporaryImageId));
+    }
+  }
+}
+
+async function runSnapshotAssertions(
+  variant: { id: number; price: number; listPrice: number | null },
+  expectedThumbnail: { path: string; alt: string },
+  leftovers: Leftovers,
+) {
+  if (variant.listPrice === null) return;
+  const { created } = await setupOrder([{ variantId: variant.id, quantity: 2 }], leftovers);
+
+  const before = await getOrderResult(db, {
+    orderNo: created.orderNo,
+    customerId: null,
+    guestToken: created.guestToken,
+  });
+  check(
+    before.items[0].listPrice === variant.listPrice,
+    `정가 스냅샷 복사 (${variant.listPrice})`,
+    before.items[0].listPrice,
+  );
+  check(
+    before.amounts.listTotal === variant.listPrice * 2 &&
+      before.amounts.productDiscount === (variant.listPrice - variant.price) * 2,
+    `총 상품금액 ${before.amounts.listTotal} · 상품 할인 ${before.amounts.productDiscount}`,
+    before.amounts,
+  );
+  check(
+    before.items[0].thumbnailPath === expectedThumbnail.path &&
+      before.items[0].thumbnailAlt === expectedThumbnail.alt,
+    `썸네일 스냅샷 복사 (${expectedThumbnail.path})`,
+    { path: before.items[0].thumbnailPath, alt: before.items[0].thumbnailAlt },
+  );
+
+  // ★핵심: 주문 후 상품 정가를 올린다 — 과거 주문의 할인액이 따라 변하면 안 된다
+  const bumpedListPrice = variant.listPrice + 5000;
+  await db
+    .update(productVariant)
+    .set({ compareAtPrice: bumpedListPrice })
+    .where(eq(productVariant.id, variant.id));
+  try {
+    const after = await getOrderResult(db, {
+      orderNo: created.orderNo,
+      customerId: null,
+      guestToken: created.guestToken,
+    });
+    check(
+      after.items[0].listPrice === variant.listPrice,
+      `상품 정가 인상(${variant.listPrice}→${bumpedListPrice}) 후에도 주문 정가 불변`,
+      after.items[0].listPrice,
+    );
+    check(
+      after.amounts.productDiscount === before.amounts.productDiscount,
+      "상품 할인액 불변",
+      { before: before.amounts.productDiscount, after: after.amounts.productDiscount },
+    );
+  } finally {
+    await db
+      .update(productVariant)
+      .set({ compareAtPrice: variant.listPrice })
+      .where(eq(productVariant.id, variant.id));
+  }
+}
+
 /** ⑤ 전화번호 정규화 — 저장 형태가 조회 형태와 같은지 */
 async function checkPhoneNormalization(created: { orderNo: string }) {
   console.log("\n[5] 전화번호 정규화 — 저장값 확인");
@@ -271,6 +406,7 @@ async function main() {
     await checkLookupFailureIsUniform(created);
     await checkSelectedLinesOnly(variants, leftovers);
     await checkPhoneNormalization(created);
+    await checkPriceSnapshotSurvivesProductChange(leftovers);
   } finally {
     const cleanupSteps: [string, () => Promise<unknown>][] = [
       ["주문(cascade)", () => db.delete(orders).where(inArray(orders.id, leftovers.orderIds))],

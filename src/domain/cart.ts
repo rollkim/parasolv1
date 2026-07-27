@@ -22,11 +22,21 @@ export type CartAddonForSummary = {
 
 export type CartLineForSummary = {
   unitPrice: number;
+  /** 정가(할인 전) — 없거나 판매가 이하면 할인 없음으로 본다 */
+  listPrice: number | null;
   quantity: number;
   addons: CartAddonForSummary[];
   /** 품절·판매중지 라인은 주문할 수 없으므로 결제 예상 금액에서 제외한다 */
   orderable: boolean;
 };
+
+/**
+ * 할인 계산의 기준가 — 정가가 없거나 판매가보다 낮으면(데이터 이상) 판매가를 쓴다.
+ * 음수 할인이 화면에 뜨는 것을 원천 차단한다.
+ */
+export function effectiveListPrice(unitPrice: number, listPrice: number | null): number {
+  return listPrice !== null && listPrice > unitPrice ? listPrice : unitPrice;
+}
 
 /** 라인 금액 = 단가 × 수량 + 추가상품 합 */
 export function calcCartLineTotal(
@@ -40,6 +50,10 @@ export function calcCartLineTotal(
 }
 
 export type CartSummary = {
+  /** 정가 합계(추가상품 제외) — 화면의 '총 상품금액' 행 */
+  listTotal: number;
+  /** 상품 할인(정가 합계 - 판매가 합계) — 화면의 '상품 할인' 행. 할인 없으면 0 */
+  productDiscount: number;
   /** 상품 판매가 합계(추가상품 제외) — 무료배송 판정 기준 */
   goodsTotal: number;
   /** 추가상품 합계 — 화면이 별도 행으로 표시한다 */
@@ -66,6 +80,10 @@ export function calcCartSummary(
     (sum, line) => sum + line.unitPrice * line.quantity,
     0,
   );
+  const listTotal = orderableLines.reduce(
+    (sum, line) => sum + effectiveListPrice(line.unitPrice, line.listPrice) * line.quantity,
+    0,
+  );
   const addonTotal = orderableLines.reduce(
     (sum, line) =>
       sum +
@@ -78,6 +96,8 @@ export function calcCartSummary(
   const shippingFee = subtotal === 0 ? 0 : calcShippingFee(goodsTotal, policy);
 
   return {
+    listTotal,
+    productDiscount: listTotal - goodsTotal,
     goodsTotal,
     addonTotal,
     subtotal,

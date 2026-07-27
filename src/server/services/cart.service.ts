@@ -85,6 +85,8 @@ export type CartLine = {
   makerName: string | null;
   /** 옵션 조합 라벨(예: "24개입 / 선물 포장") — 옵션 없는 상품은 null */
   optionLabel: string | null;
+  /** 정가(할인 전) — 취소선 표시·'상품 할인' 계산용. 할인 없으면 null */
+  listPrice: number | null;
   unitPrice: number;
   quantity: number;
   /** 현재 남은 재고 — quantity > stock이면 UI가 수량 조정을 안내한다 */
@@ -150,6 +152,8 @@ export async function getCartWithItems(
     .select({
       variantId: productVariant.id,
       unitPrice: productVariant.price,
+      // 정가 — 취소선 가격·'상품 할인' 행. 주문 시 order_item.list_price로 복사된다
+      listPrice: productVariant.compareAtPrice,
       stock: productVariant.stock,
       variantActive: productVariant.isActive,
       variantDeletedAt: productVariant.deletedAt,
@@ -268,6 +272,7 @@ export async function getCartWithItems(
       thumbnailAlt: thumbnail?.alt ?? null,
       makerName: variantRow.makerName,
       optionLabel: optionLabels?.length ? optionLabels.join(" / ") : null,
+      listPrice: variantRow.listPrice,
       unitPrice: variantRow.unitPrice,
       quantity: itemRow.quantity,
       stock: variantRow.stock,
@@ -285,6 +290,7 @@ export async function getCartWithItems(
   const summary = calcCartSummary(
     lines.map((line) => ({
       unitPrice: line.unitPrice,
+      listPrice: line.listPrice,
       quantity: line.quantity,
       addons: line.addons,
       // 품절·판매중지 addon이 붙은 라인은 그 구성대로 주문할 수 없다 —

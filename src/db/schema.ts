@@ -376,9 +376,15 @@ export const orderItem = pgTable("order_item", {
   productName: text("product_name").notNull(),   // 스냅샷
   makerName: text("maker_name"),                 // 스냅샷 — 주문 상세에 만든 곳 표시
   variantName: text("variant_name"),             // 옵션 조합 스냅샷
+  // 주문 시점 정가(compare_at_price) 스냅샷 — NULL이면 할인 없음.
+  // 상품 정가가 나중에 바뀌어도 '상품 할인' 행이 흔들리지 않게 복사해 둔다.
+  listPrice: integer("list_price"),
   unitPrice: integer("unit_price").notNull(),
   quantity: integer("quantity").notNull(),
   lineTotal: integer("line_total").notNull(),
+  // 대표 이미지 스냅샷 — 상품이 하드 삭제돼도 주문 화면의 썸네일이 남는다
+  thumbnailPath: text("thumbnail_path"),
+  thumbnailAlt: text("thumbnail_alt"),
   ...createdOnly,
 }, (t) => [
   index("order_item_order_idx").on(t.orderId),

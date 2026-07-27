@@ -2,15 +2,8 @@ import "server-only";
 
 import { and, asc, desc, eq } from "drizzle-orm";
 
-import {
-  orderItem,
-  orderItemAddon,
-  orders,
-  payment,
-  product,
-  productImage,
-  shipment,
-} from "@/db/schema";
+import { orderItem, orderItemAddon, orders, payment, shipment } from "@/db/schema";
+import { effectiveListPrice } from "@/domain/cart";
 import {
   maskAddressDetail,
   maskOrdererName,
@@ -46,15 +39,13 @@ export type OrderViewItem = {
   /** 만든 곳 — 주문 시점 스냅샷 */
   makerName: string | null;
   optionLabel: string | null;
+  /** 주문 시점 정가 — 취소선 표시용. 할인 없었으면 null */
+  listPrice: number | null;
   unitPrice: number;
   quantity: number;
   lineTotal: number;
   addons: OrderViewAddon[];
-  /**
-   * 썸네일은 order_item에 스냅샷이 없어 상품에서 조인해 온다 —
-   * 상품이 하드 삭제되면 null이 되므로 화면은 대체 이미지를 그려야 한다.
-   * (스냅샷 컬럼 추가 제안은 미결 체크리스트 참조)
-   */
+  /** 주문 시점 대표 이미지 스냅샷 — 상품이 삭제돼도 유지된다 */
   thumbnailPath: string | null;
   thumbnailAlt: string | null;
 };
@@ -85,13 +76,19 @@ export type OrderView = {
     deliveryMemo: string | null;
   };
   amounts: {
+    /** 정가 합계(추가상품 제외) — 화면의 '총 상품금액' 행 */
+    listTotal: number;
+    /** 상품 할인(정가 - 판매가) — 주문 시점 스냅샷 기준이라 나중에 값이 흔들리지 않는다 */
+    productDiscount: number;
+    /** 판매가 상품 합계(추가상품 제외) */
+    goodsTotal: number;
+    /** 추가상품 합계 — 화면 결제정보 행. order_item_addon 합산 */
+    addonTotal: number;
     subtotal: number;
     shippingFee: number;
     couponDiscount: number;
     pointUsed: number;
     grandTotal: number;
-    /** 추가상품 합계 — 화면 결제정보 행. order_item_addon 합산 */
-    addonTotal: number;
   };
   paymentSummary: {
     status: string;
@@ -122,9 +119,12 @@ async function buildOrderView(
       productName: orderItem.productName,
       makerName: orderItem.makerName,
       variantName: orderItem.variantName,
+      listPrice: orderItem.listPrice,
       unitPrice: orderItem.unitPrice,
       quantity: orderItem.quantity,
       lineTotal: orderItem.lineTotal,
+      thumbnailPath: orderItem.thumbnailPath,
+      thumbnailAlt: orderItem.thumbnailAlt,
     })
     .from(orderItem)
     .where(eq(orderItem.orderId, orderRow.id))
@@ -143,44 +143,27 @@ async function buildOrderView(
     .where(eq(orderItem.orderId, orderRow.id))
     .orderBy(asc(orderItemAddon.id));
 
-  // 대표 이미지 — 상품이 살아 있을 때만. 삭제되면 product_id가 null이라 조인 대상이 없다
-  const productIds = itemRows
-    .map((row) => row.productId)
-    .filter((id): id is number => id !== null);
-  const imageByProductId = new Map<number, { path: string; alt: string }>();
-  for (const productId of new Set(productIds)) {
-    const [imageRow] = await client
-      .select({ path: productImage.path, alt: productImage.alt })
-      .from(productImage)
-      .innerJoin(product, eq(productImage.productId, product.id))
-      .where(eq(productImage.productId, productId))
-      .orderBy(asc(productImage.position))
-      .limit(1);
-    if (imageRow) imageByProductId.set(productId, imageRow);
-  }
-
-  const items: OrderViewItem[] = itemRows.map((row) => {
-    const image = row.productId === null ? undefined : imageByProductId.get(row.productId);
-    return {
-      orderItemId: row.orderItemId,
-      productName: row.productName,
-      makerName: row.makerName,
-      optionLabel: row.variantName,
-      unitPrice: row.unitPrice,
-      quantity: row.quantity,
-      lineTotal: row.lineTotal,
-      addons: addonRows
-        .filter((addon) => addon.orderItemId === row.orderItemId)
-        .map((addon) => ({
-          addonName: addon.addonName,
-          unitPrice: addon.unitPrice,
-          quantity: addon.quantity,
-          lineTotal: addon.lineTotal,
-        })),
-      thumbnailPath: image?.path ?? null,
-      thumbnailAlt: image?.alt ?? null,
-    };
-  });
+  // 이미지·정가 모두 주문 스냅샷에서 온다 — 상품이 삭제돼도 주문 화면은 그대로다
+  const items: OrderViewItem[] = itemRows.map((row) => ({
+    orderItemId: row.orderItemId,
+    productName: row.productName,
+    makerName: row.makerName,
+    optionLabel: row.variantName,
+    listPrice: row.listPrice,
+    unitPrice: row.unitPrice,
+    quantity: row.quantity,
+    lineTotal: row.lineTotal,
+    addons: addonRows
+      .filter((addon) => addon.orderItemId === row.orderItemId)
+      .map((addon) => ({
+        addonName: addon.addonName,
+        unitPrice: addon.unitPrice,
+        quantity: addon.quantity,
+        lineTotal: addon.lineTotal,
+      })),
+    thumbnailPath: row.thumbnailPath,
+    thumbnailAlt: row.thumbnailAlt,
+  }));
 
   const [paymentRow] = await client
     .select({
@@ -210,6 +193,12 @@ async function buildOrderView(
     (sum, item) => sum + item.addons.reduce((addonSum, addon) => addonSum + addon.lineTotal, 0),
     0,
   );
+  const goodsTotal = items.reduce((sum, item) => sum + item.unitPrice * item.quantity, 0);
+  // 정가는 주문 스냅샷 값이라 상품이 바뀌거나 삭제돼도 그대로다
+  const listTotal = items.reduce(
+    (sum, item) => sum + effectiveListPrice(item.unitPrice, item.listPrice) * item.quantity,
+    0,
+  );
 
   return {
     orderNo: orderRow.orderNo,
@@ -233,12 +222,15 @@ async function buildOrderView(
       deliveryMemo: isGuestLookup ? null : orderRow.deliveryMemo,
     },
     amounts: {
+      listTotal,
+      productDiscount: listTotal - goodsTotal,
+      goodsTotal,
+      addonTotal,
       subtotal: orderRow.subtotal,
       shippingFee: orderRow.shippingFee,
       couponDiscount: orderRow.couponDiscount,
       pointUsed: orderRow.pointUsed,
       grandTotal: orderRow.grandTotal,
-      addonTotal,
     },
     paymentSummary: paymentRow
       ? {

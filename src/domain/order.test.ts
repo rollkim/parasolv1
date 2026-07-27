@@ -37,8 +37,11 @@ function line(over: Partial<OrderDraftLine> = {}): OrderDraftLine {
     productName: "통밀 오트 쿠키 세트",
     makerName: "볕든 공방",
     variantName: "24개입 / 기본 포장",
+    listPrice: null,
     unitPrice: 20700,
     quantity: 1,
+    thumbnailPath: null,
+    thumbnailAlt: null,
     addons: [],
     orderable: true,
     ...over,
@@ -153,14 +156,61 @@ describe("주문 초안 금액·스냅샷", () => {
     expect(() => buildOrderDraft([], POLICY)).toThrow(BlockedOrderLineError);
   });
 
-  it("스냅샷은 상품명·공방·옵션을 복사한다", () => {
-    const draft = buildOrderDraft([line()], POLICY);
+  it("스냅샷은 상품명·공방·옵션·정가·썸네일을 복사한다", () => {
+    const draft = buildOrderDraft(
+      [line({ listPrice: 22800, thumbnailPath: "/img/a.webp", thumbnailAlt: "쿠키 세트" })],
+      POLICY,
+    );
     expect(draft.items[0]).toMatchObject({
       productName: "통밀 오트 쿠키 세트",
       makerName: "볕든 공방",
       variantName: "24개입 / 기본 포장",
+      listPrice: 22800,
       unitPrice: 20700,
+      thumbnailPath: "/img/a.webp",
+      thumbnailAlt: "쿠키 세트",
     });
+  });
+
+  it("정가가 있으면 총 상품금액·상품 할인을 계산한다", () => {
+    const draft = buildOrderDraft(
+      [line({ listPrice: 22800, unitPrice: 20700, quantity: 2 })],
+      POLICY,
+    );
+    expect(draft.listTotal).toBe(45600);
+    expect(draft.goodsTotal).toBe(41400);
+    expect(draft.productDiscount).toBe(4200);
+  });
+
+  it("정가가 없으면 할인 0 — 총 상품금액은 판매가 합계", () => {
+    const draft = buildOrderDraft([line({ listPrice: null, unitPrice: 20700 })], POLICY);
+    expect(draft.listTotal).toBe(20700);
+    expect(draft.productDiscount).toBe(0);
+  });
+
+  it("정가가 판매가 이하면(데이터 이상) 음수 할인을 만들지 않는다", () => {
+    const draft = buildOrderDraft([line({ listPrice: 15000, unitPrice: 20700 })], POLICY);
+    expect(draft.listTotal).toBe(20700);
+    expect(draft.productDiscount).toBe(0);
+  });
+
+  it("추가상품은 상품 할인·무료배송 판정에서 제외된다", () => {
+    const draft = buildOrderDraft(
+      [
+        line({
+          listPrice: 32000,
+          unitPrice: 29000,
+          quantity: 1,
+          addons: [{ addonId: 1, addonName: "선물 포장", addonPrice: 1000, addonQuantity: 1 }],
+        }),
+      ],
+      POLICY,
+    );
+    expect(draft.addonTotal).toBe(1000);
+    expect(draft.productDiscount).toBe(3000);
+    // 판매가 상품합계 29,000 < 30,000 → 추가상품을 더해 3만이 넘어도 배송비 부과
+    expect(draft.shippingFee).toBe(3000);
+    expect(draft.grandTotal).toBe(33000);
   });
 });
 
