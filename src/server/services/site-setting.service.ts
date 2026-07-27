@@ -16,6 +16,15 @@ import { siteSetting } from "@/db/schema";
  */
 
 /**
+ * 익명(public) tRPC로 노출해도 안전한 설정 키 화이트리스트.
+ * siteSetting.get은 publicProcedure라, 이 목록에 없는 키(point_policy·claim_policy·
+ * ga4·naver_wcs 등 내부 정책·측정값)를 임의로 읽히면 정보 노출이다.
+ * 서버 컴포넌트·서비스는 getSiteSetting/getBusinessInfo로 직접 읽으므로 이 제한과 무관하다.
+ */
+export const PUBLIC_SITE_SETTING_KEYS = ["business_info", "shipping_policy"] as const;
+export type PublicSiteSettingKey = (typeof PUBLIC_SITE_SETTING_KEYS)[number];
+
+/**
  * 전 스토어프론트 푸터에 들어가는 업체 정보.
  * 경계: "업체가 바뀌면 달라지는 푸터 내용" 전부 — 법정 표기(전자상거래 표시 의무) +
  * 고객센터 연락처 + 브랜드 문구. 반면 링크 구성(공지·약관 등)은 라우트라 코드가 소유한다.
