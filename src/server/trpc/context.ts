@@ -21,6 +21,16 @@ function readCartToken(requestHeaders: Headers): string | null {
 }
 
 /**
+ * 프록시 뒤 실제 클라이언트 IP — 레이트리밋 키·동의 증빙에 쓴다.
+ * 프로시저가 next/headers의 headers()를 직접 부르면 요청 스코프 밖(서버 컴포넌트 caller·
+ * 배치·검증 스크립트)에서 throw한다. 요청 정보는 컨텍스트가 소유한다.
+ */
+function readClientIp(requestHeaders: Headers): string | null {
+  const forwardedFor = requestHeaders.get("x-forwarded-for");
+  return forwardedFor ? forwardedFor.split(",")[0].trim() : null;
+}
+
+/**
  * 요청마다 생성되는 tRPC 컨텍스트 — 모든 프로시저가 공유한다.
  * db는 전역 풀을 재사용하고, customerId는 세션 쿠키(JWT)에서 해석한다 —
  * 비로그인·만료·위조는 전부 null이라 protectedProcedure가 막는다.
@@ -33,6 +43,7 @@ export async function createTRPCContext(opts: { headers: Headers }) {
     customerId: await readSessionCustomerId(opts.headers.get("cookie")),
     adminUserId: null as number | null,
     cartToken: readCartToken(opts.headers),
+    clientIp: readClientIp(opts.headers),
   };
 }
 

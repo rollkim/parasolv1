@@ -1,8 +1,8 @@
-import { headers } from "next/headers";
 import { z } from "zod";
 
 import { getPaymentGateway } from "@/server/payments";
 import { assertGuestLookupAllowed } from "@/server/security/rate-limit";
+import { getCheckoutView } from "@/server/services/checkout-view.service";
 import {
   getOrderResult,
   lookupGuestOrder,
@@ -20,12 +20,6 @@ import { withOrderErrorMapping } from "../order-error";
  * 세션 customerId 또는 게스트 토큰·연락처로 서비스가 판정한다.
  * 여기서는 zod 검증과 요청 컨텍스트(IP·쿠키) 수집만 하고 로직은 서비스에 위임한다(RULE-14).
  */
-
-/** 프록시 뒤 실제 클라이언트 IP — 동의 증빙·레이트리밋 키에 쓴다 */
-async function readClientIp(): Promise<string | null> {
-  const forwardedFor = (await headers()).get("x-forwarded-for");
-  return forwardedFor ? forwardedFor.split(",")[0].trim() : null;
-}
 
 /** 하이픈이 섞여 들어와도 통과시키고, 정규화·형식 검증은 도메인 규칙으로 한다 */
 const phoneInputSchema = z
@@ -72,6 +66,14 @@ const orderNoSchema = z
 
 export const orderRouter = router({
   /**
+   * 체크아웃 진입 데이터 — 카트 요약·주문자 프리필·배송지·약관·위젯 키를 한 번에.
+   * 비회원도 호출하므로 publicProcedure이고, 회원 전용 값은 서비스가 세션 기준으로 채운다.
+   */
+  getCheckoutView: publicProcedure.query(({ ctx }) =>
+    getCheckoutView(ctx.db, { cartToken: ctx.cartToken, customerId: ctx.customerId }),
+  ),
+
+  /**
    * 체크아웃 — 결제 전 주문(pending)을 만든다.
    * 반환한 orderNo·grandTotal이 토스 결제위젯의 orderId·amount가 된다.
    * 이 시점에는 재고를 잡지 않는다(결제 승인 시 차감).
@@ -86,8 +88,7 @@ export const orderRouter = router({
         agreedTermsDocumentIds: z.array(z.number().int().positive()),
       }),
     )
-    .mutation(async ({ ctx, input }) => {
-      const clientIp = await readClientIp();
+    .mutation(({ ctx, input }) => {
       return withOrderErrorMapping(() =>
         createPendingOrder(ctx.db, {
           // 토큰이 없으면 카트도 없다 — 서비스의 CartNotFoundError에 맡긴다
@@ -108,7 +109,7 @@ export const orderRouter = router({
           },
           cartItemIds: input.cartItemIds,
           agreedTermsDocumentIds: input.agreedTermsDocumentIds,
-          agreementIp: clientIp,
+          agreementIp: ctx.clientIp,
         }),
       );
     }),
@@ -169,8 +170,8 @@ export const orderRouter = router({
         ordererPhone: phoneInputSchema,
       }),
     )
-    .mutation(async ({ ctx, input }) => {
-      assertGuestLookupAllowed(await readClientIp());
+    .mutation(({ ctx, input }) => {
+      assertGuestLookupAllowed(ctx.clientIp);
       return withOrderErrorMapping(() =>
         lookupGuestOrder(ctx.db, {
           orderNo: input.orderNo,
