@@ -2,7 +2,7 @@ import "server-only";
 
 import { randomUUID } from "node:crypto";
 
-import { and, eq, inArray, lte } from "drizzle-orm";
+import { eq, inArray } from "drizzle-orm";
 
 import {
   cart,
@@ -22,6 +22,7 @@ import { normalizePhone } from "@/domain/phone";
 
 import { getCartWithItems, type CartLine } from "./cart.service";
 import type { DatabaseClient, QueryClient, TransactionClient } from "./db-client";
+import { getRequiredTermsDocumentIds } from "./terms.service";
 import { serializeActor } from "./order-status.service";
 import { allocateOrderNo } from "./order-number.service";
 import { getSiteSetting } from "./site-setting.service";
@@ -153,16 +154,12 @@ async function recordTermsAgreements(
     ip: string | null;
   },
 ): Promise<void> {
-  // 같은 code의 최신 버전만 유효하지만, 1차는 단일 버전 운영이라 effective_at 지난 것을 본다
-  const requiredDocs = await tx
-    .select({ id: termsDocument.id })
-    .from(termsDocument)
-    .where(
-      and(eq(termsDocument.isRequired, true), lte(termsDocument.effectiveAt, new Date())),
-    );
+  // 필수 판정은 terms.service가 소유한다 — "코드별 최신 1건"이라는 규칙이 갈리면
+  // 약관 개정 시 구버전 동의를 요구해 주문이 통째로 막힌다(RULE-14 단일 진실원)
+  const requiredDocumentIds = await getRequiredTermsDocumentIds(tx);
 
   const agreed = new Set(args.agreedDocumentIds);
-  const missing = requiredDocs.filter((doc) => !agreed.has(doc.id)).map((doc) => doc.id);
+  const missing = requiredDocumentIds.filter((documentId) => !agreed.has(documentId));
   if (missing.length > 0) throw new TermsNotAgreedError(missing);
 
   if (args.agreedDocumentIds.length === 0) return;

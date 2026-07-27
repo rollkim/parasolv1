@@ -11,7 +11,7 @@ import "dotenv/config";
 
 import { randomUUID } from "node:crypto";
 
-import { and, asc, desc, eq, inArray, isNotNull, lte } from "drizzle-orm";
+import { and, asc, desc, eq, inArray, isNotNull } from "drizzle-orm";
 
 import { db } from "@/db";
 import {
@@ -20,7 +20,6 @@ import {
   orders,
   productImage,
   productVariant,
-  termsDocument,
 } from "@/db/schema";
 import { maskOrdererName, maskPhone } from "@/domain/order";
 import { normalizePhone } from "@/domain/phone";
@@ -31,6 +30,7 @@ import {
   OrderAccessDeniedError,
 } from "../order-query.service";
 import { createPendingOrder } from "../order.service";
+import { getRequiredTermsDocumentIds } from "../terms.service";
 
 let passCount = 0;
 let failCount = 0;
@@ -58,13 +58,8 @@ const ADDRESS = {
 
 type Leftovers = { orderIds: number[]; cartIds: number[] };
 
-async function loadRequiredTermsIds(): Promise<number[]> {
-  const rows = await db
-    .select({ id: termsDocument.id })
-    .from(termsDocument)
-    .where(and(eq(termsDocument.isRequired, true), lte(termsDocument.effectiveAt, new Date())));
-  return rows.map((row) => row.id);
-}
+/** 필수 약관 id — 서비스와 같은 규칙(코드별 최신 1건)을 써야 검증이 정직하다 */
+const loadRequiredTermsIds = () => getRequiredTermsDocumentIds(db);
 
 async function pickVariants() {
   const rows = await db
@@ -288,7 +283,7 @@ async function checkPriceSnapshotSurvivesProductChange(leftovers: Leftovers) {
     .limit(1);
 
   let temporaryImageId: number | null = null;
-  let expectedThumbnail = existingImage
+  const expectedThumbnail = existingImage
     ? { path: existingImage.path, alt: existingImage.alt }
     : { path: "/uploads/check5-temp.webp", alt: "검증용 임시 썸네일" };
 

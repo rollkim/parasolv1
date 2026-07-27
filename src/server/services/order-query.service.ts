@@ -1,6 +1,6 @@
 import "server-only";
 
-import { and, asc, desc, eq } from "drizzle-orm";
+import { asc, desc, eq } from "drizzle-orm";
 
 import { orderItem, orderItemAddon, orders, payment, shipment } from "@/db/schema";
 import { effectiveListPrice } from "@/domain/cart";

@@ -10,7 +10,7 @@ import "dotenv/config";
 
 import { randomUUID } from "node:crypto";
 
-import { and, eq, inArray, lte } from "drizzle-orm";
+import { eq, inArray } from "drizzle-orm";
 
 import { db } from "@/db";
 import {
@@ -21,21 +21,15 @@ import {
   orderStatusHistory,
   payment,
   productVariant,
-  termsDocument,
 } from "@/db/schema";
 import { IllegalOrderTransitionError } from "@/domain/order";
 
 import { applyOrderTransition } from "../order-status.service";
 import { createPendingOrder, TermsNotAgreedError } from "../order.service";
+import { getRequiredTermsDocumentIds } from "../terms.service";
 
-/** 필수 약관 문서 id — 주문 생성이 동의 증빙을 요구한다 */
-async function loadRequiredTermsIds(): Promise<number[]> {
-  const rows = await db
-    .select({ id: termsDocument.id })
-    .from(termsDocument)
-    .where(and(eq(termsDocument.isRequired, true), lte(termsDocument.effectiveAt, new Date())));
-  return rows.map((row) => row.id);
-}
+/** 필수 약관 id — 서비스와 같은 규칙(코드별 최신 1건)을 써야 검증이 정직하다 */
+const loadRequiredTermsIds = () => getRequiredTermsDocumentIds(db);
 
 let passCount = 0;
 let failCount = 0;

@@ -1,9 +1,11 @@
 import "server-only";
 
-import { desc, eq } from "drizzle-orm";
+import { desc, eq, lte } from "drizzle-orm";
 
 import type { db as Database } from "@/db";
 import { termsDocument } from "@/db/schema";
+
+import type { QueryClient } from "./db-client";
 
 /**
  * 약관 문서 도메인 서비스 — 약관문서 화면(이용약관·개인정보·배송정책)과 푸터 링크가 쓴다.
@@ -56,6 +58,40 @@ export async function getTermsDocuments(
   return [...latestByCode.values()].sort(
     (a, b) => a.termsDocumentId - b.termsDocumentId,
   );
+}
+
+/**
+ * 지금 시점에 효력이 있는 **필수** 약관의 최신 버전 id 목록 — 주문·가입의 동의 검증 기준.
+ *
+ * "코드별 최신 1건"이 핵심이다. 버전 전체를 대상으로 잡으면 약관을 개정한 뒤
+ * 구버전에도 동의해야 주문이 되는 상태가 된다(개정 시점에 전 주문이 막힌다).
+ * 발효 예정(effective_at 미래) 버전은 아직 최신이 아니므로 제외한다.
+ */
+export async function getRequiredTermsDocumentIds(
+  client: QueryClient,
+  now: Date = new Date(),
+): Promise<number[]> {
+  const documentRows = await client
+    .select({
+      termsDocumentId: termsDocument.id,
+      termsCode: termsDocument.code,
+      isRequired: termsDocument.isRequired,
+    })
+    .from(termsDocument)
+    .where(lte(termsDocument.effectiveAt, now))
+    .orderBy(desc(termsDocument.effectiveAt), desc(termsDocument.id));
+
+  const latestByCode = new Map<string, { termsDocumentId: number; isRequired: boolean }>();
+  for (const documentRow of documentRows) {
+    if (!latestByCode.has(documentRow.termsCode)) {
+      latestByCode.set(documentRow.termsCode, documentRow);
+    }
+  }
+
+  return [...latestByCode.values()]
+    .filter((documentRow) => documentRow.isRequired)
+    .map((documentRow) => documentRow.termsDocumentId)
+    .sort((a, b) => a - b);
 }
 
 /** 특정 코드의 최신 버전 본문 — 없는 코드는 null(화면이 404/빈 상태를 그린다) */
