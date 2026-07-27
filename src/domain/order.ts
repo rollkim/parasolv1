@@ -298,12 +298,14 @@ export function assertPaidAmountMatches(
 // 마스킹 — 비회원 주문조회 PII 최소 노출
 // =============================================================
 
-/** 이름 가운데 마스킹: 홍정성 → 홍*성, 김보 → 김*, 이 → 이 */
+/**
+ * 이름 마스킹 — 첫 글자만 남긴다: 홍정성 → 홍**, 김보 → 김*, 이 → 이.
+ * 끝 글자를 남기면 두 글자 이름에서 실명 추정 여지가 커져 비회원조회 목업 규칙을 따른다.
+ */
 export function maskOrdererName(name: string): string {
   const chars = [...name.trim()];
   if (chars.length <= 1) return chars.join("");
-  if (chars.length === 2) return `${chars[0]}*`;
-  return `${chars[0]}${"*".repeat(chars.length - 2)}${chars[chars.length - 1]}`;
+  return `${chars[0]}${"*".repeat(chars.length - 1)}`;
 }
 
 /** 전화 뒷자리 유지, 가운데 마스킹: 010-1234-5678 → 010-****-5678 */
@@ -314,4 +316,78 @@ export function maskPhone(phone: string): string {
   const tail = digits.slice(-4);
   const middle = "*".repeat(digits.length - 7);
   return `${head}-${middle}-${tail}`;
+}
+
+/** 송장번호 앞 1자리·뒤 2자리만 노출: 612345678923 → 6*********23 (회원·비회원 동일 규칙) */
+export function maskTrackingNo(trackingNo: string): string {
+  const trimmed = trackingNo.trim();
+  if (trimmed.length <= 3) return trimmed;
+  return `${trimmed[0]}${"*".repeat(trimmed.length - 3)}${trimmed.slice(-2)}`;
+}
+
+/**
+ * 배송지 상세주소(동·호수)만 가린다 — 주문번호+연락처 2요소만으로 열리는 조회 화면에서
+ * 거주 호실까지 특정되지 않게 한다. 배송지 확인이라는 조회 목적은 그대로 달성된다.
+ */
+export function maskAddressDetail(addr2: string | null): string | null {
+  if (!addr2) return addr2;
+  const trimmed = addr2.trim();
+  if (trimmed.length === 0) return trimmed;
+  return "*".repeat([...trimmed].length);
+}
+
+// =============================================================
+// 상태 표기 — 스토어프론트·관리자·알림톡이 같은 문구를 쓰도록 도메인이 소유한다
+// =============================================================
+
+/** 주문 상세·조회 화면의 상태 배지 문구 */
+const ORDER_STATUS_LABELS: Record<OrderStatus, string> = {
+  pending: "결제 대기",
+  paid: "결제완료",
+  preparing: "상품 준비중",
+  shipping: "배송중",
+  delivered: "배송완료",
+  confirmed: "구매확정",
+  cancelled: "주문취소",
+};
+
+export function orderStatusLabel(status: OrderStatus): string {
+  return ORDER_STATUS_LABELS[status];
+}
+
+/** 진행 타임라인 4단계 — 목업(결제완료·상품 준비중·배송중·배송완료) */
+export const ORDER_TIMELINE_STEPS = [
+  "결제완료",
+  "상품 준비중",
+  "배송중",
+  "배송완료",
+] as const;
+
+export type OrderTimeline = {
+  steps: readonly string[];
+  /** 현재 단계 인덱스(0-base). 타임라인에 올릴 수 없는 상태면 null */
+  currentStep: number | null;
+  /** 타임라인 대신 안내 블록을 그려야 하는 상태인가 — 결제 대기·주문 취소 */
+  outOfTimeline: boolean;
+};
+
+/**
+ * 상태 → 타임라인 위치. pending(결제 미완료)·cancelled(취소)는 4단계 어디에도 놓을 수 없어
+ * 화면이 별도 안내 블록을 그리도록 outOfTimeline으로 알린다 — 임의 배치를 막는다.
+ * confirmed(구매확정)는 배송완료 이후이므로 마지막 단계에 머문다.
+ */
+export function orderTimelineFor(status: OrderStatus): OrderTimeline {
+  const stepByStatus: Partial<Record<OrderStatus, number>> = {
+    paid: 0,
+    preparing: 1,
+    shipping: 2,
+    delivered: 3,
+    confirmed: 3,
+  };
+  const currentStep = stepByStatus[status] ?? null;
+  return {
+    steps: ORDER_TIMELINE_STEPS,
+    currentStep,
+    outOfTimeline: currentStep === null,
+  };
 }

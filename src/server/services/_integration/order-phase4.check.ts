@@ -16,7 +16,7 @@ import "dotenv/config";
 
 import { randomUUID } from "node:crypto";
 
-import { eq, inArray } from "drizzle-orm";
+import { and, eq, inArray, lte } from "drizzle-orm";
 
 import { db } from "@/db";
 import {
@@ -28,6 +28,7 @@ import {
   payment,
   paymentCancellation,
   productVariant,
+  termsDocument,
 } from "@/db/schema";
 import { OrderAmountMismatchError } from "@/domain/order";
 import {
@@ -89,6 +90,15 @@ async function pickVariants(): Promise<[VariantSnapshot, VariantSnapshot]> {
   return [rows[0], rows[1]];
 }
 
+/** 필수 약관 문서 id — 주문 생성이 동의 증빙을 요구한다(서버가 is_required로 판정) */
+async function loadRequiredTermsIds(): Promise<number[]> {
+  const rows = await db
+    .select({ id: termsDocument.id })
+    .from(termsDocument)
+    .where(and(eq(termsDocument.isRequired, true), lte(termsDocument.effectiveAt, new Date())));
+  return rows.map((row) => row.id);
+}
+
 async function readStock(variantId: number): Promise<number> {
   const [row] = await db
     .select({ stock: productVariant.stock })
@@ -120,6 +130,8 @@ async function setupPendingOrder(
     customerId: null,
     orderer: ORDERER,
     shippingAddress: ADDRESS,
+    agreedTermsDocumentIds: await loadRequiredTermsIds(),
+    agreementIp: "127.0.0.1",
   });
   leftovers.orderIds.push(created.orderId);
   leftovers.orderNos.push(created.orderNo);

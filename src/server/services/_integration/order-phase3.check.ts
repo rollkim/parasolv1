@@ -10,7 +10,7 @@ import "dotenv/config";
 
 import { randomUUID } from "node:crypto";
 
-import { eq, inArray } from "drizzle-orm";
+import { and, eq, inArray, lte } from "drizzle-orm";
 
 import { db } from "@/db";
 import {
@@ -21,11 +21,21 @@ import {
   orderStatusHistory,
   payment,
   productVariant,
+  termsDocument,
 } from "@/db/schema";
 import { IllegalOrderTransitionError } from "@/domain/order";
 
 import { applyOrderTransition } from "../order-status.service";
-import { createPendingOrder } from "../order.service";
+import { createPendingOrder, TermsNotAgreedError } from "../order.service";
+
+/** 필수 약관 문서 id — 주문 생성이 동의 증빙을 요구한다 */
+async function loadRequiredTermsIds(): Promise<number[]> {
+  const rows = await db
+    .select({ id: termsDocument.id })
+    .from(termsDocument)
+    .where(and(eq(termsDocument.isRequired, true), lte(termsDocument.effectiveAt, new Date())));
+  return rows.map((row) => row.id);
+}
 
 let passCount = 0;
 let failCount = 0;
@@ -81,6 +91,8 @@ async function checkCreatePendingOrder() {
       customerId: null,
       orderer: ORDERER,
       shippingAddress: ADDRESS,
+      agreedTermsDocumentIds: await loadRequiredTermsIds(),
+      agreementIp: "127.0.0.1",
     });
     orderIds.push(created.orderId);
 
@@ -217,6 +229,8 @@ async function checkBlockedLineRejected() {
         customerId: null,
         orderer: ORDERER,
         shippingAddress: ADDRESS,
+        agreedTermsDocumentIds: await loadRequiredTermsIds(),
+        agreementIp: "127.0.0.1",
       });
     } catch {
       rejected = true;
@@ -233,12 +247,49 @@ async function checkBlockedLineRejected() {
   }
 }
 
+/** ④ 필수 약관 미동의 — 서버가 직접 차단해야 한다(화면 검증만으로는 API 호출로 뚫린다) */
+async function checkTermsAgreementRequired() {
+  console.log("\n[4] 필수 약관 미동의 — 주문 생성 거부 기대");
+  const requiredIds = await loadRequiredTermsIds();
+  if (requiredIds.length === 0) {
+    console.log("  – 필수 약관 문서가 없어 건너뜀 (npm run db:seed 확인)");
+    return;
+  }
+
+  const { cartToken, cartId } = await setupCart(1);
+  try {
+    let rejected = false;
+    try {
+      await createPendingOrder(db, {
+        cartToken,
+        customerId: null,
+        orderer: ORDERER,
+        shippingAddress: ADDRESS,
+        agreedTermsDocumentIds: [], // 동의 없이 API 직접 호출
+        agreementIp: "127.0.0.1",
+      });
+    } catch (error) {
+      rejected = error instanceof TermsNotAgreedError;
+    }
+    check(rejected, "동의 없는 주문 거부(TermsNotAgreedError)");
+
+    const leftovers = await db
+      .select({ id: orders.id })
+      .from(orders)
+      .where(eq(orders.guestToken, cartToken));
+    check(leftovers.length === 0, "거부 시 주문 잔여물 없음");
+  } finally {
+    await cleanupCart(cartId, []);
+  }
+}
+
 async function main() {
   console.log("PaRaSOL 주문 Phase 3 검증 (임시 주문·카트는 종료 시 삭제)");
   const created = await checkCreatePendingOrder();
   try {
     await checkTransitions(created.orderId);
     await checkBlockedLineRejected();
+    await checkTermsAgreementRequired();
   } finally {
     await cleanupCart(created.cartId, created.orderIds);
   }

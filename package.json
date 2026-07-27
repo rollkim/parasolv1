@@ -13,7 +13,8 @@
     "test": "vitest run",
     "check:order2": "tsx --conditions=react-server src/server/services/_integration/order-phase2.check.ts",
     "check:order3": "tsx --conditions=react-server src/server/services/_integration/order-phase3.check.ts",
-    "check:order4": "tsx --conditions=react-server src/server/services/_integration/order-phase4.check.ts"
+    "check:order4": "tsx --conditions=react-server src/server/services/_integration/order-phase4.check.ts",
+    "check:order5": "tsx --conditions=react-server src/server/services/_integration/order-phase5.check.ts"
   },
   "dependencies": {
     "@tanstack/react-query": "^5.101.4",

@@ -40,6 +40,11 @@ export function calcCartLineTotal(
 }
 
 export type CartSummary = {
+  /** 상품 판매가 합계(추가상품 제외) — 무료배송 판정 기준 */
+  goodsTotal: number;
+  /** 추가상품 합계 — 화면이 별도 행으로 표시한다 */
+  addonTotal: number;
+  /** 주문 금액(goodsTotal + addonTotal) — orders.subtotal에 저장되는 값 */
   subtotal: number;
   shippingFee: number;
   grandTotal: number;
@@ -47,21 +52,37 @@ export type CartSummary = {
   freeShippingRemaining: number;
 };
 
+/**
+ * 무료배송 판정은 **상품 판매가 합계만** 본다(추가상품 제외) — 체크아웃·장바구니 목업의 기준.
+ * 포장 같은 부가 선택으로 배송비 문턱을 넘게 하지 않는다는 정책이다.
+ */
 export function calcCartSummary(
   lines: CartLineForSummary[],
   policy: ShippingPolicy,
 ): CartSummary {
-  const subtotal = lines
-    .filter((line) => line.orderable)
-    .reduce((sum, line) => sum + calcCartLineTotal(line), 0);
+  const orderableLines = lines.filter((line) => line.orderable);
+
+  const goodsTotal = orderableLines.reduce(
+    (sum, line) => sum + line.unitPrice * line.quantity,
+    0,
+  );
+  const addonTotal = orderableLines.reduce(
+    (sum, line) =>
+      sum +
+      line.addons.reduce((addonSum, addon) => addonSum + addon.addonPrice * addon.addonQuantity, 0),
+    0,
+  );
+  const subtotal = goodsTotal + addonTotal;
 
   // 주문 가능 라인이 없으면 배송 자체가 없다 — 빈 카트에 배송비를 표시하지 않는다
-  const shippingFee = subtotal === 0 ? 0 : calcShippingFee(subtotal, policy);
+  const shippingFee = subtotal === 0 ? 0 : calcShippingFee(goodsTotal, policy);
 
   return {
+    goodsTotal,
+    addonTotal,
     subtotal,
     shippingFee,
     grandTotal: subtotal + shippingFee,
-    freeShippingRemaining: Math.max(0, policy.freeThreshold - subtotal),
+    freeShippingRemaining: Math.max(0, policy.freeThreshold - goodsTotal),
   };
 }

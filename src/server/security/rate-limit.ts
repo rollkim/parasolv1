@@ -90,6 +90,9 @@ const LOGIN_BY_ACCOUNT: RateLimitRule = { limit: 5, windowMs: 10 * 60 * 1000 };
 const LOGIN_BY_IP: RateLimitRule = { limit: 20, windowMs: 10 * 60 * 1000 };
 const SIGNUP_BY_IP: RateLimitRule = { limit: 5, windowMs: 60 * 60 * 1000 };
 const QNA_BY_IP: RateLimitRule = { limit: 10, windowMs: 60 * 60 * 1000 };
+// 비회원 주문조회 — 주문번호가 "날짜-연번"이라 추측 가능하므로 무차별 탐색을 막는다.
+// 정상 사용자는 오타 몇 번이면 충분하다.
+const GUEST_LOOKUP_BY_IP: RateLimitRule = { limit: 10, windowMs: 10 * 60 * 1000 };
 
 /**
  * 로그인 시도 전 게이트 — 계정별·IP별 실패 누적이 한도를 넘으면 차단.
@@ -128,5 +131,15 @@ export function assertSignupAllowed(clientIp: string | null): void {
 export function assertQnaAllowed(clientIp: string | null): void {
   if (!clientIp) return;
   const state = recordAttempt(`qna:ip:${clientIp}`, QNA_BY_IP);
+  if (!state.allowed) throwTooMany(state.retryAfterSeconds);
+}
+
+/**
+ * 비회원 주문조회 게이트 — 성공·실패 모두 카운트한다.
+ * 실패만 세면 공격자가 유효 조합을 찾은 뒤 마음껏 긁어갈 수 있다.
+ */
+export function assertGuestLookupAllowed(clientIp: string | null): void {
+  if (!clientIp) return;
+  const state = recordAttempt(`guest_lookup:ip:${clientIp}`, GUEST_LOOKUP_BY_IP);
   if (!state.allowed) throwTooMany(state.retryAfterSeconds);
 }

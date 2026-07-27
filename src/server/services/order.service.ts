@@ -2,7 +2,7 @@ import "server-only";
 
 import { randomUUID } from "node:crypto";
 
-import { eq } from "drizzle-orm";
+import { and, eq, inArray, lte } from "drizzle-orm";
 
 import {
   cart,
@@ -11,14 +11,17 @@ import {
   orders,
   orderStatusHistory,
   payment,
+  termsAgreement,
+  termsDocument,
 } from "@/db/schema";
 import {
   buildOrderDraft,
   type OrderDraftLine,
 } from "@/domain/order";
+import { normalizePhone } from "@/domain/phone";
 
 import { getCartWithItems, type CartLine } from "./cart.service";
-import type { DatabaseClient, QueryClient } from "./db-client";
+import type { DatabaseClient, QueryClient, TransactionClient } from "./db-client";
 import { serializeActor } from "./order-status.service";
 import { allocateOrderNo } from "./order-number.service";
 import { getSiteSetting } from "./site-setting.service";
@@ -100,6 +103,15 @@ export type CreatePendingOrderInput = {
   customerId: number | null;
   orderer: OrdererInput;
   shippingAddress: ShippingAddressInput;
+  /**
+   * 주문할 카트 라인 — 장바구니에서 체크한 것만 결제로 넘어온다.
+   * 생략하면 카트 전체. 품절 상품을 장바구니에 남겨둔 사용자가 결제 자체를 못 하는 일을 막는다.
+   */
+  cartItemIds?: number[];
+  /** 동의한 약관 문서 id — 필수 문서를 모두 포함해야 한다(서버가 검증) */
+  agreedTermsDocumentIds: number[];
+  /** 동의 증빙에 남길 요청 IP — 알 수 없으면 null */
+  agreementIp: string | null;
 };
 
 export type CreatePendingOrderResult = {
@@ -115,6 +127,58 @@ export class CartNotFoundError extends Error {
     super("장바구니를 찾을 수 없습니다.");
     this.name = "CartNotFoundError";
   }
+}
+
+/** 필수 약관에 동의하지 않은 주문 — 화면만 막으면 API 직접 호출로 뚫린다 */
+export class TermsNotAgreedError extends Error {
+  constructor(readonly missingDocumentIds: number[]) {
+    super("필수 약관에 모두 동의해야 주문할 수 있습니다.");
+    this.name = "TermsNotAgreedError";
+  }
+}
+
+/**
+ * 지금 유효한 필수 약관 전부에 동의했는지 확인하고, 동의 이력을 남긴다.
+ * 필수 문서 집합은 클라이언트가 아니라 terms_document.is_required가 정한다.
+ */
+async function recordTermsAgreements(
+  tx: TransactionClient,
+  args: {
+    orderId: number;
+    customerId: number | null;
+    agreedDocumentIds: number[];
+    ip: string | null;
+  },
+): Promise<void> {
+  // 같은 code의 최신 버전만 유효하지만, 1차는 단일 버전 운영이라 effective_at 지난 것을 본다
+  const requiredDocs = await tx
+    .select({ id: termsDocument.id })
+    .from(termsDocument)
+    .where(
+      and(eq(termsDocument.isRequired, true), lte(termsDocument.effectiveAt, new Date())),
+    );
+
+  const agreed = new Set(args.agreedDocumentIds);
+  const missing = requiredDocs.filter((doc) => !agreed.has(doc.id)).map((doc) => doc.id);
+  if (missing.length > 0) throw new TermsNotAgreedError(missing);
+
+  if (args.agreedDocumentIds.length === 0) return;
+
+  // 존재하지 않는 문서 id가 섞여 오면 FK 위반으로 트랜잭션이 죽는다 — 실재하는 것만 남긴다
+  const knownDocs = await tx
+    .select({ id: termsDocument.id })
+    .from(termsDocument)
+    .where(inArray(termsDocument.id, args.agreedDocumentIds));
+  if (knownDocs.length === 0) return;
+
+  await tx.insert(termsAgreement).values(
+    knownDocs.map((doc) => ({
+      customerId: args.customerId,
+      orderId: args.orderId,
+      termsDocumentId: doc.id,
+      ip: args.ip,
+    })),
+  );
 }
 
 /**
@@ -142,8 +206,15 @@ export async function createPendingOrder(
     const cartView = await getCartWithItems(tx, input.cartToken);
     const shippingPolicy = await loadShippingPolicy(tx);
 
-    // 주문 불가 라인이 하나라도 있으면 도메인이 throw — 부분 진행 금지(설계 D6)
-    const draft = buildOrderDraft(cartView.lines.map(toDraftLine), shippingPolicy);
+    // 장바구니에서 체크한 라인만 주문한다 — 나머지(품절 상품 포함)는 카트에 남는다
+    const selectedIds = input.cartItemIds;
+    const selectedLines =
+      selectedIds === undefined || selectedIds.length === 0
+        ? cartView.lines
+        : cartView.lines.filter((line) => selectedIds.includes(line.cartItemId));
+
+    // 선택 라인 중 주문 불가가 있으면 도메인이 throw — 부분 진행 금지(설계 D6)
+    const draft = buildOrderDraft(selectedLines.map(toDraftLine), shippingPolicy);
 
     const orderNo = await allocateOrderNo(tx);
     const guestToken = input.customerId === null ? randomUUID() : null;
@@ -162,10 +233,11 @@ export async function createPendingOrder(
         status: "pending",
         channel: "web",
         ordererName: input.orderer.name,
-        ordererPhone: input.orderer.phone,
+        // 정규화(숫자만) 저장 — 비회원 주문조회가 이 값으로 대조한다(domain/phone)
+        ordererPhone: normalizePhone(input.orderer.phone),
         ordererEmail: input.orderer.email ?? null,
         recipient: input.shippingAddress.recipient,
-        phone: input.shippingAddress.phone,
+        phone: normalizePhone(input.shippingAddress.phone),
         zipcode: input.shippingAddress.zipcode,
         addr1: input.shippingAddress.addr1,
         addr2: input.shippingAddress.addr2 ?? null,
@@ -215,6 +287,14 @@ export async function createPendingOrder(
       provider: "tosspayments",
       amount: draft.grandTotal,
       status: "ready",
+    });
+
+    // 약관 동의 증빙 — 필수 문서 누락이면 여기서 throw되어 주문 전체가 롤백된다
+    await recordTermsAgreements(tx, {
+      orderId: orderRow.id,
+      customerId: input.customerId,
+      agreedDocumentIds: input.agreedTermsDocumentIds,
+      ip: input.agreementIp,
     });
 
     // 생성 이력(null→pending)은 초크포인트를 거치지 않고 직접 남긴다 —

@@ -12,16 +12,21 @@ import {
   canTransitionPaymentStatus,
   IllegalOrderTransitionError,
   isTerminalStatus,
+  maskAddressDetail,
   maskOrdererName,
   maskPhone,
+  maskTrackingNo,
   OrderAmountMismatchError,
   ORDER_STATUSES,
   type OrderDraftLine,
   type OrderStatus,
+  orderStatusLabel,
+  orderTimelineFor,
   PAYMENT_STATUSES,
   sideEffectsFor,
 } from "./order";
 import type { ShippingPolicy } from "./cart";
+import { formatPhone, isMobilePhone, normalizePhone } from "./phone";
 
 const POLICY: ShippingPolicy = { baseFee: 3000, freeThreshold: 30000 };
 
@@ -167,16 +172,56 @@ describe("금액 위변조 방어", () => {
 });
 
 describe("PII 마스킹", () => {
-  it("이름", () => {
-    expect(maskOrdererName("홍정성")).toBe("홍*성");
-    expect(maskOrdererName("김보람")).toBe("김*람");
-    expect(maskOrdererName("남궁민수")).toBe("남**수");
+  it("이름 — 첫 글자만 노출(비회원조회 목업 규칙)", () => {
+    expect(maskOrdererName("홍정성")).toBe("홍**");
+    expect(maskOrdererName("김보람")).toBe("김**");
+    expect(maskOrdererName("남궁민수")).toBe("남***");
     expect(maskOrdererName("김보")).toBe("김*");
     expect(maskOrdererName("이")).toBe("이");
   });
   it("전화", () => {
     expect(maskPhone("010-1234-5678")).toBe("010-****-5678");
     expect(maskPhone("01012345678")).toBe("010-****-5678");
+  });
+  it("송장번호 — 앞 1·뒤 2만 노출", () => {
+    expect(maskTrackingNo("612345678923")).toBe("6*********23");
+    expect(maskTrackingNo("123")).toBe("123");
+  });
+  it("배송지 상세주소만 마스킹", () => {
+    expect(maskAddressDetail("301호")).toBe("****");
+    expect(maskAddressDetail("3층 301호")).toBe("*******"); // 공백 포함 7자
+    expect(maskAddressDetail(null)).toBeNull();
+    expect(maskAddressDetail("")).toBe("");
+  });
+});
+
+describe("상태 표기", () => {
+  it("전 상태에 한글 라벨이 있다", () => {
+    for (const status of ORDER_STATUSES) {
+      expect(orderStatusLabel(status).length).toBeGreaterThan(0);
+    }
+  });
+  it("타임라인 4단계 — 진행 상태는 단계, 결제대기·취소는 타임라인 밖", () => {
+    expect(orderTimelineFor("paid").currentStep).toBe(0);
+    expect(orderTimelineFor("shipping").currentStep).toBe(2);
+    expect(orderTimelineFor("delivered").currentStep).toBe(3);
+    // 구매확정은 배송완료 이후 — 마지막 단계에 머문다
+    expect(orderTimelineFor("confirmed").currentStep).toBe(3);
+    expect(orderTimelineFor("pending").outOfTimeline).toBe(true);
+    expect(orderTimelineFor("cancelled").outOfTimeline).toBe(true);
+  });
+});
+
+describe("전화번호 정규화(저장·조회 동일 규칙)", () => {
+  it("숫자만 남긴다 — 하이픈 유무와 무관하게 같은 값", () => {
+    expect(normalizePhone("010-1234-5678")).toBe("01012345678");
+    expect(normalizePhone("010 1234 5678")).toBe("01012345678");
+    expect(normalizePhone("01012345678")).toBe("01012345678");
+  });
+  it("형식 검증·표시 변환", () => {
+    expect(isMobilePhone("01012345678")).toBe(true);
+    expect(isMobilePhone("0212345678")).toBe(false);
+    expect(formatPhone("01012345678")).toBe("010-1234-5678");
   });
 });
 
