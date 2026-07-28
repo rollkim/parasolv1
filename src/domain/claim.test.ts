@@ -5,6 +5,7 @@ import { claimFault, claimStatus, claimType } from "@/db/schema";
 import {
   allowedFeeMethods,
   assertClaimTransition,
+  availableClaimActions,
   assertClaimableQuantity,
   assertExchangeFeeSettled,
   assertManualRefundReference,
@@ -363,6 +364,86 @@ describe("표시 라벨·타임라인", () => {
     expect(claimTimelineFor("return", "rejected").outOfTimeline).toBe(true);
     // 취소에는 회수·검수 상태가 정상 경로에 없다 — 들어오면 타임라인 밖
     expect(claimTimelineFor("cancel", "collecting").outOfTimeline).toBe(true);
+  });
+});
+
+describe("관리자 행동 목록", () => {
+  const noFee = { feeMethod: null, shippingFee: 0, feeSettledAt: null };
+  const actionsOf = (input: Parameters<typeof availableClaimActions>[0]) =>
+    availableClaimActions(input).map((option) => option.action);
+
+  it("취소 접수 — 승인이 곧 환불이라 회수·검수 단계가 없다", () => {
+    expect(actionsOf({ claimType: "cancel", status: "requested", ...noFee })).toEqual([
+      "refund",
+      "reject",
+    ]);
+  });
+
+  it("반품은 승인 → 회수완료 → 환불 순으로만 열린다", () => {
+    expect(actionsOf({ claimType: "return", status: "requested", ...noFee })).toEqual([
+      "approve",
+      "reject",
+    ]);
+    expect(actionsOf({ claimType: "return", status: "collecting", ...noFee })).toEqual([
+      "markCollected",
+    ]);
+    expect(actionsOf({ claimType: "return", status: "inspecting", ...noFee })).toEqual([
+      "refund",
+      "reject",
+    ]);
+  });
+
+  it("교환 검수 완료는 환불이 아니라 교환품 발송이다", () => {
+    expect(actionsOf({ claimType: "exchange", status: "inspecting", ...noFee })).toEqual([
+      "completeExchange",
+      "reject",
+    ]);
+  });
+
+  it("종결 상태에는 남은 행동이 없다", () => {
+    expect(actionsOf({ claimType: "return", status: "done", ...noFee })).toEqual([]);
+    expect(actionsOf({ claimType: "return", status: "rejected", ...noFee })).toEqual([]);
+  });
+
+  it("계좌이체 배송비는 입금 확인 전까지만 행동이 나온다", () => {
+    const unsettled = {
+      claimType: "exchange" as const,
+      status: "collecting" as const,
+      feeMethod: "bank_transfer" as const,
+      shippingFee: 6000,
+      feeSettledAt: null,
+    };
+    expect(actionsOf(unsettled)).toContain("settleFee");
+    expect(actionsOf({ ...unsettled, feeSettledAt: new Date() })).not.toContain("settleFee");
+    // 반품은 환불 차감이라 따로 받을 것이 없다
+    expect(
+      actionsOf({ ...unsettled, claimType: "return", feeMethod: "deduct_refund" }),
+    ).not.toContain("settleFee");
+  });
+
+  it("행동 목록은 전이표를 벗어나지 않는다 — 눌러야 거부당하는 버튼이 없다", () => {
+    const statusOf: Partial<Record<string, ClaimStatus>> = {
+      approve: "collecting",
+      markCollected: "inspecting",
+      refund: "done",
+      completeExchange: "done",
+      reject: "rejected",
+    };
+    for (const type of CLAIM_TYPES) {
+      for (const status of CLAIM_STATUSES) {
+        for (const option of availableClaimActions({
+          claimType: type,
+          status,
+          feeMethod: "bank_transfer",
+          shippingFee: 6000,
+          feeSettledAt: null,
+        })) {
+          const target = statusOf[option.action];
+          if (!target) continue; // settleFee는 상태 전이가 아니다
+          expect(canClaimTransition(type, status, target)).toBe(true);
+        }
+      }
+    }
   });
 });
 

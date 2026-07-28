@@ -465,6 +465,78 @@ export function assertManualRefundReference(
 }
 
 // =============================================================
+// 관리자 행동 목록 — 화면이 버튼을 임의로 그리지 않게 한다
+// =============================================================
+
+/** 관리자가 클레임에 할 수 있는 행동. 각각 서비스 함수 하나에 대응한다 */
+export type ClaimAction =
+  | "approve"
+  | "reject"
+  | "markCollected"
+  | "refund"
+  | "completeExchange"
+  | "settleFee";
+
+export type ClaimActionOption = {
+  action: ClaimAction;
+  label: string;
+  /** 되돌릴 수 없고 고객에게 통보되는 행동 — 화면이 경고 색·확인 모달을 붙인다 */
+  destructive: boolean;
+};
+
+/**
+ * 지금 가능한 행동 목록. **전이표에서 유도**한다 — 행동 목록을 따로 적으면
+ * 전이표와 어긋나서 "눌러야 거부당하는 것을 아는 버튼"이 생긴다.
+ *
+ * settleFee만 전이가 아니다(배송비는 상태와 별개 축) — 계좌이체 수취인데
+ * 아직 입금 확인 전일 때만 나온다.
+ */
+export function availableClaimActions(input: {
+  claimType: ClaimType;
+  status: ClaimStatus;
+  feeMethod: ClaimFeeMethod | null;
+  shippingFee: number;
+  feeSettledAt: Date | null;
+}): ClaimActionOption[] {
+  const { claimType, status } = input;
+  const actions: ClaimActionOption[] = [];
+
+  if (canClaimTransition(claimType, status, "done")) {
+    actions.push(
+      claimType === "exchange"
+        ? { action: "completeExchange", label: "검수 완료 · 교환품 발송", destructive: false }
+        : {
+            action: "refund",
+            // 취소는 승인이 곧 환불이라 '검수' 단계를 거치지 않는다
+            label: claimType === "cancel" ? "승인 · 환불 진행" : "검수 완료 · 환불 진행",
+            destructive: false,
+          },
+    );
+  }
+  if (canClaimTransition(claimType, status, "collecting")) {
+    actions.push({ action: "approve", label: "승인 · 회수 요청", destructive: false });
+  }
+  if (canClaimTransition(claimType, status, "inspecting")) {
+    actions.push({ action: "markCollected", label: "회수 완료 처리", destructive: false });
+  }
+  if (canClaimTransition(claimType, status, "rejected")) {
+    actions.push({ action: "reject", label: "반려", destructive: true });
+  }
+
+  // 입금 확인은 종결 전까지 언제든 — 상태를 기다리게 하면 교환품 발송이 막힌다
+  if (
+    input.feeMethod === "bank_transfer" &&
+    input.shippingFee > 0 &&
+    !isClaimFeeSettled({ shippingFee: input.shippingFee, feeSettledAt: input.feeSettledAt }) &&
+    !isClaimTerminalStatus(status)
+  ) {
+    actions.push({ action: "settleFee", label: "배송비 입금 확인", destructive: false });
+  }
+
+  return actions;
+}
+
+// =============================================================
 // 표시 라벨·타임라인 — 스토어프론트·관리자·알림톡이 같은 표기를 쓴다
 // =============================================================
 

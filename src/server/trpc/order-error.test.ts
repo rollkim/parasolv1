@@ -2,12 +2,31 @@ import { TRPCError } from "@trpc/server";
 import { describe, expect, it } from "vitest";
 
 import {
+  ClaimFeeUnsettledError,
   ClaimQuantityExceededError,
   ClaimReasonNotAllowedError,
   ClaimWindowExpiredError,
+  IllegalClaimTransitionError,
+  ManualRefundReferenceRequiredError,
   OrderNotClaimableError,
 } from "@/domain/claim";
 import { BlockedOrderLineError, OrderAmountMismatchError } from "@/domain/order";
+import { AdminClaimNotFoundError } from "@/server/services/admin-claim.service";
+import {
+  AdminOrderNotFoundError,
+  InvoiceRequiresPreparingError,
+} from "@/server/services/admin-order.service";
+import {
+  ClaimFeeAlreadySettledError,
+  ClaimProcessNotFoundError,
+  ClaimTypeMismatchError,
+} from "@/server/services/claim-process.service";
+import {
+  ClaimNotRefundableError,
+  ClaimPaymentMissingError,
+  ClaimRefundExceedsBalanceError,
+  ClaimRefundNotFoundError,
+} from "@/server/services/claim-refund.service";
 import {
   ClaimItemNotInOrderError,
   ClaimOrderAccessDeniedError,
@@ -64,6 +83,20 @@ const DOMAIN_ERRORS: { name: string; error: Error }[] = [
   { name: "ClaimItemNotInOrderError", error: new ClaimItemNotInOrderError(1) },
   { name: "ClaimOrderNotFoundError", error: new ClaimOrderNotFoundError() },
   { name: "ClaimOrderAccessDeniedError", error: new ClaimOrderAccessDeniedError() },
+  // 관리자 처리(C6) — 여기 오류는 전부 운영자 화면에 그대로 뜬다
+  { name: "IllegalClaimTransitionError", error: new IllegalClaimTransitionError("return", "done", "requested") },
+  { name: "ClaimFeeUnsettledError", error: new ClaimFeeUnsettledError() },
+  { name: "ManualRefundReferenceRequiredError", error: new ManualRefundReferenceRequiredError() },
+  { name: "ClaimTypeMismatchError", error: new ClaimTypeMismatchError("exchange", "cancel") },
+  { name: "ClaimFeeAlreadySettledError", error: new ClaimFeeAlreadySettledError() },
+  { name: "ClaimProcessNotFoundError", error: new ClaimProcessNotFoundError(1) },
+  { name: "ClaimRefundNotFoundError", error: new ClaimRefundNotFoundError(1) },
+  { name: "ClaimNotRefundableError", error: new ClaimNotRefundableError("exchange", "requested") },
+  { name: "ClaimPaymentMissingError", error: new ClaimPaymentMissingError(1) },
+  { name: "ClaimRefundExceedsBalanceError", error: new ClaimRefundExceedsBalanceError(5000, 1000) },
+  { name: "AdminClaimNotFoundError", error: new AdminClaimNotFoundError("RT-20260101-0001") },
+  { name: "AdminOrderNotFoundError", error: new AdminOrderNotFoundError("20260101-0001") },
+  { name: "InvoiceRequiresPreparingError", error: new InvoiceRequiresPreparingError() },
 ];
 
 describe("주문 오류 → tRPC 오류 매핑", () => {

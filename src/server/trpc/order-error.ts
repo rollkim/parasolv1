@@ -3,15 +3,31 @@ import "server-only";
 import { TRPCError } from "@trpc/server";
 
 import {
+  ClaimFeeUnsettledError,
   ClaimQuantityExceededError,
   ClaimReasonNotAllowedError,
   ClaimWindowExpiredError,
+  IllegalClaimTransitionError,
+  ManualRefundReferenceRequiredError,
   OrderNotClaimableError,
 } from "@/domain/claim";
 import {
   BlockedOrderLineError,
   OrderAmountMismatchError,
 } from "@/domain/order";
+import { AdminClaimNotFoundError } from "@/server/services/admin-claim.service";
+import { AdminOrderNotFoundError, InvoiceRequiresPreparingError } from "@/server/services/admin-order.service";
+import {
+  ClaimFeeAlreadySettledError,
+  ClaimProcessNotFoundError,
+  ClaimTypeMismatchError,
+} from "@/server/services/claim-process.service";
+import {
+  ClaimNotRefundableError,
+  ClaimPaymentMissingError,
+  ClaimRefundExceedsBalanceError,
+  ClaimRefundNotFoundError,
+} from "@/server/services/claim-refund.service";
 import {
   ClaimItemNotInOrderError,
   ClaimOrderAccessDeniedError,
@@ -153,6 +169,63 @@ export function toOrderTRPCError(error: unknown): unknown {
       message: "입력하신 정보와 일치하는 주문이 없어요. 주문번호와 연락처를 다시 확인해 주세요.",
       cause: error,
     });
+  }
+
+  // ── 관리자 클레임 처리 (C6) ──
+  // 관리자 화면은 서버가 내려준 행동만 그리므로 여기 걸리면 동시 처리(다른 관리자가 먼저 처리)다
+  if (error instanceof IllegalClaimTransitionError) {
+    return new TRPCError({
+      code: "CONFLICT",
+      message: "이미 처리된 클레임입니다. 화면을 새로고침해 현재 상태를 확인해 주세요.",
+      cause: error,
+    });
+  }
+
+  if (error instanceof ClaimTypeMismatchError || error instanceof ClaimNotRefundableError) {
+    return new TRPCError({ code: "BAD_REQUEST", message: error.message, cause: error });
+  }
+
+  // 배송비를 못 받은 채 교환품이 나가는 것을 막는 게이트 — 문구가 다음 행동을 담고 있다
+  if (error instanceof ClaimFeeUnsettledError) {
+    return new TRPCError({ code: "CONFLICT", message: error.message, cause: error });
+  }
+
+  if (error instanceof ClaimFeeAlreadySettledError) {
+    return new TRPCError({ code: "CONFLICT", message: error.message, cause: error });
+  }
+
+  // 수동 환불은 시스템이 검증할 수 없다 — 근거 없이 완료 처리되면 대사가 불가능해진다
+  if (error instanceof ManualRefundReferenceRequiredError) {
+    return new TRPCError({ code: "BAD_REQUEST", message: error.message, cause: error });
+  }
+
+  if (error instanceof ClaimPaymentMissingError || error instanceof ClaimRefundExceedsBalanceError) {
+    return new TRPCError({ code: "CONFLICT", message: error.message, cause: error });
+  }
+
+  if (
+    error instanceof ClaimProcessNotFoundError ||
+    error instanceof ClaimRefundNotFoundError ||
+    error instanceof AdminClaimNotFoundError
+  ) {
+    return new TRPCError({
+      code: "NOT_FOUND",
+      message: "클레임을 찾을 수 없습니다. 목록에서 다시 선택해 주세요.",
+      cause: error,
+    });
+  }
+
+  // ── 관리자 주문 ──
+  if (error instanceof AdminOrderNotFoundError) {
+    return new TRPCError({
+      code: "NOT_FOUND",
+      message: "주문을 찾을 수 없습니다. 주문번호를 다시 확인해 주세요.",
+      cause: error,
+    });
+  }
+
+  if (error instanceof InvoiceRequiresPreparingError) {
+    return new TRPCError({ code: "CONFLICT", message: error.message, cause: error });
   }
 
   // 미존재와 권한 없음을 구분해 알리지 않는다 — 구분되면 주문번호 대입으로 존재 여부를 캐낼 수 있다
