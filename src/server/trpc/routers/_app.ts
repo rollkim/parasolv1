@@ -1,6 +1,7 @@
 import { createCallerFactory, router } from "../init";
 import { authRouter } from "./auth";
 import { cartRouter } from "./cart";
+import { claimRouter } from "./claim";
 import { mypageRouter } from "./mypage";
 import { orderRouter } from "./order";
 import { siteSettingRouter } from "./site-setting";
@@ -14,6 +15,7 @@ import { wishlistRouter } from "./wishlist";
 export const appRouter = router({
   auth: authRouter,
   cart: cartRouter,
+  claim: claimRouter,
   mypage: mypageRouter,
   order: orderRouter,
   siteSetting: siteSettingRouter,

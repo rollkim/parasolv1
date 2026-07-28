@@ -3,9 +3,22 @@ import "server-only";
 import { TRPCError } from "@trpc/server";
 
 import {
+  ClaimQuantityExceededError,
+  ClaimReasonNotAllowedError,
+  ClaimWindowExpiredError,
+  OrderNotClaimableError,
+} from "@/domain/claim";
+import {
   BlockedOrderLineError,
   OrderAmountMismatchError,
 } from "@/domain/order";
+import {
+  ClaimItemNotInOrderError,
+  ClaimOrderAccessDeniedError,
+  ClaimOrderNotFoundError,
+  ClaimReasonUnknownError,
+  ClaimTargetEmptyError,
+} from "@/server/services/claim.service";
 import {
   PaymentGatewayError,
   PaymentRejectedError,
@@ -92,6 +105,52 @@ export function toOrderTRPCError(error: unknown): unknown {
     return new TRPCError({
       code: "NOT_FOUND",
       message: "주문을 찾을 수 없습니다. 주문번호를 다시 확인해 주세요.",
+      cause: error,
+    });
+  }
+
+  // ── 클레임 ──
+  if (error instanceof OrderNotClaimableError || error instanceof ClaimWindowExpiredError) {
+    // 도메인 메시지가 이미 원인+다음 행동을 담고 있다(배송 전/후 안내·기한 안내)
+    return new TRPCError({ code: "CONFLICT", message: error.message, cause: error });
+  }
+
+  if (error instanceof ClaimReasonNotAllowedError) {
+    return new TRPCError({ code: "BAD_REQUEST", message: error.message, cause: error });
+  }
+
+  if (error instanceof ClaimQuantityExceededError) {
+    return new TRPCError({
+      code: "CONFLICT",
+      message: "신청 수량이 남은 수량을 초과합니다. 이미 접수된 클레임을 확인해 주세요.",
+      cause: error,
+    });
+  }
+
+  if (error instanceof ClaimReasonUnknownError) {
+    return new TRPCError({
+      code: "BAD_REQUEST",
+      message: "선택한 사유를 처리할 수 없습니다. 사유를 다시 선택해 주세요.",
+      cause: error,
+    });
+  }
+
+  if (error instanceof ClaimTargetEmptyError || error instanceof ClaimItemNotInOrderError) {
+    return new TRPCError({
+      code: "BAD_REQUEST",
+      message: "신청할 상품을 다시 선택해 주세요.",
+      cause: error,
+    });
+  }
+
+  if (
+    error instanceof ClaimOrderNotFoundError ||
+    error instanceof ClaimOrderAccessDeniedError
+  ) {
+    // 주문 조회와 같은 이유로 원인을 구분하지 않는다
+    return new TRPCError({
+      code: "NOT_FOUND",
+      message: "입력하신 정보와 일치하는 주문이 없어요. 주문번호와 연락처를 다시 확인해 주세요.",
       cause: error,
     });
   }

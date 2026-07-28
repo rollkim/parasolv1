@@ -276,17 +276,13 @@ export function OrderDetailView({ orderNo }: { orderNo: string }) {
               {orderView.availableClaimTypes.map((claimType) => (
                 <Button
                   key={claimType}
-                  type="button"
                   variant={claimType === "cancel" ? "ghost" : "outline"}
                   size="sm-46"
-                  onClick={() =>
-                    showToast(
-                      `${CLAIM_TYPE_LABELS[claimType]} 화면은 준비 중이에요. 고객센터로 문의해 주세요.`,
-                      { toastVariant: "info" },
-                    )
-                  }
+                  asChild
                 >
-                  {CLAIM_TYPE_LABELS[claimType]}
+                  <Link href={`/order/${orderView.orderNo}/claim?type=${claimType}`}>
+                    {CLAIM_TYPE_LABELS[claimType]}
+                  </Link>
                 </Button>
               ))}
             </div>

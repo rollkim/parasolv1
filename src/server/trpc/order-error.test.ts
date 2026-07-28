@@ -1,7 +1,20 @@
 import { TRPCError } from "@trpc/server";
 import { describe, expect, it } from "vitest";
 
+import {
+  ClaimQuantityExceededError,
+  ClaimReasonNotAllowedError,
+  ClaimWindowExpiredError,
+  OrderNotClaimableError,
+} from "@/domain/claim";
 import { BlockedOrderLineError, OrderAmountMismatchError } from "@/domain/order";
+import {
+  ClaimItemNotInOrderError,
+  ClaimOrderAccessDeniedError,
+  ClaimOrderNotFoundError,
+  ClaimReasonUnknownError,
+  ClaimTargetEmptyError,
+} from "@/server/services/claim.service";
 import {
   PaymentGatewayError,
   PaymentRejectedError,
@@ -41,6 +54,16 @@ const DOMAIN_ERRORS: { name: string; error: Error }[] = [
   },
   { name: "PaymentRejectedError", error: new PaymentRejectedError("CODE", "거절") },
   { name: "PaymentGatewayError", error: new PaymentGatewayError("CODE", "통신 실패") },
+  // 클레임 — 신규 오류를 만들고 매핑을 잊으면 조용히 500이 된다(이미 두 번 겪었다)
+  { name: "OrderNotClaimableError", error: new OrderNotClaimableError("cancel", "shipping") },
+  { name: "ClaimWindowExpiredError", error: new ClaimWindowExpiredError() },
+  { name: "ClaimReasonNotAllowedError", error: new ClaimReasonNotAllowedError("change_mind", "exchange") },
+  { name: "ClaimQuantityExceededError", error: new ClaimQuantityExceededError(3, 2, 2) },
+  { name: "ClaimReasonUnknownError", error: new ClaimReasonUnknownError("nope") },
+  { name: "ClaimTargetEmptyError", error: new ClaimTargetEmptyError() },
+  { name: "ClaimItemNotInOrderError", error: new ClaimItemNotInOrderError(1) },
+  { name: "ClaimOrderNotFoundError", error: new ClaimOrderNotFoundError() },
+  { name: "ClaimOrderAccessDeniedError", error: new ClaimOrderAccessDeniedError() },
 ];
 
 describe("주문 오류 → tRPC 오류 매핑", () => {
