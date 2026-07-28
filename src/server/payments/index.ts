@@ -2,6 +2,7 @@ import "server-only";
 
 import type { PaymentGateway } from "./payment-gateway";
 import { createStubPaymentGateway } from "./stub-payment-gateway";
+import { createTossPaymentGateway } from "./toss-payment-gateway";
 
 /**
  * 게이트웨이 주입 지점 — 호출부(tRPC 라우터·웹훅 라우트)는 여기서만 게이트웨이를 받는다.
@@ -11,6 +12,7 @@ import { createStubPaymentGateway } from "./stub-payment-gateway";
  */
 
 let stubGatewaySingleton: PaymentGateway | null = null;
+let tossGatewaySingleton: PaymentGateway | null = null;
 
 export function getPaymentGateway(): PaymentGateway {
   const tossSecretKey = process.env.TOSS_SECRET_KEY;
@@ -26,8 +28,7 @@ export function getPaymentGateway(): PaymentGateway {
     return stubGatewaySingleton;
   }
 
-  // TODO(토스 키 발급 후): createTossPaymentGateway(tossSecretKey) 반환.
-  // 어댑터 계약 3종은 payment-gateway.ts 주석 참조(ALREADY_PROCESSED 상태검증 ·
-  // 확정거절/모호실패 분리 · cancel 멱등).
-  throw new Error("토스 게이트웨이 어댑터가 아직 구현되지 않았습니다.");
+  // 키가 있으면 실 어댑터. 인스턴스를 재사용해 매 요청 객체 생성을 피한다
+  tossGatewaySingleton ??= createTossPaymentGateway(tossSecretKey);
+  return tossGatewaySingleton;
 }
