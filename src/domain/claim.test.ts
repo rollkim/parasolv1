@@ -1,0 +1,389 @@
+import { describe, expect, it } from "vitest";
+
+import { claimFault, claimStatus, claimType } from "@/db/schema";
+
+import {
+  allowedFeeMethods,
+  assertClaimTransition,
+  assertClaimableQuantity,
+  assertExchangeFeeSettled,
+  assertManualRefundReference,
+  assertOrderClaimable,
+  assertReasonAllowsType,
+  calcClaimAmounts,
+  calcClaimShippingFee,
+  canClaimTransition,
+  CLAIM_FAULTS,
+  CLAIM_STATUSES,
+  CLAIM_TYPES,
+  CLAIM_WINDOW_DAYS,
+  ClaimFeeUnsettledError,
+  ClaimQuantityExceededError,
+  ClaimReasonNotAllowedError,
+  ClaimWindowExpiredError,
+  claimSideEffectsFor,
+  claimStatusLabel,
+  claimTimelineFor,
+  claimTypeLabel,
+  IllegalClaimTransitionError,
+  isClaimFeeSettled,
+  isClaimTerminalStatus,
+  ManualRefundReferenceRequiredError,
+  OrderNotClaimableError,
+  parseClaimReasonMeta,
+  requiresTransitionMemo,
+  type ClaimStatus,
+  type ClaimType,
+} from "./claim";
+
+const DAY_MS = 24 * 60 * 60 * 1000;
+
+describe("상태 전이표", () => {
+  it("취소: requested→done(환불·복원·주문취소) / requested→rejected만 합법", () => {
+    expect(canClaimTransition("cancel", "requested", "done")).toBe(true);
+    expect(canClaimTransition("cancel", "requested", "rejected")).toBe(true);
+    expect(canClaimTransition("cancel", "requested", "collecting")).toBe(false);
+    expect(claimSideEffectsFor("cancel", "requested", "done")).toEqual([
+      "refund",
+      "restore_stock",
+      "transition_order_cancelled",
+    ]);
+  });
+
+  it("반품: requested→collecting→inspecting→done, 각 단계 반려 가능", () => {
+    expect(canClaimTransition("return", "requested", "collecting")).toBe(true);
+    expect(canClaimTransition("return", "collecting", "inspecting")).toBe(true);
+    expect(canClaimTransition("return", "inspecting", "done")).toBe(true);
+    expect(canClaimTransition("return", "inspecting", "rejected")).toBe(true);
+    // 반품은 requested에서 바로 done으로 못 간다 — 회수·검수 없이 환불되면 안 된다
+    expect(canClaimTransition("return", "requested", "done")).toBe(false);
+    expect(claimSideEffectsFor("return", "inspecting", "done")).toEqual([
+      "refund",
+      "restore_stock",
+    ]);
+  });
+
+  it("교환: 검수 합격 시 재발송 + 회수품 복원 + 교환품 차감", () => {
+    expect(claimSideEffectsFor("exchange", "inspecting", "done")).toEqual([
+      "ship_replacement",
+      "restore_stock",
+      "deduct_replacement_stock",
+    ]);
+    expect(canClaimTransition("exchange", "requested", "done")).toBe(false);
+  });
+
+  it("approved는 어느 유형에서도 진입 불가(전이표가 사용을 막는다)", () => {
+    for (const type of CLAIM_TYPES) {
+      for (const from of CLAIM_STATUSES) {
+        expect(canClaimTransition(type, from, "approved")).toBe(false);
+      }
+    }
+  });
+
+  it("종결 상태(done·rejected)에서 나가는 전이가 없다", () => {
+    for (const type of CLAIM_TYPES) {
+      for (const to of CLAIM_STATUSES) {
+        expect(canClaimTransition(type, "done", to)).toBe(false);
+        expect(canClaimTransition(type, "rejected", to)).toBe(false);
+      }
+    }
+    expect(isClaimTerminalStatus("done")).toBe(true);
+    expect(isClaimTerminalStatus("rejected")).toBe(true);
+    expect(isClaimTerminalStatus("collecting")).toBe(false);
+  });
+
+  it("불법 전이는 assert가 던진다 / 반려는 사유 메모 필수", () => {
+    expect(() => assertClaimTransition("cancel", "requested", "inspecting")).toThrow(
+      IllegalClaimTransitionError,
+    );
+    expect(requiresTransitionMemo("rejected")).toBe(true);
+    expect(requiresTransitionMemo("done")).toBe(false);
+  });
+});
+
+describe("클레임 가능 조건", () => {
+  const now = new Date("2026-07-28T12:00:00+09:00");
+
+  it("취소는 paid·preparing에서만", () => {
+    for (const orderStatus of ["paid", "preparing"] as const) {
+      expect(() =>
+        assertOrderClaimable({ claimType: "cancel", orderStatus, deliveredAt: null, now }),
+      ).not.toThrow();
+    }
+    for (const orderStatus of ["pending", "shipping", "delivered", "confirmed", "cancelled"] as const) {
+      expect(() =>
+        assertOrderClaimable({ claimType: "cancel", orderStatus, deliveredAt: null, now }),
+      ).toThrow(OrderNotClaimableError);
+    }
+  });
+
+  it("반품·교환은 delivered + 7일 이내 — 경계일 포함, 하루 지나면 만료", () => {
+    const deliveredAt = new Date(now.getTime() - CLAIM_WINDOW_DAYS * DAY_MS); // 정확히 7일 전
+    expect(() =>
+      assertOrderClaimable({ claimType: "return", orderStatus: "delivered", deliveredAt, now }),
+    ).not.toThrow();
+
+    const expired = new Date(now.getTime() - (CLAIM_WINDOW_DAYS * DAY_MS + 1));
+    expect(() =>
+      assertOrderClaimable({ claimType: "return", orderStatus: "delivered", deliveredAt: expired, now }),
+    ).toThrow(ClaimWindowExpiredError);
+  });
+
+  it("배송 중에는 어느 클레임도 불가", () => {
+    expect(() =>
+      assertOrderClaimable({ claimType: "return", orderStatus: "shipping", deliveredAt: null, now }),
+    ).toThrow(OrderNotClaimableError);
+    expect(() =>
+      assertOrderClaimable({ claimType: "exchange", orderStatus: "shipping", deliveredAt: null, now }),
+    ).toThrow(OrderNotClaimableError);
+  });
+
+  it("delivered인데 delivered_at이 없으면(데이터 이상) 무기한 반품을 막기 위해 거부", () => {
+    expect(() =>
+      assertOrderClaimable({ claimType: "return", orderStatus: "delivered", deliveredAt: null, now }),
+    ).toThrow(ClaimWindowExpiredError);
+  });
+
+  it("구매확정 후에는 반품·교환 불가", () => {
+    expect(() =>
+      assertOrderClaimable({
+        claimType: "return",
+        orderStatus: "confirmed",
+        deliveredAt: new Date(now.getTime() - DAY_MS),
+        now,
+      }),
+    ).toThrow(OrderNotClaimableError);
+  });
+});
+
+describe("수량 불변식", () => {
+  it("누적 클레임 + 신청 수량 ≤ 주문 수량", () => {
+    expect(() =>
+      assertClaimableQuantity({ orderedQuantity: 3, activeClaimedQuantity: 1, requestedQuantity: 2 }),
+    ).not.toThrow();
+    expect(() =>
+      assertClaimableQuantity({ orderedQuantity: 3, activeClaimedQuantity: 2, requestedQuantity: 2 }),
+    ).toThrow(ClaimQuantityExceededError);
+  });
+
+  it("0·음수·비정수 수량 거부", () => {
+    for (const requestedQuantity of [0, -1, 1.5]) {
+      expect(() =>
+        assertClaimableQuantity({ orderedQuantity: 3, activeClaimedQuantity: 0, requestedQuantity }),
+      ).toThrow(ClaimQuantityExceededError);
+    }
+  });
+});
+
+describe("사유 → 귀책·허용 유형 (시드 meta 파싱)", () => {
+  it("정상 meta를 파싱한다", () => {
+    expect(
+      parseClaimReasonMeta({ fault: "buyer", claimTypes: ["cancel", "return"] }),
+    ).toEqual({ fault: "buyer", claimTypes: ["cancel", "return"] });
+  });
+
+  it("형태가 어긋나면 null — 서비스가 해당 사유를 거부한다", () => {
+    expect(parseClaimReasonMeta(null)).toBeNull();
+    expect(parseClaimReasonMeta({ fault: "unknown", claimTypes: ["cancel"] })).toBeNull();
+    expect(parseClaimReasonMeta({ fault: "buyer" })).toBeNull();
+    expect(parseClaimReasonMeta({ fault: "buyer", claimTypes: [] })).toBeNull();
+    expect(parseClaimReasonMeta({ fault: "buyer", claimTypes: ["invalid"] })).toBeNull();
+  });
+
+  it("사유가 허용하지 않는 유형이면 거부 — change_mind는 교환 불가(시드 정책)", () => {
+    const changeMind = { fault: "buyer" as const, claimTypes: ["cancel", "return"] as ClaimType[] };
+    expect(() => assertReasonAllowsType("change_mind", changeMind, "return")).not.toThrow();
+    expect(() => assertReasonAllowsType("change_mind", changeMind, "exchange")).toThrow(
+      ClaimReasonNotAllowedError,
+    );
+  });
+});
+
+describe("금액 계산", () => {
+  const BASE_FEE = 3000;
+
+  it("배송비: 취소 0 · 반품 편도 3,000 · 교환 왕복 6,000 · 판매자 귀책 0 (D2)", () => {
+    expect(calcClaimShippingFee({ claimType: "cancel", fault: "buyer", baseFee: BASE_FEE })).toBe(0);
+    expect(calcClaimShippingFee({ claimType: "return", fault: "buyer", baseFee: BASE_FEE })).toBe(3000);
+    expect(calcClaimShippingFee({ claimType: "exchange", fault: "buyer", baseFee: BASE_FEE })).toBe(6000);
+    expect(calcClaimShippingFee({ claimType: "return", fault: "seller", baseFee: BASE_FEE })).toBe(0);
+    expect(calcClaimShippingFee({ claimType: "exchange", fault: "seller", baseFee: BASE_FEE })).toBe(0);
+  });
+
+  it("기본 배송비가 바뀌면 클레임 배송비가 따라간다(상수 금지 — 파생)", () => {
+    expect(calcClaimShippingFee({ claimType: "exchange", fault: "buyer", baseFee: 4000 })).toBe(8000);
+  });
+
+  it("취소: 상품 전액 + 주문 배송비 환불", () => {
+    const amounts = calcClaimAmounts({
+      claimType: "cancel",
+      fault: "buyer",
+      baseFee: BASE_FEE,
+      orderShippingFee: 3000,
+      lines: [{ unitPrice: 20700, claimQuantity: 1, orderedQuantity: 1, addonTotal: 1000 }],
+    });
+    expect(amounts.goodsAmount).toBe(21700);
+    expect(amounts.shippingFee).toBe(0);
+    expect(amounts.refundAmount).toBe(24700); // 21,700 + 주문 배송비 3,000
+  });
+
+  it("반품(구매자 귀책): 상품금액 − 배송비", () => {
+    const amounts = calcClaimAmounts({
+      claimType: "return",
+      fault: "buyer",
+      baseFee: BASE_FEE,
+      orderShippingFee: 0,
+      lines: [{ unitPrice: 20000, claimQuantity: 1, orderedQuantity: 2, addonTotal: 0 }],
+    });
+    expect(amounts.refundAmount).toBe(17000);
+  });
+
+  it("반품 환불액은 0 아래로 내려가지 않는다 — 차액을 청구하지 않는다(불변식 2)", () => {
+    const amounts = calcClaimAmounts({
+      claimType: "return",
+      fault: "buyer",
+      baseFee: BASE_FEE,
+      orderShippingFee: 0,
+      lines: [{ unitPrice: 2000, claimQuantity: 1, orderedQuantity: 1, addonTotal: 0 }],
+    });
+    expect(amounts.refundAmount).toBe(0); // 2,000 − 3,000 → 0
+  });
+
+  it("교환: 환불 0, 배송비는 별도 수취", () => {
+    const amounts = calcClaimAmounts({
+      claimType: "exchange",
+      fault: "buyer",
+      baseFee: BASE_FEE,
+      orderShippingFee: 0,
+      lines: [{ unitPrice: 20000, claimQuantity: 1, orderedQuantity: 1, addonTotal: 0 }],
+    });
+    expect(amounts.refundAmount).toBe(0);
+    expect(amounts.shippingFee).toBe(6000);
+  });
+
+  it("추가상품은 라인 전량 클레임일 때만 포함(D11)", () => {
+    const full = calcClaimAmounts({
+      claimType: "return",
+      fault: "seller",
+      baseFee: BASE_FEE,
+      orderShippingFee: 0,
+      lines: [{ unitPrice: 10000, claimQuantity: 2, orderedQuantity: 2, addonTotal: 3000 }],
+    });
+    expect(full.goodsAmount).toBe(23000);
+
+    const partial = calcClaimAmounts({
+      claimType: "return",
+      fault: "seller",
+      baseFee: BASE_FEE,
+      orderShippingFee: 0,
+      lines: [{ unitPrice: 10000, claimQuantity: 1, orderedQuantity: 2, addonTotal: 3000 }],
+    });
+    expect(partial.goodsAmount).toBe(10000); // addon 미포함 — 복원 수량이 소수가 되므로
+  });
+
+  it("신청 수량이 주문 수량을 넘으면 계산 자체를 거부", () => {
+    expect(() =>
+      calcClaimAmounts({
+        claimType: "return",
+        fault: "buyer",
+        baseFee: BASE_FEE,
+        orderShippingFee: 0,
+        lines: [{ unitPrice: 10000, claimQuantity: 3, orderedQuantity: 2, addonTotal: 0 }],
+      }),
+    ).toThrow(ClaimQuantityExceededError);
+  });
+});
+
+describe("배송비 수취 (fee_method)", () => {
+  it("유형별 선택지: 취소 없음 · 반품 차감 고정(A안) · 교환 계좌이체(1차)", () => {
+    expect(allowedFeeMethods("cancel")).toEqual([]);
+    expect(allowedFeeMethods("return")).toEqual(["deduct_refund"]);
+    expect(allowedFeeMethods("exchange")).toEqual(["bank_transfer"]);
+  });
+
+  it("0원이면 수취할 것이 없다 — 완료로 본다", () => {
+    expect(isClaimFeeSettled({ shippingFee: 0, feeSettledAt: null })).toBe(true);
+    expect(isClaimFeeSettled({ shippingFee: 6000, feeSettledAt: null })).toBe(false);
+    expect(isClaimFeeSettled({ shippingFee: 6000, feeSettledAt: new Date() })).toBe(true);
+  });
+
+  it("교환품 발송 게이트: 미입금이면 차단, 입금·무료·타 유형은 통과", () => {
+    expect(() =>
+      assertExchangeFeeSettled({ claimType: "exchange", shippingFee: 6000, feeSettledAt: null }),
+    ).toThrow(ClaimFeeUnsettledError);
+    expect(() =>
+      assertExchangeFeeSettled({ claimType: "exchange", shippingFee: 6000, feeSettledAt: new Date() }),
+    ).not.toThrow();
+    expect(() =>
+      assertExchangeFeeSettled({ claimType: "exchange", shippingFee: 0, feeSettledAt: null }),
+    ).not.toThrow();
+    expect(() =>
+      assertExchangeFeeSettled({ claimType: "return", shippingFee: 3000, feeSettledAt: null }),
+    ).not.toThrow();
+  });
+});
+
+describe("환불 채널 (D10)", () => {
+  it("수동 채널은 참조 필수 — 시스템이 검증 못 하는 지점의 감사 근거", () => {
+    expect(() => assertManualRefundReference("pg_console", "toss-cancel-123")).not.toThrow();
+    expect(() => assertManualRefundReference("bank_transfer", " ")).toThrow(
+      ManualRefundReferenceRequiredError,
+    );
+    expect(() => assertManualRefundReference("pg_console", null)).toThrow(
+      ManualRefundReferenceRequiredError,
+    );
+    expect(() => assertManualRefundReference("pg_api", null)).not.toThrow();
+  });
+});
+
+describe("표시 라벨·타임라인", () => {
+  it("전 상태·유형에 한글 라벨", () => {
+    for (const status of CLAIM_STATUSES) {
+      expect(claimStatusLabel(status).length).toBeGreaterThan(0);
+    }
+    expect(claimTypeLabel("cancel")).toBe("취소");
+    expect(claimTypeLabel("return")).toBe("반품");
+    expect(claimTypeLabel("exchange")).toBe("교환");
+  });
+
+  it("타임라인: 취소 2단계, 반품·교환 4단계, 반려는 타임라인 밖", () => {
+    expect(claimTimelineFor("cancel", "requested")).toMatchObject({
+      steps: ["접수", "환불 완료"],
+      currentStep: 0,
+    });
+    expect(claimTimelineFor("cancel", "done").currentStep).toBe(1);
+    expect(claimTimelineFor("return", "inspecting")).toMatchObject({
+      steps: ["접수", "회수", "검수", "환불"],
+      currentStep: 2,
+    });
+    expect(claimTimelineFor("exchange", "done")).toMatchObject({
+      steps: ["접수", "회수", "검수", "재발송"],
+      currentStep: 3,
+    });
+    expect(claimTimelineFor("return", "rejected").outOfTimeline).toBe(true);
+    // 취소에는 회수·검수 상태가 정상 경로에 없다 — 들어오면 타임라인 밖
+    expect(claimTimelineFor("cancel", "collecting").outOfTimeline).toBe(true);
+  });
+});
+
+describe("스키마 enum 동기화(드리프트 방지)", () => {
+  it("도메인 목록이 DB enum과 정확히 같은 집합", () => {
+    expect([...CLAIM_STATUSES].sort()).toEqual([...claimStatus.enumValues].sort());
+    expect([...CLAIM_TYPES].sort()).toEqual([...claimType.enumValues].sort());
+    expect([...CLAIM_FAULTS].sort()).toEqual([...claimFault.enumValues].sort());
+  });
+
+  it("전이표의 모든 from·to가 enum 값이다", () => {
+    const statuses = new Set<ClaimStatus>(CLAIM_STATUSES);
+    for (const type of CLAIM_TYPES) {
+      for (const from of CLAIM_STATUSES) {
+        for (const to of CLAIM_STATUSES) {
+          if (canClaimTransition(type, from, to)) {
+            expect(statuses.has(from)).toBe(true);
+            expect(statuses.has(to)).toBe(true);
+          }
+        }
+      }
+    }
+  });
+});
