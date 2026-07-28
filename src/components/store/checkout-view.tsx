@@ -35,6 +35,7 @@ import { Input } from "@/components/ui/input"
 import { RadioGroup, RadioGroupCard } from "@/components/ui/radio-group"
 import { Spinner } from "@/components/ui/spinner"
 import { useToast } from "@/components/ui/toast"
+import { openDaumPostcode } from "@/lib/daum-postcode"
 import { formatKrw } from "@/lib/format"
 import { launchTossPayment, type TossPaymentMethod } from "@/lib/toss-payment"
 import { cn } from "@/lib/utils"
@@ -171,6 +172,9 @@ export function CheckoutView() {
   } | null>(null)
   const [paymentMethod, setPaymentMethod] = React.useState<TossPaymentMethod>("CARD")
   const [launchingPayment, setLaunchingPayment] = React.useState(false)
+  const [sameAsOrderer, setSameAsOrderer] = React.useState(false)
+  const postcodeLayerRef = React.useRef<HTMLDivElement>(null)
+  const addressDetailRef = React.useRef<HTMLInputElement>(null)
 
   // 결제 실패로 되돌아온 경우 — 토스가 준 코드를 사용자 문구로 옮긴다
   const searchParams = useSearchParams()
@@ -224,6 +228,62 @@ export function CheckoutView() {
 
   function markTouched(field: FieldKey) {
     setTouchedFields((previous) => ({ ...previous, [field]: true }))
+  }
+
+  /**
+   * '주문자 정보와 동일' — 켜면 받는 분·연락처를 주문자 값으로 채우고, 이후 주문자 변경도 따라간다.
+   * 끄면 마지막 값을 그대로 두고 편집만 열어 준다(지운 뒤 다시 입력하게 하지 않는다).
+   */
+  function applySameAsOrderer(checked: boolean) {
+    setSameAsOrderer(checked)
+    if (!checked) return
+    setAddressInput((previous) => ({
+      ...previous,
+      recipient: orderer.name,
+      phone: orderer.phone,
+    }))
+  }
+
+  /** 주문자 변경 — '동일' 상태면 배송지도 같이 움직인다 */
+  function updateOrderer(patch: Partial<OrdererFields>) {
+    const nextOrderer = { ...orderer, ...patch }
+    setOrderer(nextOrderer)
+    if (sameAsOrderer) {
+      setAddressInput((previous) => ({
+        ...previous,
+        recipient: nextOrderer.name,
+        phone: nextOrderer.phone,
+      }))
+    }
+  }
+
+  /** 다음 우편번호 레이어 — 선택하면 우편번호·기본주소가 채워지고 상세주소로 포커스를 옮긴다 */
+  async function openPostcodeSearch() {
+    const container = postcodeLayerRef.current
+    if (!container) return
+    try {
+      await openDaumPostcode({
+        container,
+        onSelect: (fields) => {
+          setAddressInput((previous) => ({
+            ...previous,
+            zipcode: fields.zipcode,
+            addr1: fields.addr1,
+          }))
+          markTouched("zipcode")
+          markTouched("addr1")
+          // 주소를 고르면 남은 건 동·호수뿐이다 — 거기로 바로 보낸다
+          window.setTimeout(() => addressDetailRef.current?.focus(), 0)
+        },
+      })
+    } catch (postcodeError) {
+      showToast(
+        postcodeError instanceof Error
+          ? postcodeError.message
+          : "주소 검색을 불러오지 못했습니다.",
+        { toastVariant: "error" },
+      )
+    }
   }
 
   function toggleTerms(termsDocumentId: number, checked: boolean) {
@@ -537,7 +597,7 @@ export function CheckoutView() {
                 aria-describedby={visibleError("ordererName") ? "err-ordererName" : undefined}
                 onBlur={() => markTouched("ordererName")}
                 onChange={(event) =>
-                  setOrderer((previous) => ({ ...previous, name: event.target.value }))
+                  updateOrderer({ name: event.target.value })
                 }
               />
               <FieldError id="err-ordererName" message={visibleError("ordererName")} />
@@ -555,7 +615,7 @@ export function CheckoutView() {
                 aria-describedby={visibleError("ordererPhone") ? "err-ordererPhone" : undefined}
                 onBlur={() => markTouched("ordererPhone")}
                 onChange={(event) =>
-                  setOrderer((previous) => ({ ...previous, phone: event.target.value }))
+                  updateOrderer({ phone: event.target.value })
                 }
               />
               <FieldError id="err-ordererPhone" message={visibleError("ordererPhone")} />
@@ -573,7 +633,7 @@ export function CheckoutView() {
                 aria-describedby={visibleError("ordererEmail") ? "err-ordererEmail" : undefined}
                 onBlur={() => markTouched("ordererEmail")}
                 onChange={(event) =>
-                  setOrderer((previous) => ({ ...previous, email: event.target.value }))
+                  updateOrderer({ email: event.target.value })
                 }
               />
               <FieldError id="err-ordererEmail" message={visibleError("ordererEmail")} />
@@ -622,6 +682,16 @@ export function CheckoutView() {
 
           {needsAddressInput ? (
             <div className="flex flex-col gap-2.5">
+              {/* 대부분 주문자가 받는 사람이다 — 두 번 입력하지 않게 한다 */}
+              <label className="flex min-h-11 cursor-pointer items-center gap-3">
+                <Checkbox
+                  checked={sameAsOrderer}
+                  aria-label="주문자 정보와 동일"
+                  onCheckedChange={(checked) => applySameAsOrderer(checked === true)}
+                />
+                <span className="text-[13px] font-semibold">주문자 정보와 동일</span>
+              </label>
+
               <div>
                 <Input
                   ref={(node) => {
@@ -629,6 +699,8 @@ export function CheckoutView() {
                   }}
                   aria-label="받는 분"
                   placeholder="받는 분"
+                  readOnly={sameAsOrderer}
+                  className={sameAsOrderer ? "bg-muted" : undefined}
                   value={addressInput.recipient}
                   aria-invalid={visibleError("recipient") ? true : undefined}
                   aria-describedby={visibleError("recipient") ? "err-recipient" : undefined}
@@ -647,6 +719,8 @@ export function CheckoutView() {
                   aria-label="받는 분 연락처"
                   inputMode="numeric"
                   placeholder="받는 분 연락처"
+                  readOnly={sameAsOrderer}
+                  className={sameAsOrderer ? "bg-muted" : undefined}
                   value={addressInput.phone}
                   aria-invalid={visibleError("addressPhone") ? true : undefined}
                   aria-describedby={visibleError("addressPhone") ? "err-addressPhone" : undefined}
@@ -679,15 +753,17 @@ export function CheckoutView() {
                     type="button"
                     variant="neutral-solid"
                     size="sm-46"
-                    onClick={() =>
-                      showToast("주소 검색은 준비 중입니다. 우편번호를 직접 입력해 주세요.", {
-                        toastVariant: "info",
-                      })
-                    }
+                    onClick={() => void openPostcodeSearch()}
                   >
                     주소 찾기
                   </Button>
                 </div>
+                {/* 다음 우편번호 검색 레이어 — 새 창이 아니라 여기 안에 뜬다(팝업 차단·탭 이탈 방지).
+                    선택하면 스스로 비워지므로 평소엔 높이 0이다 */}
+                <div
+                  ref={postcodeLayerRef}
+                  className="mt-2 empty:hidden h-[420px] overflow-hidden rounded-[calc(var(--radius)-4px)] border border-border"
+                />
                 <FieldError id="err-zipcode" message={visibleError("zipcode")} />
               </div>
               <div>
@@ -708,6 +784,7 @@ export function CheckoutView() {
                 <FieldError id="err-addr1" message={visibleError("addr1")} />
               </div>
               <Input
+                ref={addressDetailRef}
                 aria-label="상세 주소"
                 placeholder="상세 주소 (동·호수 등)"
                 value={addressInput.addr2}

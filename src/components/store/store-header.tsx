@@ -14,11 +14,11 @@ import Link from "next/link"
 
 import { BellIcon, HeartIcon, TicketIcon, UserIcon } from "lucide-react"
 
-import { CountBadge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { cn } from "@/lib/utils"
 
+import { CartCountBadge } from "./cart-count-badge"
 import { StoreMobileNav } from "./store-mobile-nav"
 
 /** 대분류 + (선택) 중분류. category 테이블(slug/name/parent_id)에서 조립해 주입한다. */
@@ -344,15 +344,9 @@ export function StoreHeader({
                   <circle cx="9.5" cy="20" r="1.3" />
                   <circle cx="16.5" cy="20" r="1.3" />
                 </svg>
-                {/* 개수 0이면 뱃지 자체를 렌더하지 않는다. 라벨은 링크가, 변경 낭독은 aria-live가 담당(CountBadge 규약) */}
-                {cartCount > 0 && (
-                  <CountBadge
-                    aria-live="polite"
-                    className="absolute top-1 right-0.5 h-[18px] min-w-[18px] px-1"
-                  >
-                    {cartCount}
-                  </CountBadge>
-                )}
+                {/* 개수 0이면 뱃지 자체를 렌더하지 않는다. 라벨은 링크가, 변경 낭독은 aria-live가 담당(CountBadge 규약).
+                    서버 값은 초기값일 뿐이고 실제 개수는 카트 캐시를 구독한다 — 담기·삭제가 어디서 일어나든 따라온다 */}
+                <CartCountBadge initialCount={cartCount} />
               </Link>
             </Button>
           </div>
