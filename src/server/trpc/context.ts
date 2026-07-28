@@ -1,6 +1,7 @@
 import "server-only";
 
 import { db } from "@/db";
+import { readAdminSessionUserId } from "@/server/auth/admin-session";
 import {
   readCookieValueFromHeader,
   readSessionCustomerId,
@@ -51,11 +52,12 @@ function readClientIp(requestHeaders: Headers): string | null {
  * cartToken은 비회원 카트 식별자 — 쿠키가 없으면 null이고, 발급은 카트 담기 시점에 한다.
  */
 export async function createTRPCContext(opts: { headers: Headers }) {
-  // TODO(5주차): adminUserId를 관리자 세션에서 해석한다. 지금은 경계만 세운다.
+  const cookieHeader = opts.headers.get("cookie");
   return {
     db,
-    customerId: await readSessionCustomerId(opts.headers.get("cookie")),
-    adminUserId: null as number | null,
+    customerId: await readSessionCustomerId(cookieHeader),
+    // 관리자 세션은 별도 쿠키·별도 aud라 고객 토큰으로는 절대 채워지지 않는다
+    adminUserId: await readAdminSessionUserId(cookieHeader),
     cartToken: readCartToken(opts.headers),
     guestOrderToken: readGuestOrderToken(opts.headers),
     clientIp: readClientIp(opts.headers),

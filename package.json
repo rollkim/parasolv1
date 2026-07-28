@@ -19,7 +19,8 @@
     "check:claim2": "tsx --conditions=react-server src/server/services/_integration/claim-request.check.ts",
     "check:claim3": "tsx --conditions=react-server src/server/services/_integration/claim-process.check.ts",
     "check:claim4": "tsx --conditions=react-server src/server/services/_integration/claim-refund.check.ts",
-    "check:claim5": "tsx --conditions=react-server src/server/services/_integration/claim-router.check.ts"
+    "check:claim5": "tsx --conditions=react-server src/server/services/_integration/claim-router.check.ts",
+    "check:admin-auth": "tsx --conditions=react-server src/server/services/_integration/admin-auth.check.ts"
   },
   "dependencies": {
     "@tanstack/react-query": "^5.101.4",

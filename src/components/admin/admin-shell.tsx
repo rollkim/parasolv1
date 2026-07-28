@@ -19,6 +19,7 @@ import { Input } from "@/components/ui/input"
 import type { BusinessInfo } from "@/server/services/site-setting.service"
 
 import { AdminBrandMark } from "./admin-brand-mark"
+import { AdminLogoutButton } from "./admin-logout-button"
 import { AdminMobileDrawer } from "./admin-mobile-drawer"
 import { AdminSidebarNav } from "./admin-sidebar"
 import { type AdminNavBadgeCounts } from "./admin-nav"
@@ -175,6 +176,9 @@ function AdminShell({
                   </Link>
                 </Button>
               )}
+
+              {/* 계정이 있으면 나갈 길도 있어야 한다 — 로그인만 되고 로그아웃이 없으면 미완성이다 */}
+              {adminAccount && <AdminLogoutButton />}
             </div>
           </header>
 

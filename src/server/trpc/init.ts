@@ -3,6 +3,8 @@ import "server-only";
 import { initTRPC, TRPCError } from "@trpc/server";
 import superjson from "superjson";
 
+import { getAdminSessionProfile } from "@/server/services/admin-auth.service";
+
 import type { TRPCContext } from "./context";
 
 /**
@@ -34,11 +36,16 @@ export const protectedProcedure = t.procedure.use(({ ctx, next }) => {
 
 /**
  * 관리자만 — 상품 등록·주문 관리 등.
- * 인증 로직은 5주차(관리자)에서 채운다.
+ * ctx.adminUserId는 관리자 전용 쿠키(aud="admin")에서만 채워지므로 고객 세션으로는 통과할 수 없다.
+ * 계정이 그 사이 비활성됐을 수 있어 DB 상태까지 확인한다 — 세션 서명만으로는 부족하다.
  */
-export const adminProcedure = t.procedure.use(({ ctx, next }) => {
+export const adminProcedure = t.procedure.use(async ({ ctx, next }) => {
   if (!ctx.adminUserId) {
     throw new TRPCError({ code: "FORBIDDEN", message: "관리자 권한이 필요합니다." });
   }
-  return next({ ctx: { adminUserId: ctx.adminUserId } });
+  const adminProfile = await getAdminSessionProfile(ctx.db, ctx.adminUserId);
+  if (!adminProfile) {
+    throw new TRPCError({ code: "FORBIDDEN", message: "관리자 권한이 필요합니다." });
+  }
+  return next({ ctx: { adminUserId: adminProfile.adminUserId, adminProfile } });
 });

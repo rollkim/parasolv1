@@ -93,6 +93,9 @@ const QNA_BY_IP: RateLimitRule = { limit: 10, windowMs: 60 * 60 * 1000 };
 // 비회원 주문조회 — 주문번호가 "날짜-연번"이라 추측 가능하므로 무차별 탐색을 막는다.
 // 정상 사용자는 오타 몇 번이면 충분하다.
 const GUEST_LOOKUP_BY_IP: RateLimitRule = { limit: 10, windowMs: 10 * 60 * 1000 };
+// 관리자 로그인 — 권한 범위(주문·환불·상품)가 크고 계정 수가 적어 고객보다 엄격하게 둔다.
+const ADMIN_LOGIN_BY_ACCOUNT: RateLimitRule = { limit: 5, windowMs: 30 * 60 * 1000 };
+const ADMIN_LOGIN_BY_IP: RateLimitRule = { limit: 10, windowMs: 30 * 60 * 1000 };
 
 /**
  * 로그인 시도 전 게이트 — 계정별·IP별 실패 누적이 한도를 넘으면 차단.
@@ -118,6 +121,29 @@ export function recordLoginFailure(loginId: string, clientIp: string | null): vo
 export function clearLoginAttempts(loginId: string, clientIp: string | null): void {
   resetAttempts(`login:id:${loginId}`);
   if (clientIp) resetAttempts(`login:ip:${clientIp}`);
+}
+
+/**
+ * 관리자 로그인 게이트 — 계정별·IP별. 고객과 키 공간을 분리해(admin_login:) 서로 영향을 주지 않는다.
+ * 기록은 실패 시에만(recordAdminLoginFailure) 하므로 여기서는 읽기만 한다.
+ */
+export function assertAdminLoginAllowed(loginId: string, clientIp: string | null): void {
+  const byAccount = peekRateLimit(`admin_login:id:${loginId}`, ADMIN_LOGIN_BY_ACCOUNT);
+  if (!byAccount.allowed) throwTooMany(byAccount.retryAfterSeconds);
+  if (clientIp) {
+    const byIp = peekRateLimit(`admin_login:ip:${clientIp}`, ADMIN_LOGIN_BY_IP);
+    if (!byIp.allowed) throwTooMany(byIp.retryAfterSeconds);
+  }
+}
+
+export function recordAdminLoginFailure(loginId: string, clientIp: string | null): void {
+  recordAttempt(`admin_login:id:${loginId}`, ADMIN_LOGIN_BY_ACCOUNT);
+  if (clientIp) recordAttempt(`admin_login:ip:${clientIp}`, ADMIN_LOGIN_BY_IP);
+}
+
+export function clearAdminLoginAttempts(loginId: string, clientIp: string | null): void {
+  resetAttempts(`admin_login:id:${loginId}`);
+  if (clientIp) resetAttempts(`admin_login:ip:${clientIp}`);
 }
 
 /** 가입 스팸 게이트 — 모든 시도를 카운트(성공/실패 무관) */
