@@ -228,6 +228,9 @@ export function CheckoutView() {
   ]
 
   function handleSubmit() {
+    // aria-disabled는 클릭을 막지 않는다(막으면 사유를 알릴 수 없어 일부러 활성으로 뒀다).
+    // 진행 중·생성 완료 상태에서 다시 눌리면 주문이 중복 생성되므로 여기서 끊는다.
+    if (createOrderMutation.isPending || createdOrder) return
     setSubmitAttempted(true)
 
     const firstInvalid = FIELD_FOCUS_ORDER.find((field) => fieldErrors[field])

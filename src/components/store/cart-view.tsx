@@ -17,7 +17,8 @@
 //  - 수량 상한 QMAX=20 미적용: 상한은 서버가 재고 기준으로 보정한다(응답 stockLimited로 안내).
 //  - 상품명에 상세 링크 추가(목업 미포함): 카트에서 상품을 재확인할 동선이 없어 보완.
 //  - 컨테이너 쿼리(@container store)는 셸 선례를 따라 뷰포트 기준(md:768px / min-[1040px])으로 환산.
-//  - 결제하기 CTA는 체크아웃 미구현이라 안내 토스트 스텁. TODO(체크아웃 배선 시 이동으로 교체)
+//  - 결제하기 CTA는 /checkout으로 이동. 선택 체크박스는 위 사유대로 결제 범위에 반영하지 않으므로
+//    체크아웃이 카트 전체를 주문 대상으로 받는다(부분 선택 결제는 체크아웃에서 라인을 고른다).
 
 import * as React from "react"
 
@@ -503,11 +504,8 @@ export function CartView() {
     }
   }
 
-  // TODO(체크아웃 배선): /checkout 이동으로 교체 — 지금은 안내 토스트 스텁
   const handleCheckoutClick = () => {
-    showToast("주문/결제 화면은 아직 준비 중이에요. 곧 열릴 예정입니다.", {
-      toastVariant: "info",
-    })
+    router.push("/checkout")
   }
 
   const pendingQuantityCartItemId = updateQuantityMutation.isPending
