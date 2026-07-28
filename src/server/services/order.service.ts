@@ -21,12 +21,11 @@ import {
 import { normalizePhone } from "@/domain/phone";
 
 import { getCartWithItems, type CartLine } from "./cart.service";
-import type { DatabaseClient, QueryClient, TransactionClient } from "./db-client";
+import type { DatabaseClient, TransactionClient } from "./db-client";
+import { loadShippingPolicy } from "./shipping-policy.service";
 import { getRequiredTermsDocumentIds } from "./terms.service";
 import { serializeActor } from "./order-status.service";
 import { allocateOrderNo } from "./order-number.service";
-import { getSiteSetting } from "./site-setting.service";
-import type { ShippingPolicy } from "@/domain/cart";
 
 /**
  * 주문 서비스 — 생성(체크아웃) 트랜잭션.
@@ -38,22 +37,6 @@ import type { ShippingPolicy } from "@/domain/cart";
  * 금액은 트랜잭션 안에서 다시 계산한다(RULE-11) — 클라이언트가 보낸 금액은 신뢰하지 않고,
  * 카트 화면을 본 뒤 가격이 바뀌었을 수 있으므로 결제 직전 값으로 확정한다.
  */
-
-const DEFAULT_SHIPPING_POLICY: ShippingPolicy = { baseFee: 3000, freeThreshold: 30000 };
-
-async function loadShippingPolicy(client: QueryClient): Promise<ShippingPolicy> {
-  const stored = await getSiteSetting(client, "shipping_policy");
-  if (stored && typeof stored === "object") {
-    const candidate = stored as Partial<ShippingPolicy>;
-    if (
-      typeof candidate.baseFee === "number" &&
-      typeof candidate.freeThreshold === "number"
-    ) {
-      return { baseFee: candidate.baseFee, freeThreshold: candidate.freeThreshold };
-    }
-  }
-  return DEFAULT_SHIPPING_POLICY;
-}
 
 /** 카트 라인 → 도메인 입력. 주문 가능 여부 판정은 카트 서비스가 이미 계산한 값을 따른다 */
 function toDraftLine(line: CartLine): OrderDraftLine {

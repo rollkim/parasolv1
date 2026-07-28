@@ -423,12 +423,18 @@ export const payment = pgTable("payment", {
   status: paymentStatus("status").notNull().default("ready"),
   approvedAt: timestamp("approved_at", { withTimezone: true }),
   raw: jsonb("raw"),
+  // 클레임 배송비 추가결제[2차 card] 자리 — 주문 본결제와 구분한다.
+  // 이 값이 있으면 아래 '주문당 유효 결제 1건' 제약에서 빠진다(한 주문에 본결제 1 + 클레임 결제 N).
+  claimId: bigint("claim_id", { mode: "number" }).references(() => claim.id, { onDelete: "set null" }),
   ...auditTimes,
 }, (t) => [
   uniqueIndex("payment_key_uq").on(t.paymentKey),
   index("payment_order_idx").on(t.orderId),
-  // 주문당 유효 결제 1건 강제 — 실패 결제는 여러 번(재시도) 허용, 환불 대상 모호성 제거
-  uniqueIndex("payment_order_active_uq").on(t.orderId).where(sql`${t.status} <> 'failed'`),
+  // 주문당 유효 '본결제' 1건 강제 — 실패 결제는 여러 번(재시도) 허용, 환불 대상 모호성 제거
+  uniqueIndex("payment_order_active_uq")
+    .on(t.orderId)
+    .where(sql`${t.status} <> 'failed' AND ${t.claimId} IS NULL`),
+  index("payment_claim_idx").on(t.claimId).where(sql`${t.claimId} IS NOT NULL`),
 ]);
 
 export const paymentCancellation = pgTable("payment_cancellation", {
@@ -436,11 +442,17 @@ export const paymentCancellation = pgTable("payment_cancellation", {
   paymentId: bigint("payment_id", { mode: "number" }).notNull().references(() => payment.id, { onDelete: "cascade" }),
   claimId: bigint("claim_id", { mode: "number" }).references(() => claim.id, { onDelete: "set null" }), // 클레임 기인 환불 연결
   amount: integer("amount").notNull(),
+  // 환불 실행 채널(설계 D10) — pg_api(토스 API 자동) / pg_console(PG 관리자 수동 환불 후 기록)
+  // / bank_transfer(계좌 송금 후 기록). PG API 환불이 막히는 실무 상황(기간 경과·부분취소 불가)에도
+  // 클레임이 멈추지 않게 한다. 전 채널이 이 원장 하나에 남아야 '미환불 잔액' 계산이 성립한다.
+  refundChannel: text("refund_channel").notNull().default("pg_api"),
   reason: text("reason"),
   raw: jsonb("raw"),
   createdBy: text("created_by"),
   ...createdOnly,
-});
+}, (t) => [
+  check("pc_refund_channel_ck", sql`${t.refundChannel} ~ '^[a-z_]+$'`),
+]);
 
 export const shipment = pgTable("shipment", {
   id: bigserial("id", { mode: "number" }).primaryKey(),
@@ -471,6 +483,11 @@ export const claim = pgTable("claim", {
   goodsAmount: integer("goods_amount").notNull().default(0),
   shippingFee: integer("shipping_fee").notNull().default(0), // 반품/교환 배송비
   refundAmount: integer("refund_amount").notNull().default(0),
+  // 배송비 수취 — 상태(claim.status)가 아니라 별도 축이다. 미입금 교환이 상태머신을 멈추지 않고,
+  // 관리자 목록의 '입금 대기' 필터가 대기열을 보여준다(설계 D3-확장).
+  feeMethod: text("fee_method"),                // deduct_refund(환불차감) / bank_transfer(계좌이체) / card[2차]
+  feeSettledAt: timestamp("fee_settled_at", { withTimezone: true }), // NULL이면 미수취 — 교환품 발송 게이트 기준
+  feeMemo: text("fee_memo"),                    // 입금자명 등 운영 메모
   adminMemo: text("admin_memo"),
   resolvedAt: timestamp("resolved_at", { withTimezone: true }),
   ...audit,
@@ -478,6 +495,7 @@ export const claim = pgTable("claim", {
   uniqueIndex("claim_no_uq").on(t.claimNo),
   index("claim_order_idx").on(t.orderId),
   index("claim_status_idx").on(t.status),
+  check("claim_fee_method_ck", sql`${t.feeMethod} IS NULL OR ${t.feeMethod} ~ '^[a-z_]+$'`),
 ]);
 
 export const claimItem = pgTable("claim_item", {
