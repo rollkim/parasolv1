@@ -6,6 +6,19 @@ import "server-only";
  * 토스 실키 연동 시 toss-payment-gateway.ts가 이 인터페이스를 구현하고
  * 배선(어떤 구현을 주입할지)만 바뀐다 — payment.service 코드는 그대로다(RULE-14).
  * 시크릿 키는 그 구현 파일이 서버 env에서만 읽는다(RULE-11: 클라이언트 번들 금지).
+ *
+ * ── 실 어댑터 구현 시 반드시 지킬 것 (토스 공식 LLM 레퍼런스 기준) ──
+ *  1. 인증 헤더: `Basic base64(SECRET_KEY + ":")` — **시크릿 뒤 콜론 1개**가 필수다.
+ *     콜론 누락이 가장 흔한 실수이며, BOM이 섞이면 결과가 `77u/`로 시작한다.
+ *  2. 멱등키: POST에 `Idempotency-Key: {UUID v4}` 헤더를 붙인다(15일 유효).
+ *     같은 키는 첫 응답을 그대로 돌려주므로 중복 승인·중복 취소를 막는다. GET은 무시된다.
+ *  3. 승인: `POST /v1/payments/confirm` — body `{ paymentKey, orderId, amount }`.
+ *     amount는 **서버가 저장한 금액**이다(successUrl 쿼리 값이 아니다).
+ *  4. 취소: `POST /v1/payments/{paymentKey}/cancel` — body `{ cancelReason }`,
+ *     부분 취소는 `cancelAmount` 추가. 가상계좌 환불은 `refundReceiveAccount` 필요.
+ *  5. 조회: `GET /v1/payments/{paymentKey}` — confirm 실패를 곧바로 결제 실패로 단정하지 않고
+ *     이 API로 실제 상태를 확인한 뒤 분기한다(이미 승인된 건일 수 있다).
+ *  6. 필드를 지어내지 않는다 — 문서에 없는 필드는 만들지 않는다(타 PG 명칭 유추 금지).
  */
 
 export type GatewayConfirmInput = {

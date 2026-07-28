@@ -30,20 +30,28 @@ type TossWebhookBody = {
 };
 
 /**
- * 발신자 확인 — 토스 개발자센터에 등록한 시크릿과 대조한다.
- * 시크릿이 설정돼 있는데 헤더가 없거나 다르면 처리하지 않는다(위조 요청 차단).
+ * 발신자 확인 — **일반 결제 웹훅에는 서명 헤더가 없다**(토스 공식 문서 §7.2).
+ * 서명 검증이 가능한 것은 지급대행(payout)·셀러 웹훅뿐이고, 그쪽만
+ * `tosspayments-webhook-signature`(HMAC SHA-256)를 준다.
+ *
+ * 따라서 결제 웹훅의 진짜 검증은 **본문을 믿지 않고 조회 API로 되묻는 것**이다:
+ * paymentKey로 GET /v1/payments/{paymentKey}를 호출해 실제 상태를 확인한 뒤 처리한다.
+ * 우리 코드에서는 confirmPayment가 게이트웨이를 거치며 그 역할을 대신한다 —
+ * 위조 본문이 와도 토스에 없는 결제라면 승인 단계에서 실패한다.
+ *
+ * 공유 시크릿 헤더는 토스 규약이 아니므로 **선택적 1차 필터**로만 둔다.
+ * 설정돼 있으면 확인하고, 없으면 통과시키되 조회 검증에 의존한다.
  */
-function isAuthenticWebhook(request: Request): boolean {
+function passesWebhookPrefilter(request: Request): boolean {
   const expectedSecret = process.env.TOSS_WEBHOOK_SECRET;
-  if (!expectedSecret) {
-    // 미설정 = 아직 연동 전. 운영에서는 반드시 설정해야 한다.
-    return process.env.NODE_ENV !== "production";
-  }
-  return request.headers.get("x-toss-webhook-secret") === expectedSecret;
+  if (!expectedSecret) return true; // 토스 기본 규약 — 헤더 없음
+  const providedSecret = request.headers.get("x-toss-webhook-secret");
+  // 시크릿을 설정한 운영자는 프록시·게이트웨이에서 헤더를 주입한다는 뜻이다
+  return providedSecret === expectedSecret;
 }
 
 export async function POST(request: Request) {
-  if (!isAuthenticWebhook(request)) {
+  if (!passesWebhookPrefilter(request)) {
     // 재시도해도 통과할 수 없다 — 401로 끝낸다
     return NextResponse.json({ received: false }, { status: 401 });
   }
