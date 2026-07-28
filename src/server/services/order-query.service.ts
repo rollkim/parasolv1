@@ -1,9 +1,10 @@
 import "server-only";
 
-import { asc, desc, eq } from "drizzle-orm";
+import { asc, desc, eq, inArray } from "drizzle-orm";
 
 import { orderItem, orderItemAddon, orders, payment, shipment } from "@/db/schema";
 import { effectiveListPrice } from "@/domain/cart";
+import { availableClaimTypes, type ClaimType } from "@/domain/claim";
 import {
   maskAddressDetail,
   maskOrdererName,
@@ -98,6 +99,13 @@ export type OrderView = {
   } | null;
   shipmentSummary: OrderViewShipment | null;
   items: OrderViewItem[];
+  /**
+   * 지금 신청 가능한 클레임 유형 — 화면의 취소·교환·반품 버튼 노출 판정.
+   * 도메인 규칙(주문 상태 + 배송완료 7일)을 서버가 적용해 내려준다. 화면이 자체 조건을
+   * 두면 서버 검증과 어긋나 "버튼은 보이는데 눌렀더니 거부"가 된다.
+   * 비회원 조회(guest_lookup)는 열람 전용이라 항상 빈 배열이다.
+   */
+  availableClaimTypes: ClaimType[];
 };
 
 /** 마스킹 수준 — 같은 조립 로직을 노출 범위만 달리해 재사용한다 */
@@ -239,6 +247,13 @@ async function buildOrderView(
           approvedAt: paymentRow.approvedAt,
         }
       : null,
+    availableClaimTypes: isGuestLookup
+      ? []
+      : availableClaimTypes({
+          orderStatus: orderRow.status,
+          deliveredAt: orderRow.deliveredAt,
+          now: new Date(),
+        }),
     shipmentSummary: shipmentRow
       ? {
           carrierCode: shipmentRow.carrierCode,
@@ -251,6 +266,87 @@ async function buildOrderView(
       : null,
     items,
   };
+}
+
+export type MyOrderCard = {
+  orderNo: string;
+  orderStatus: OrderStatus;
+  orderStatusLabel: string;
+  orderedAt: Date;
+  grandTotal: number;
+  /** 카드에 보일 대표 품목명 — 여러 건이면 "외 N" 표기는 화면이 붙인다 */
+  leadProductName: string;
+  leadThumbnailPath: string | null;
+  leadThumbnailAlt: string | null;
+  itemCount: number;
+};
+
+/**
+ * 마이페이지 주문 내역 — 최신순.
+ * 상세는 별도 조회(getMyOrderDetail)라 여기서는 카드에 필요한 최소 정보만 모은다.
+ */
+export async function listMyOrders(
+  client: QueryClient,
+  customerId: number,
+  options: { limit?: number } = {},
+): Promise<MyOrderCard[]> {
+  const orderRows = await client
+    .select({
+      id: orders.id,
+      orderNo: orders.orderNo,
+      status: orders.status,
+      createdAt: orders.createdAt,
+      grandTotal: orders.grandTotal,
+    })
+    .from(orders)
+    .where(eq(orders.customerId, customerId))
+    .orderBy(desc(orders.id))
+    .limit(options.limit ?? 20);
+  if (orderRows.length === 0) return [];
+
+  const itemRows = await client
+    .select({
+      orderId: orderItem.orderId,
+      id: orderItem.id,
+      productName: orderItem.productName,
+      thumbnailPath: orderItem.thumbnailPath,
+      thumbnailAlt: orderItem.thumbnailAlt,
+    })
+    .from(orderItem)
+    .where(inArray(orderItem.orderId, orderRows.map((row) => row.id)))
+    .orderBy(asc(orderItem.id));
+
+  return orderRows.map((orderRow) => {
+    const lines = itemRows.filter((item) => item.orderId === orderRow.id);
+    const lead = lines[0];
+    return {
+      orderNo: orderRow.orderNo,
+      orderStatus: orderRow.status,
+      orderStatusLabel: orderStatusLabel(orderRow.status),
+      orderedAt: orderRow.createdAt,
+      grandTotal: orderRow.grandTotal,
+      leadProductName: lead?.productName ?? "(품목 없음)",
+      leadThumbnailPath: lead?.thumbnailPath ?? null,
+      leadThumbnailAlt: lead?.thumbnailAlt ?? null,
+      itemCount: lines.length,
+    };
+  });
+}
+
+/** 회원 주문 상세 — 세션 소유자만. 본인 화면이라 마스킹하지 않는다 */
+export async function getMyOrderDetail(
+  client: QueryClient,
+  input: { orderNo: string; customerId: number },
+): Promise<OrderView> {
+  const [orderRow] = await client
+    .select()
+    .from(orders)
+    .where(eq(orders.orderNo, input.orderNo))
+    .limit(1);
+  if (!orderRow) throw new OrderAccessDeniedError();
+  if (orderRow.customerId !== input.customerId) throw new OrderAccessDeniedError();
+
+  return buildOrderView(client, orderRow, "owner");
 }
 
 /** 조회 권한 없음·미존재를 구분하지 않는다 — 주문 존재 여부 자체가 정보다 */

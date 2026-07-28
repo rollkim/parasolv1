@@ -5,14 +5,16 @@ import { getPaymentGateway } from "@/server/payments";
 import { assertGuestLookupAllowed } from "@/server/security/rate-limit";
 import { getCheckoutView } from "@/server/services/checkout-view.service";
 import {
+  getMyOrderDetail,
   getOrderResult,
+  listMyOrders,
   lookupGuestOrder,
 } from "@/server/services/order-query.service";
 import { createPendingOrder } from "@/server/services/order.service";
 import { confirmPayment } from "@/server/services/payment.service";
 
 import { GUEST_ORDER_COOKIE_NAME } from "../context";
-import { publicProcedure, router } from "../init";
+import { protectedProcedure, publicProcedure, router } from "../init";
 import { withOrderErrorMapping } from "../order-error";
 
 /** 주문 직후 완료 화면을 보는 동안만 필요하다 — 오래 두면 공용 PC에서 남의 주문이 열린다 */
@@ -182,6 +184,20 @@ export const orderRouter = router({
           // 비회원 소유 증명은 주문 생성 때 발급한 쿠키가 한다 — 화면이 토큰을 다루지 않는다
           guestToken: ctx.guestOrderToken,
         }),
+      ),
+    ),
+
+  /** 마이페이지 주문 내역 — 최신순 */
+  listMyOrders: protectedProcedure.query(({ ctx }) =>
+    withOrderErrorMapping(() => listMyOrders(ctx.db, ctx.customerId)),
+  ),
+
+  /** 회원 주문 상세 — 세션 소유자만. 본인 화면이라 마스킹하지 않는다 */
+  getMyOrderDetail: protectedProcedure
+    .input(z.object({ orderNo: orderNoSchema }))
+    .query(({ ctx, input }) =>
+      withOrderErrorMapping(() =>
+        getMyOrderDetail(ctx.db, { orderNo: input.orderNo, customerId: ctx.customerId }),
       ),
     ),
 

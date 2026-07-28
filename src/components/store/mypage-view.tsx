@@ -18,6 +18,8 @@
 
 import * as React from "react"
 
+import Link from "next/link"
+
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import { MapPinIcon, PackageIcon, StarIcon, UserIcon } from "lucide-react"
 
@@ -34,7 +36,10 @@ import { EmptyState } from "@/components/ui/empty-state"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Skeleton, SkeletonGroup } from "@/components/ui/skeleton"
+import { Spinner } from "@/components/ui/spinner"
 import { useToast } from "@/components/ui/toast"
+import { ImagePlaceholder } from "@/components/store/image-placeholder"
+import { formatKrw } from "@/lib/format"
 import { cn } from "@/lib/utils"
 import type { CustomerAddress, MyProfile } from "@/server/services/customer.service"
 import { useTRPC } from "@/trpc/client"
@@ -125,20 +130,91 @@ function FormFieldRow({
 }
 
 // =============================================================
-// 주문 내역 · 내 리뷰 — 도메인 미구현이라 빈 상태만(파일 머리 주석 참조)
+// 주문 내역 (내 리뷰는 도메인 미구현이라 빈 상태 — 파일 머리 주석 참조)
 // =============================================================
 
 function OrdersSection() {
+  const trpc = useTRPC()
+  const ordersQuery = useQuery(trpc.order.listMyOrders.queryOptions())
+
+  if (ordersQuery.isPending) {
+    return (
+      <div className="flex min-h-40 items-center justify-center" aria-busy="true">
+        <Spinner />
+        <span className="sr-only">주문 내역을 불러오는 중입니다</span>
+      </div>
+    )
+  }
+
+  if (ordersQuery.isError) {
+    return (
+      <p role="alert" className="py-10 text-center text-sm text-muted-foreground">
+        주문 내역을 불러오지 못했습니다. 잠시 후 다시 시도해 주세요.
+      </p>
+    )
+  }
+
+  const orderCards = ordersQuery.data ?? []
+  if (orderCards.length === 0) {
+    return (
+      <EmptyState
+        size="section"
+        stateTone="neutral"
+        headingLevel={3}
+        icon={<PackageIcon aria-hidden="true" />}
+        title="아직 주문이 없어요"
+        description="마음에 드는 상품을 찾아 첫 주문을 시작해 보세요."
+        actions={[{ label: "상품 보러가기", href: "/products" }]}
+      />
+    )
+  }
+
   return (
-    <EmptyState
-      size="section"
-      stateTone="neutral"
-      headingLevel={3}
-      icon={<PackageIcon aria-hidden="true" />}
-      title="아직 주문이 없어요"
-      description="마음에 드는 상품을 찾아 첫 주문을 시작해 보세요."
-      actions={[{ label: "상품 보러가기", href: "/products" }]}
-    />
+    <ul className="m-0 flex list-none flex-col gap-3 p-0">
+      {orderCards.map((orderCard) => (
+        <li key={orderCard.orderNo}>
+          {/* 카드 전체가 상세 진입 — 터치 타겟이 넉넉하고 링크가 하나뿐이라 탐색이 단순하다 */}
+          <Link
+            href={`/order/${orderCard.orderNo}`}
+            className="flex items-start gap-3 rounded-[var(--radius)] border border-border bg-card p-4 transition-colors hover:border-primary focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring"
+          >
+            <div className="size-16 shrink-0 overflow-hidden rounded-[calc(var(--radius)-4px)] border border-border">
+              {orderCard.leadThumbnailPath ? (
+                // eslint-disable-next-line @next/next/no-img-element
+                <img
+                  src={orderCard.leadThumbnailPath}
+                  alt={orderCard.leadThumbnailAlt ?? orderCard.leadProductName}
+                  className="size-full object-cover"
+                />
+              ) : (
+                <ImagePlaceholder />
+              )}
+            </div>
+            <div className="min-w-0 flex-1">
+              <div className="flex flex-wrap items-center gap-2">
+                <span className="text-[13px] text-muted-foreground">
+                  {new Date(orderCard.orderedAt).toLocaleDateString("ko-KR")}
+                </span>
+                <span className="rounded-[5px] border border-primary px-1.5 py-px text-[11px] font-bold text-primary">
+                  {orderCard.orderStatusLabel}
+                </span>
+              </div>
+              <p className="m-0 mt-1 text-sm font-bold">
+                {orderCard.leadProductName}
+                {orderCard.itemCount > 1 ? (
+                  <span className="font-normal text-muted-foreground">
+                    {" "}
+                    외 {orderCard.itemCount - 1}건
+                  </span>
+                ) : null}
+              </p>
+              <p className="m-0 text-[13px] text-muted-foreground">{orderCard.orderNo}</p>
+            </div>
+            <span className="shrink-0 text-sm font-bold">{formatKrw(orderCard.grandTotal)}</span>
+          </Link>
+        </li>
+      ))}
+    </ul>
   )
 }
 

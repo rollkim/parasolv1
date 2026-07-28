@@ -20,6 +20,7 @@ import {
   GUEST_ORDER_COOKIE_NAME,
 } from "@/server/trpc/context";
 import { createCaller } from "@/server/trpc/routers/_app";
+import { applyOrderTransition } from "../order-status.service";
 
 let passCount = 0;
 let failCount = 0;
@@ -187,6 +188,69 @@ async function main() {
     check(
       /[가-힣]/.test(lookupFailMessage) && !/Error:|at \w+\./.test(lookupFailMessage),
       `조회 실패 문구: "${lookupFailMessage}"`,
+    );
+
+    console.log("\n[5] 클레임 버튼 판정 — 주문 상태별 가능 유형 기대");
+    // 결제 전(pending)에는 아무것도 신청할 수 없다
+    check(
+      result.availableClaimTypes.length === 0,
+      `결제 전 주문은 클레임 불가 (${JSON.stringify(result.availableClaimTypes)})`,
+    );
+    // 비회원 조회는 열람 전용이라 버튼을 내려주지 않는다
+    check(
+      lookup.availableClaimTypes.length === 0,
+      "비회원 조회는 클레임 버튼 없음(열람 전용)",
+      lookup.availableClaimTypes,
+    );
+
+    // 결제 완료 → 취소만 가능
+    await db.transaction((tx) =>
+      applyOrderTransition(tx, {
+        orderId: created.orderId,
+        toStatus: "paid",
+        actor: { role: "system" },
+        memo: "검증",
+      }),
+    );
+    const paidCaller = await guestCaller(cartToken, created.guestToken ?? undefined);
+    const paidView = await paidCaller.order.getOrderResult({ orderNo: created.orderNo });
+    check(
+      paidView.availableClaimTypes.length === 1 && paidView.availableClaimTypes[0] === "cancel",
+      `결제 완료 → 취소만 (${JSON.stringify(paidView.availableClaimTypes)})`,
+    );
+
+    // 배송 중 → 아무것도 불가(취소하기엔 출고됐고 반품하기엔 못 받았다)
+    for (const status of ["preparing", "shipping"] as const) {
+      await db.transaction((tx) =>
+        applyOrderTransition(tx, {
+          orderId: created.orderId,
+          toStatus: status,
+          actor: { role: "admin", id: 1 },
+          memo: "검증",
+        }),
+      );
+    }
+    const shippingView = await paidCaller.order.getOrderResult({ orderNo: created.orderNo });
+    check(
+      shippingView.availableClaimTypes.length === 0,
+      `배송 중 → 전부 불가 (${JSON.stringify(shippingView.availableClaimTypes)})`,
+    );
+
+    // 배송 완료 → 교환·반품 가능
+    await db.transaction((tx) =>
+      applyOrderTransition(tx, {
+        orderId: created.orderId,
+        toStatus: "delivered",
+        actor: { role: "admin", id: 1 },
+        memo: "검증",
+      }),
+    );
+    const deliveredView = await paidCaller.order.getOrderResult({ orderNo: created.orderNo });
+    check(
+      deliveredView.availableClaimTypes.length === 2 &&
+        deliveredView.availableClaimTypes.includes("exchange") &&
+        deliveredView.availableClaimTypes.includes("return"),
+      `배송 완료 → 교환·반품 (${JSON.stringify(deliveredView.availableClaimTypes)})`,
     );
   } finally {
     if (orderIds.length > 0) await db.delete(orders).where(inArray(orders.id, orderIds));

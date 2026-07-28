@@ -147,7 +147,7 @@ export const CLAIM_WINDOW_DAYS = 7;
 const CLAIM_WINDOW_MS = CLAIM_WINDOW_DAYS * 24 * 60 * 60 * 1000;
 
 /** 주문 상태 — order 도메인과 결합하지 않기 위해 문자열 리터럴만 공유한다 */
-type ClaimableOrderStatus =
+export type ClaimableOrderStatus =
   | "pending"
   | "paid"
   | "preparing"
@@ -208,6 +208,28 @@ export function assertOrderClaimable(input: {
   if (now.getTime() - deliveredAt.getTime() > CLAIM_WINDOW_MS) {
     throw new ClaimWindowExpiredError();
   }
+}
+
+/**
+ * 지금 신청할 수 있는 클레임 유형 — 화면의 버튼 노출 판정용.
+ *
+ * assertOrderClaimable과 **같은 규칙**을 쓴다(내부에서 호출). 화면이 자체 조건을 두면
+ * 서버와 어긋나 "버튼은 보이는데 눌렀더니 거부"가 된다. 서버가 목록으로 내려주고
+ * 화면은 그대로 그린다.
+ */
+export function availableClaimTypes(input: {
+  orderStatus: ClaimableOrderStatus;
+  deliveredAt: Date | null;
+  now: Date;
+}): ClaimType[] {
+  return CLAIM_TYPES.filter((claimType) => {
+    try {
+      assertOrderClaimable({ ...input, claimType });
+      return true;
+    } catch {
+      return false;
+    }
+  });
 }
 
 // =============================================================

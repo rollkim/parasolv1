@@ -227,7 +227,10 @@ export function OrderCompleteView({ orderNo }: { orderNo: string }) {
 
       <div className="flex flex-wrap justify-center gap-2">
         <Button variant="outline" size="md-50" asChild>
-          <Link href={orderView.isGuestOrder ? "/order-lookup" : "/mypage"}>주문 상세 보기</Link>
+          {/* 비회원은 세션이 없어 회원 상세로 갈 수 없다 — 주문번호+연락처 조회로 안내한다 */}
+          <Link href={orderView.isGuestOrder ? "/order-lookup" : `/order/${orderView.orderNo}`}>
+            주문 상세 보기
+          </Link>
         </Button>
         <Button variant="primary" size="md-50" asChild>
           <Link href="/products">쇼핑 계속하기</Link>
