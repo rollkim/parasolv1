@@ -18,6 +18,12 @@ import {
 import { AdminClaimNotFoundError } from "@/server/services/admin-claim.service";
 import { AdminOrderNotFoundError, InvoiceRequiresPreparingError } from "@/server/services/admin-order.service";
 import {
+  AdminCategoryNotFoundError,
+  CategoryDepthExceededError,
+  CategoryHasChildrenError,
+  DuplicateCategorySlugError,
+} from "@/server/services/admin-category.service";
+import {
   AdminProductNotFoundError,
   DuplicateProductSlugError,
   DuplicateVariantSkuError,
@@ -250,6 +256,28 @@ export function toOrderTRPCError(error: unknown): unknown {
 
   if (error instanceof ProductVariantRequiredError) {
     return new TRPCError({ code: "BAD_REQUEST", message: error.message, cause: error });
+  }
+
+  // ── 관리자 카테고리 ──
+  if (error instanceof AdminCategoryNotFoundError) {
+    return new TRPCError({
+      code: "NOT_FOUND",
+      message: "카테고리를 찾을 수 없습니다. 화면을 새로고침해 주세요.",
+      cause: error,
+    });
+  }
+
+  if (error instanceof DuplicateCategorySlugError) {
+    return new TRPCError({ code: "CONFLICT", message: error.message, cause: error });
+  }
+
+  // 3단계를 막는 문구가 곧 규칙 설명이다 — 왜 안 되는지 화면에서 바로 읽힌다
+  if (error instanceof CategoryDepthExceededError) {
+    return new TRPCError({ code: "BAD_REQUEST", message: error.message, cause: error });
+  }
+
+  if (error instanceof CategoryHasChildrenError) {
+    return new TRPCError({ code: "CONFLICT", message: error.message, cause: error });
   }
 
   // 미존재와 권한 없음을 구분해 알리지 않는다 — 구분되면 주문번호 대입으로 존재 여부를 캐낼 수 있다

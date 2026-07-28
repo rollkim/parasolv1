@@ -17,6 +17,12 @@ import {
   InvoiceRequiresPreparingError,
 } from "@/server/services/admin-order.service";
 import {
+  AdminCategoryNotFoundError,
+  CategoryDepthExceededError,
+  CategoryHasChildrenError,
+  DuplicateCategorySlugError,
+} from "@/server/services/admin-category.service";
+import {
   AdminProductNotFoundError,
   DuplicateProductSlugError,
   DuplicateVariantSkuError,
@@ -107,6 +113,10 @@ const DOMAIN_ERRORS: { name: string; error: Error }[] = [
   { name: "DuplicateProductSlugError", error: new DuplicateProductSlugError("oat-cookie") },
   { name: "DuplicateVariantSkuError", error: new DuplicateVariantSkuError("CK-1001") },
   { name: "ProductVariantRequiredError", error: new ProductVariantRequiredError() },
+  { name: "AdminCategoryNotFoundError", error: new AdminCategoryNotFoundError(1) },
+  { name: "DuplicateCategorySlugError", error: new DuplicateCategorySlugError("bakery") },
+  { name: "CategoryDepthExceededError", error: new CategoryDepthExceededError() },
+  { name: "CategoryHasChildrenError", error: new CategoryHasChildrenError(3) },
 ];
 
 describe("주문 오류 → tRPC 오류 매핑", () => {
