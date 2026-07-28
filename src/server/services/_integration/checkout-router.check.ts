@@ -159,6 +159,35 @@ async function main() {
     check(lookup.orderer.name === "체***테스터".slice(0, 1) + "*".repeat(ORDERER.name.length - 1),
       `비회원조회는 마스킹 (${lookup.orderer.name})`);
     check(lookup.shippingAddress.deliveryMemo === null, "비회원조회는 배송메모 미노출");
+
+    // 조회 화면이 그리는 값들 — 서버가 화면 요구를 채우는지 확인한다
+    check(lookup.orderStatusLabel.length > 0, `상태 배지 문구 "${lookup.orderStatusLabel}"`);
+    check(
+      lookup.timeline.steps.length === 4,
+      `타임라인 4단계 (실제 ${lookup.timeline.steps.length})`,
+      lookup.timeline.steps,
+    );
+    check(
+      lookup.timeline.outOfTimeline && lookup.timeline.currentStep === null,
+      "결제 전 주문은 타임라인 밖 — 화면이 안내 블록을 그린다",
+      lookup.timeline,
+    );
+    check(lookup.items.length > 0 && lookup.amounts.grandTotal > 0, "품목·결제금액 제공");
+
+    // 조회 실패 문구는 사용자에게 그대로 노출되므로 완성된 한글 문장이어야 한다
+    let lookupFailMessage = "";
+    try {
+      await caller.order.lookupGuestOrder({
+        orderNo: created.orderNo,
+        ordererPhone: "01000000000",
+      });
+    } catch (error) {
+      lookupFailMessage = error instanceof Error ? error.message : String(error);
+    }
+    check(
+      /[가-힣]/.test(lookupFailMessage) && !/Error:|at \w+\./.test(lookupFailMessage),
+      `조회 실패 문구: "${lookupFailMessage}"`,
+    );
   } finally {
     if (orderIds.length > 0) await db.delete(orders).where(inArray(orders.id, orderIds));
     await db.delete(cart).where(eq(cart.id, cartRow.id));
