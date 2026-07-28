@@ -30,9 +30,10 @@ yarn-debug.log*
 yarn-error.log*
 .pnpm-debug.log*
 
-# env files (can opt-in for committing if needed)
+# env files — .env.example 포함해 전부 제외한다(사용자 지정, 2026-07-28).
+# 키 이름만 담은 템플릿이라도 저장소에 두지 않는다. 필요한 키 목록은
+# plan/가이드_외부API키발급(external-api-keys) 문서가 관리한다.
 .env*
-!.env.example
 
 # IDE
 .idea/
