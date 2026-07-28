@@ -17,6 +17,10 @@ import {
   InvoiceRequiresPreparingError,
 } from "@/server/services/admin-order.service";
 import {
+  AdminCustomerNotFoundError,
+  CustomerAlreadyWithdrawnError,
+} from "@/server/services/admin-customer.service";
+import {
   AdminCategoryNotFoundError,
   CategoryDepthExceededError,
   CategoryHasChildrenError,
@@ -117,6 +121,8 @@ const DOMAIN_ERRORS: { name: string; error: Error }[] = [
   { name: "DuplicateCategorySlugError", error: new DuplicateCategorySlugError("bakery") },
   { name: "CategoryDepthExceededError", error: new CategoryDepthExceededError() },
   { name: "CategoryHasChildrenError", error: new CategoryHasChildrenError(3) },
+  { name: "AdminCustomerNotFoundError", error: new AdminCustomerNotFoundError(1) },
+  { name: "CustomerAlreadyWithdrawnError", error: new CustomerAlreadyWithdrawnError() },
 ];
 
 describe("주문 오류 → tRPC 오류 매핑", () => {

@@ -123,7 +123,8 @@ export const ADMIN_NAV_GROUPS: AdminNavGroup[] = [
         itemId: "members",
         label: "회원 관리",
         icon: Users,
-        href: "/admin/members",
+        // 다른 관리자 경로와 같이 테이블명을 따른다(orders·product·claim·category)
+        href: "/admin/customers",
         pageTitle: "회원 관리",
       },
     ],

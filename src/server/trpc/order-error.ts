@@ -18,6 +18,10 @@ import {
 import { AdminClaimNotFoundError } from "@/server/services/admin-claim.service";
 import { AdminOrderNotFoundError, InvoiceRequiresPreparingError } from "@/server/services/admin-order.service";
 import {
+  AdminCustomerNotFoundError,
+  CustomerAlreadyWithdrawnError,
+} from "@/server/services/admin-customer.service";
+import {
   AdminCategoryNotFoundError,
   CategoryDepthExceededError,
   CategoryHasChildrenError,
@@ -277,6 +281,19 @@ export function toOrderTRPCError(error: unknown): unknown {
   }
 
   if (error instanceof CategoryHasChildrenError) {
+    return new TRPCError({ code: "CONFLICT", message: error.message, cause: error });
+  }
+
+  // ── 관리자 회원 ──
+  if (error instanceof AdminCustomerNotFoundError) {
+    return new TRPCError({
+      code: "NOT_FOUND",
+      message: "회원을 찾을 수 없습니다. 목록에서 다시 선택해 주세요.",
+      cause: error,
+    });
+  }
+
+  if (error instanceof CustomerAlreadyWithdrawnError) {
     return new TRPCError({ code: "CONFLICT", message: error.message, cause: error });
   }
 
