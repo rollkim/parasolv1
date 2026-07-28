@@ -47,9 +47,19 @@ export class ImageNotFoundError extends Error {
   }
 }
 
-/** 업로드 루트. 운영에서 볼륨을 따로 마운트할 수 있게 env로 뺀다 */
+/**
+ * 업로드 루트 — **항상 프로젝트 밖**이다.
+ *
+ * 기본값을 프로젝트 안에 두면 재배포·빌드 정리·저장소 clone 한 번에 업로드가 날아간다.
+ * env가 없어도 안전하도록 기본값 자체를 상위 폴더로 잡는다:
+ *   개발(Windows) C:\_Hope\PaRaSOL\parasolv1 → C:\_Hope\PaRaSOL\parasol-uploads
+ *   운영(Linux)   /home/parasol/app          → /home/parasol/parasol-uploads
+ * 다른 볼륨에 두려면 PARASOL_UPLOAD_DIR에 절대경로를 준다.
+ */
 function getUploadRootDir(): string {
-  return path.resolve(process.env.PARASOL_UPLOAD_DIR ?? path.join(process.cwd(), "uploads"));
+  const configuredDir = process.env.PARASOL_UPLOAD_DIR;
+  if (configuredDir) return path.resolve(configuredDir);
+  return path.resolve(process.cwd(), "..", "parasol-uploads");
 }
 
 /** "products/202607/ab12cd34.jpg" 형태 — DB(product_image.path)에 이 상대경로만 저장한다 */

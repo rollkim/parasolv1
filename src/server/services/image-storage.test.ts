@@ -20,8 +20,13 @@ import {
 describe("저장 경로 해석 — 경로 이탈 차단", () => {
   it("정상 경로는 업로드 루트 안을 가리킨다", () => {
     const resolved = resolveStoredImageFile("products/202607/abc.jpg");
-    expect(resolved).toContain(`${path.sep}uploads${path.sep}`);
+    expect(resolved).toContain(`${path.sep}parasol-uploads${path.sep}`);
     expect(resolved.endsWith(`abc.jpg`)).toBe(true);
+  });
+
+  it("업로드 루트는 프로젝트 밖이다 — 재배포·clone에 업로드가 날아가면 안 된다", () => {
+    const resolved = resolveStoredImageFile("products/202607/abc.jpg");
+    expect(resolved.startsWith(process.cwd() + path.sep)).toBe(false);
   });
 
   it.each([
