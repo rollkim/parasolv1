@@ -27,6 +27,12 @@ export type GatewayApproval = {
 export type GatewayCancelInput = {
   paymentKey: string;
   cancelReason: string;
+  /**
+   * 부분 취소 금액 — 생략하면 전액 취소(토스 API와 같은 규약).
+   * 클레임 환불이 부분 반품을 다루므로 필요하다. 한 결제에 부분취소를 여러 번 할 수 있어
+   * 잔액 검증은 호출자(payment_cancellation 합계)가 한다.
+   */
+  cancelAmount?: number;
 };
 
 export type GatewayCancelResult = { raw: unknown };

@@ -54,7 +54,7 @@ export class ClaimFeeAlreadySettledError extends Error {
  * 주문 차감 원장 전체를 되돌리면 안 되기 때문이다(부분 반품).
  * 추가상품은 라인 전량 클레임일 때만 포함한다(설계 D11) — 부분 수량이면 복원 수량이 소수가 된다.
  */
-async function buildClaimStockTargets(
+export async function buildClaimStockTargets(
   tx: TransactionClient,
   claimId: number,
 ): Promise<StockChangeTarget[]> {
