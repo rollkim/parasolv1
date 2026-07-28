@@ -23,7 +23,7 @@ import { inventoryLog, productVariant } from "@/db/schema";
 import { planStockDeductions } from "@/domain/inventory";
 import { parseDailyNo } from "@/domain/order-number";
 
-import { deductStockForOrder, StockShortageError, readOrderDeductions, restoreStock } from "../inventory.service";
+import { deductStock, StockShortageError, readOrderDeductions, restoreStock } from "../inventory.service";
 import { allocateOrderNo } from "../order-number.service";
 
 let passCount = 0;
@@ -80,9 +80,9 @@ async function checkOverselling() {
     const results = await Promise.allSettled(
       Array.from({ length: 5 }, (_, i) =>
         db.transaction(async (tx) => {
-          await deductStockForOrder(tx, {
+          await deductStock(tx, {
             targets,
-            orderNo: `CHECK-OVERSELL-${i}`,
+            refId: `CHECK-OVERSELL-${i}`,
             actor: "system",
           });
         }),
@@ -127,7 +127,7 @@ async function checkPartialRollback() {
     let threw = false;
     try {
       await db.transaction(async (tx) => {
-        await deductStockForOrder(tx, { targets, orderNo: "CHECK-ROLLBACK", actor: "system" });
+        await deductStock(tx, { targets, refId: "CHECK-ROLLBACK", actor: "system" });
       });
     } catch (error) {
       threw = error instanceof StockShortageError;
@@ -159,7 +159,7 @@ async function checkRestoreRoundTrip() {
     const targets = planStockDeductions([{ variantId, quantity: 2, addons: [] }]);
 
     await db.transaction(async (tx) => {
-      await deductStockForOrder(tx, { targets, orderNo: "CHECK-RESTORE", actor: "system" });
+      await deductStock(tx, { targets, refId: "CHECK-RESTORE", actor: "system" });
     });
     const [afterDeduct] = await db
       .select({ stock: productVariant.stock })
@@ -172,7 +172,7 @@ async function checkRestoreRoundTrip() {
       check(deductions.length === 1 && deductions[0].quantity === 2, "원장에서 차감 내역 복구", deductions);
       await restoreStock(tx, {
         targets: deductions,
-        orderNo: "CHECK-RESTORE",
+        refId: "CHECK-RESTORE",
         reason: "cancel_restock",
         actor: "system",
       });

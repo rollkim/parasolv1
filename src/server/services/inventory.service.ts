@@ -30,19 +30,29 @@ export class StockShortageError extends Error {
   }
 }
 
-type StockActor = { orderNo: string; actor: string };
+/** inventory_log.ref_id에 남길 참조 — 주문번호 또는 클레임번호 */
+type StockActor = { refId: string; actor: string };
 
-/** 차감 사유 — inventory_log.reason 규약(영문 코드) */
+/** 사유 — inventory_log.reason 규약(영문 코드) */
 export type StockRestoreReason = "cancel_restock" | "claim_restock";
+export type StockDeductReason = "order" | "exchange_out";
 
 /**
- * 주문 재고 차감. targets는 domain/inventory.planStockDeductions가 만든
+ * 재고 차감. targets는 domain/inventory.planStockDeductions가 만든
  * 락 순서(variant→addon, id 오름차순) 정렬 결과여야 한다 — 동시 주문 간 데드락 회피.
  * 하나라도 부족하면 StockShortageError를 던져 호출자가 트랜잭션 전체를 롤백하게 한다.
+ *
+ * 주문 결제(refId=주문번호, reason=order)와 교환 재발송(refId=클레임번호, reason=exchange_out)이
+ * 함께 쓴다 — 조건부 UPDATE 규약(RULE-11)을 한 곳에만 두기 위해서다.
  */
-export async function deductStockForOrder(
+export async function deductStock(
   tx: TransactionClient,
-  args: { targets: StockChangeTarget[]; orderNo: string; actor: string },
+  args: {
+    targets: StockChangeTarget[];
+    refId: string;
+    actor: string;
+    reason?: StockDeductReason;
+  },
 ): Promise<void> {
   const failures: StockFailure[] = [];
 
@@ -85,8 +95,9 @@ export async function deductStockForOrder(
       target,
       delta: -target.quantity,
       stockAfter: updatedRows[0].stockAfter,
-      reason: "order",
-      ...args,
+      reason: args.reason ?? "order",
+      refId: args.refId,
+      actor: args.actor,
     });
   }
 
@@ -98,13 +109,13 @@ export async function deductStockForOrder(
 
 /**
  * 취소·클레임 재고 복원. 복원은 조건이 없다(늘리는 방향이라 음수가 될 수 없음).
- * 무엇을 얼마나 되돌릴지는 inventory_log(reason='order', ref_id=orderNo)가 원천이다.
+ * refId는 복원을 일으킨 근거 — 전체 취소는 주문번호, 클레임 복원은 클레임번호를 남긴다.
  */
 export async function restoreStock(
   tx: TransactionClient,
   args: {
     targets: StockChangeTarget[];
-    orderNo: string;
+    refId: string;
     reason: StockRestoreReason;
     actor: string;
   },
@@ -131,7 +142,7 @@ export async function restoreStock(
       delta: target.quantity,
       stockAfter: updatedRows[0].stockAfter,
       reason: args.reason,
-      orderNo: args.orderNo,
+      refId: args.refId,
       actor: args.actor,
     });
   }
@@ -198,7 +209,7 @@ async function writeInventoryLog(
     delta: args.delta,
     stockAfter: args.stockAfter,
     reason: args.reason,
-    refId: args.orderNo,
+    refId: args.refId,
     createdBy: args.actor,
   });
 }

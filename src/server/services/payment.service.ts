@@ -22,7 +22,7 @@ import {
 } from "../payments/payment-gateway";
 import type { DatabaseClient, TransactionClient } from "./db-client";
 import {
-  deductStockForOrder,
+  deductStock,
   StockShortageError,
   type StockFailure,
 } from "./inventory.service";
@@ -357,9 +357,9 @@ async function finalizeConfirmedPayment(
   if (vanishedTargets.length > 0) throw new StockShortageError(vanishedTargets);
 
   const deductionTargets = planStockDeductions(lines);
-  await deductStockForOrder(tx, {
+  await deductStock(tx, {
     targets: deductionTargets,
-    orderNo: orderRow.orderNo,
+    refId: orderRow.orderNo,
     actor: serializeActor({ role: "system" }),
   });
 
