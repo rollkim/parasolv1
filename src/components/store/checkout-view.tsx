@@ -4,8 +4,11 @@
 // 모바일은 하단 고정 결제 바. [탭 순서](체크아웃 L110): 주문방식 → 주문자 → 배송지 → 배송메모 → 약관 → 결제하기
 //
 // 목업과 의도적으로 다르게 간 부분(사유):
-//  - 결제수단 커스텀 버튼 4종(카드/계좌이체/토스페이/카카오페이) 제거: 토스 결제위젯이 수단 선택 UI를
-//    자체 제공한다. 두 UI를 공존시키면 선택 상태가 갈린다 — 위젯에 위임하고 이 영역은 위젯 자리만 둔다.
+//  - 결제수단 UI는 **서버가 알려주는 모드**에 따라 갈린다(tossPaymentUiMode):
+//    · window(1차) — 결제위젯 이용 신청이 운영 사이트 심사를 요구해 아직 못 받았다.
+//      우리가 수단 선택 UI를 그리고 requestPayment({ method })로 결제창을 띄운다.
+//    · widget(위젯 키 수령 후) — SDK가 수단·약관 UI를 직접 렌더한다. 우리 버튼은 숨긴다.
+//    두 방식은 서버 승인·취소 경로가 완전히 같아서 env 한 줄로 전환된다.
 //  - 약관 5종 하드코딩 대신 terms_document에서 받아 렌더: 문구·필수여부는 DB가 진실원(RULE-11 리스킨 전제).
 //    동의 대상 선별(필수 전부 + 마케팅)은 서버(checkout-view.service)가 정한다 — 화면이 정하면
 //    서버 검증(createOrder)과 어긋나 주문이 막힌다.
@@ -21,6 +24,7 @@
 import * as React from "react"
 
 import Link from "next/link"
+import { useSearchParams } from "next/navigation"
 
 import { useMutation, useQuery } from "@tanstack/react-query"
 
@@ -32,10 +36,32 @@ import { RadioGroup, RadioGroupCard } from "@/components/ui/radio-group"
 import { Spinner } from "@/components/ui/spinner"
 import { useToast } from "@/components/ui/toast"
 import { formatKrw } from "@/lib/format"
+import { launchTossPayment, type TossPaymentMethod } from "@/lib/toss-payment"
 import { cn } from "@/lib/utils"
 import { useTRPC } from "@/trpc/client"
 
 const NEW_ADDRESS_VALUE = "new"
+
+/**
+ * 결제창 모드에서 우리가 그리는 수단 목록.
+ * 간편결제(토스페이·카카오페이)는 계약된 MID 키가 있어야 테스트되므로(문서 §6) 1차에서 뺀다 —
+ * 누를 수는 있는데 테스트가 안 되면 "되는지 모르는 버튼"이 남는다.
+ */
+const WINDOW_PAYMENT_METHODS: { method: TossPaymentMethod; label: string }[] = [
+  { method: "CARD", label: "신용·체크카드" },
+  { method: "TRANSFER", label: "계좌이체" },
+  { method: "VIRTUAL_ACCOUNT", label: "가상계좌" },
+]
+
+/** 토스 실패 코드 → 사용자 문구. 모르는 코드는 일반 안내로 흡수한다 */
+const PAY_ERROR_MESSAGES: Record<string, string> = {
+  PAY_PROCESS_CANCELED: "결제를 취소하셨어요. 다시 시도하실 수 있습니다.",
+  PAY_PROCESS_ABORTED: "결제가 중단됐어요. 결제 수단을 확인하고 다시 시도해 주세요.",
+  REJECT_CARD_COMPANY: "카드사에서 결제를 거절했어요. 다른 카드로 시도해 주세요.",
+  INVALID_CALLBACK: "결제 정보가 올바르지 않아요. 처음부터 다시 시도해 주세요.",
+  CONFIRM_FAILED:
+    "결제 확인 중 문제가 발생했어요. 중복 결제를 막기 위해 주문 내역에서 상태를 먼저 확인해 주세요.",
+}
 
 /** 배송 메모 — 코드는 영문(RULE-11), 표시는 한글. 저장은 표시 문장(주문 스냅샷) */
 const DELIVERY_MEMO_OPTIONS = [
@@ -143,6 +169,16 @@ export function CheckoutView() {
     orderNo: string
     grandTotal: number
   } | null>(null)
+  const [paymentMethod, setPaymentMethod] = React.useState<TossPaymentMethod>("CARD")
+  const [launchingPayment, setLaunchingPayment] = React.useState(false)
+
+  // 결제 실패로 되돌아온 경우 — 토스가 준 코드를 사용자 문구로 옮긴다
+  const searchParams = useSearchParams()
+  const payErrorCode = searchParams.get("payError")
+  const payErrorMessage = payErrorCode
+    ? (PAY_ERROR_MESSAGES[payErrorCode] ??
+      "결제를 완료하지 못했어요. 잠시 후 다시 시도해 주세요.")
+    : null
 
   const fieldRefs = React.useRef<Partial<Record<FieldKey, HTMLInputElement | null>>>({})
   const checkoutView = checkoutQuery.data
@@ -227,10 +263,55 @@ export function CheckoutView() {
     "addr1",
   ]
 
+  /**
+   * 주문이 만들어진 뒤 결제창(또는 위젯)을 띄운다.
+   * 성공하면 토스가 successUrl로 리다이렉트하므로 이 함수는 보통 돌아오지 않는다 —
+   * 돌아왔다면 사용자가 창을 닫았거나 SDK 로드에 실패한 것이다.
+   */
+  async function startPayment(orderNo: string, grandTotal: number) {
+    if (!checkoutView?.tossClientKey) return
+    setLaunchingPayment(true)
+    try {
+      await launchTossPayment({
+        uiMode: checkoutView.tossPaymentUiMode,
+        clientKey: checkoutView.tossClientKey,
+        customerKey: checkoutView.tossCustomerKey,
+        orderNo,
+        orderName: checkoutView.orderName,
+        // 서버가 확정한 금액이다 — 화면 계산값을 쓰지 않는다
+        amount: grandTotal,
+        method: paymentMethod,
+        successUrl: `${window.location.origin}/api/payments/toss/success`,
+        failUrl: `${window.location.origin}/api/payments/toss/fail`,
+        customerEmail: orderer.email || undefined,
+        customerName: orderer.name || undefined,
+        widgetSelectors: {
+          paymentMethods: "#toss-payment-methods",
+          agreement: "#toss-payment-agreement",
+        },
+      })
+    } catch (launchError) {
+      // 결제창을 닫은 것도 여기로 온다 — 주문은 pending으로 남아 재시도할 수 있다
+      showToast(
+        launchError instanceof Error
+          ? launchError.message
+          : "결제를 시작하지 못했어요. 다시 시도해 주세요.",
+        { toastVariant: "error" },
+      )
+    } finally {
+      setLaunchingPayment(false)
+    }
+  }
+
   function handleSubmit() {
     // aria-disabled는 클릭을 막지 않는다(막으면 사유를 알릴 수 없어 일부러 활성으로 뒀다).
     // 진행 중·생성 완료 상태에서 다시 눌리면 주문이 중복 생성되므로 여기서 끊는다.
-    if (createOrderMutation.isPending || createdOrder) return
+    if (createOrderMutation.isPending || launchingPayment) return
+    // 주문은 만들어졌는데 결제를 못 끝낸 경우 — 새 주문을 만들지 않고 결제만 다시 띄운다
+    if (createdOrder) {
+      void startPayment(createdOrder.orderNo, createdOrder.grandTotal)
+      return
+    }
     setSubmitAttempted(true)
 
     const firstInvalid = FIELD_FOCUS_ORDER.find((field) => fieldErrors[field])
@@ -278,14 +359,15 @@ export function CheckoutView() {
       {
         onSuccess: (created) => {
           setCreatedOrder({ orderNo: created.orderNo, grandTotal: created.grandTotal })
-          if (checkoutView?.tossClientKey) {
-            // 결제위젯 연동 시 이 자리에서 위젯을 띄우고, 승인 콜백이 완료 화면으로 보낸다
-            showToast("결제를 진행해 주세요.", { toastVariant: "info" })
+          if (!checkoutView?.tossClientKey) {
+            // 키 미설정(스텁 구간) — 주문서가 만들어진 것까지 확인할 수 있게 완료 화면으로.
+            // 완료 화면이 결제 전 주문을 '주문서가 만들어졌어요'로 구분해 표시한다.
+            window.location.assign(
+              `/order/complete?orderNo=${encodeURIComponent(created.orderNo)}`,
+            )
             return
           }
-          // 위젯 미연동 구간 — 주문서가 만들어진 것까지 확인할 수 있도록 완료 화면으로 보낸다.
-          // 완료 화면은 결제 전 주문을 '주문서가 만들어졌어요'로 구분해 표시한다.
-          window.location.assign(`/order/complete?orderNo=${encodeURIComponent(created.orderNo)}`)
+          void startPayment(created.orderNo, created.grandTotal)
         },
         onError: (createError) => showToast(createError.message, { toastVariant: "error" }),
       },
@@ -332,7 +414,7 @@ export function CheckoutView() {
     : []
 
   const payLabel = cartSummary ? `${formatKrw(cartSummary.grandTotal)} 결제하기` : "결제하기"
-  const isSubmitting = createOrderMutation.isPending
+  const isSubmitting = createOrderMutation.isPending || launchingPayment
 
   const orderSummaryCard = (
     <div className="rounded-[var(--radius)] border border-border bg-card p-5">
@@ -356,6 +438,16 @@ export function CheckoutView() {
         </strong>
       </div>
 
+      {/* 결제 실패로 되돌아온 경우 — 맥락을 잃지 않게 이 자리에서 사유를 알리고 재시도시킨다 */}
+      {payErrorMessage ? (
+        <p
+          role="alert"
+          className="m-0 mt-3 rounded-[calc(var(--radius)-2px)] border border-destructive/40 bg-destructive/5 px-3.5 py-3 text-[13px] text-destructive"
+        >
+          {payErrorMessage}
+        </p>
+      ) : null}
+
       {blockingReason ? (
         <p aria-live="polite" className="mt-2.5 text-xs text-muted-foreground">
           {blockingReason}
@@ -370,7 +462,13 @@ export function CheckoutView() {
         aria-disabled={blockingReason !== null || isSubmitting}
         onClick={handleSubmit}
       >
-        {isSubmitting ? "주문 생성 중…" : payLabel}
+        {createOrderMutation.isPending
+          ? "주문 생성 중…"
+          : launchingPayment
+            ? "결제창 여는 중…"
+            : createdOrder
+              ? "결제 다시 시도"
+              : payLabel}
       </Button>
     </div>
   )
@@ -686,22 +784,41 @@ export function CheckoutView() {
           <h2 id="checkout-payment-heading" className="m-0 mb-3 font-heading text-lg font-extrabold">
             결제수단
           </h2>
-          <div className="rounded-[calc(var(--radius)-2px)] border border-dashed border-border px-4 py-6 text-center text-[13px] text-muted-foreground">
-            {createdOrder ? (
-              <>
-                <p className="m-0 font-bold text-foreground">주문번호 {createdOrder.orderNo}</p>
-                <p className="m-0 mt-1">
-                  {checkoutView.tossClientKey
-                    ? "결제 수단을 선택해 주세요."
-                    : "결제 연동 준비 중입니다. 토스페이먼츠 키가 등록되면 이 자리에 결제 수단이 표시됩니다."}
-                </p>
-              </>
-            ) : (
-              <p className="m-0">
-                주문 정보를 입력하고 결제하기를 누르면 결제 수단을 선택할 수 있습니다.
-              </p>
-            )}
-          </div>
+          {!checkoutView.tossClientKey ? (
+            <div className="rounded-[calc(var(--radius)-2px)] border border-dashed border-border px-4 py-6 text-center text-[13px] text-muted-foreground">
+              결제 연동 준비 중입니다. 토스페이먼츠 키가 등록되면 이 자리에 결제 수단이 표시됩니다.
+            </div>
+          ) : checkoutView.tossPaymentUiMode === "widget" ? (
+            // 위젯 모드 — SDK가 이 컨테이너 안에 수단·약관 UI를 직접 렌더한다
+            <>
+              <div id="toss-payment-methods" />
+              <div id="toss-payment-agreement" className="mt-3" />
+            </>
+          ) : (
+            // 결제창 모드 — 수단을 우리가 그리고 requestPayment({ method })로 넘긴다
+            <RadioGroup
+              aria-label="결제수단 선택"
+              value={paymentMethod}
+              onValueChange={(nextMethod) => setPaymentMethod(nextMethod as TossPaymentMethod)}
+            >
+              {WINDOW_PAYMENT_METHODS.map((paymentOption) => (
+                <RadioGroupCard
+                  key={paymentOption.method}
+                  value={paymentOption.method}
+                  className="items-center"
+                >
+                  <b className="text-sm">{paymentOption.label}</b>
+                </RadioGroupCard>
+              ))}
+            </RadioGroup>
+          )}
+
+          {createdOrder ? (
+            <p className="m-0 mt-3 text-[13px] text-muted-foreground">
+              주문번호 {createdOrder.orderNo} — 결제가 완료되지 않았다면 아래 버튼으로 다시
+              시도하실 수 있어요.
+            </p>
+          ) : null}
         </section>
 
         {/* ⑥ 약관 동의 */}

@@ -1,5 +1,7 @@
 import "server-only";
 
+import { createHmac } from "node:crypto";
+
 import type { CartView } from "./cart.service";
 import { getCartWithItems } from "./cart.service";
 import {
@@ -36,11 +38,55 @@ export type CheckoutView = {
   /** 동의 대상 약관 — isRequired가 필수 여부의 진실원(화면이 정하지 않는다) */
   terms: TermsDocumentSummary[];
   /**
-   * 토스 결제위젯 클라이언트 키 — 브라우저로 나가도 되는 공개 키다.
+   * 토스 클라이언트 키 — 브라우저로 나가도 되는 공개 키다.
    * 시크릿 키는 서버에만 둔다(RULE-11). 미발급이면 null이고 화면은 준비중을 표시한다.
    */
   tossClientKey: string | null;
+  /**
+   * 결제 UI 방식. 결제위젯은 별도 이용 신청이 필요해(운영 사이트 심사) 1차는 결제창으로 간다.
+   * 위젯 키를 받으면 env 한 줄(NEXT_PUBLIC_TOSS_UI_MODE)만 바꿔 전환한다 —
+   * 서버 승인·취소 경로는 두 방식이 완전히 동일하므로 바뀌는 것은 화면뿐이다.
+   */
+  tossPaymentUiMode: TossPaymentUiMode;
+  /**
+   * 토스 customerKey — 2~300자, 특수문자 1개 이상, **추측 불가**여야 한다(문서 규격).
+   * 이메일·전화·회원 id를 그대로 쓰면 안 되므로 서버 시크릿으로 파생한다.
+   * 비회원은 문서가 허용하는 ANONYMOUS.
+   */
+  tossCustomerKey: string;
+  /** 결제창에 표시될 주문명 — "상품명 외 N건" */
+  orderName: string;
 };
+
+/** 결제 UI 방식 — 위젯 키를 받으면 env로 전환한다 */
+export type TossPaymentUiMode = "window" | "widget";
+
+function resolvePaymentUiMode(): TossPaymentUiMode {
+  return process.env.NEXT_PUBLIC_TOSS_UI_MODE === "widget" ? "widget" : "window";
+}
+
+/**
+ * customerKey 파생 — 회원 id를 그대로 노출하지 않으면서 회원마다 안정적인 값을 만든다.
+ * 서버 시크릿으로 HMAC을 걸어 추측을 막고, base64url이라 허용 문자(-, _)만 나온다.
+ * 끝에 "-p"를 붙여 "특수문자 1개 이상" 규격을 항상 만족시킨다.
+ */
+function deriveTossCustomerKey(customerId: number | null): string {
+  if (customerId === null) return "ANONYMOUS";
+  const secret = process.env.AUTH_SECRET ?? "";
+  const digest = createHmac("sha256", secret)
+    .update(`toss-customer:${customerId}`)
+    .digest("base64url");
+  return `${digest.slice(0, 40)}-p`;
+}
+
+/** 결제창에 뜨는 주문명 — 너무 길면 PG가 자르므로 대표 품목 + 건수로 줄인다 */
+function buildOrderName(cart: CartView): string {
+  const orderableLines = cart.lines.filter((line) => !line.unavailable && !line.soldOut);
+  const leadName = orderableLines[0]?.productName ?? "주문";
+  return orderableLines.length > 1
+    ? `${leadName} 외 ${orderableLines.length - 1}건`
+    : leadName;
+}
 
 function toOrdererPrefill(profile: MyProfile | null): CheckoutOrderer {
   return {
@@ -78,6 +124,9 @@ export async function getCheckoutView(
       addresses: [],
       terms,
       tossClientKey: process.env.NEXT_PUBLIC_TOSS_CLIENT_KEY ?? null,
+      tossPaymentUiMode: resolvePaymentUiMode(),
+      tossCustomerKey: deriveTossCustomerKey(null),
+      orderName: buildOrderName(cart),
     };
   }
 
@@ -91,5 +140,8 @@ export async function getCheckoutView(
     addresses,
     terms,
     tossClientKey: process.env.NEXT_PUBLIC_TOSS_CLIENT_KEY ?? null,
+    tossPaymentUiMode: resolvePaymentUiMode(),
+    tossCustomerKey: deriveTossCustomerKey(input.customerId),
+    orderName: buildOrderName(cart),
   };
 }
