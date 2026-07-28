@@ -1,5 +1,6 @@
 import { createCallerFactory, router } from "../init";
 import { adminAuthRouter } from "./admin-auth";
+import { adminOrderRouter } from "./admin-order";
 import { authRouter } from "./auth";
 import { cartRouter } from "./cart";
 import { claimRouter } from "./claim";
@@ -15,6 +16,7 @@ import { wishlistRouter } from "./wishlist";
  */
 export const appRouter = router({
   adminAuth: adminAuthRouter,
+  adminOrder: adminOrderRouter,
   auth: authRouter,
   cart: cartRouter,
   claim: claimRouter,
