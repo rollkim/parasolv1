@@ -21,6 +21,7 @@ import {
   AdminCustomerNotFoundError,
   CustomerAlreadyWithdrawnError,
 } from "@/server/services/admin-customer.service";
+import { AdminReviewNotFoundError } from "@/server/services/admin-review.service";
 import {
   AdminCategoryNotFoundError,
   CategoryDepthExceededError,
@@ -295,6 +296,15 @@ export function toOrderTRPCError(error: unknown): unknown {
 
   if (error instanceof CustomerAlreadyWithdrawnError) {
     return new TRPCError({ code: "CONFLICT", message: error.message, cause: error });
+  }
+
+  // ── 관리자 리뷰 ──
+  if (error instanceof AdminReviewNotFoundError) {
+    return new TRPCError({
+      code: "NOT_FOUND",
+      message: "리뷰를 찾을 수 없습니다. 목록을 새로고침해 주세요.",
+      cause: error,
+    });
   }
 
   // 미존재와 권한 없음을 구분해 알리지 않는다 — 구분되면 주문번호 대입으로 존재 여부를 캐낼 수 있다

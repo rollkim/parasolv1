@@ -20,6 +20,7 @@ import {
   AdminCustomerNotFoundError,
   CustomerAlreadyWithdrawnError,
 } from "@/server/services/admin-customer.service";
+import { AdminReviewNotFoundError } from "@/server/services/admin-review.service";
 import {
   AdminCategoryNotFoundError,
   CategoryDepthExceededError,
@@ -123,6 +124,7 @@ const DOMAIN_ERRORS: { name: string; error: Error }[] = [
   { name: "CategoryHasChildrenError", error: new CategoryHasChildrenError(3) },
   { name: "AdminCustomerNotFoundError", error: new AdminCustomerNotFoundError(1) },
   { name: "CustomerAlreadyWithdrawnError", error: new CustomerAlreadyWithdrawnError() },
+  { name: "AdminReviewNotFoundError", error: new AdminReviewNotFoundError(1) },
 ];
 
 describe("주문 오류 → tRPC 오류 매핑", () => {

@@ -6,6 +6,7 @@ import { adminCustomerRouter } from "./admin-customer";
 import { adminDashboardRouter } from "./admin-dashboard";
 import { adminOrderRouter } from "./admin-order";
 import { adminProductRouter } from "./admin-product";
+import { adminReviewRouter } from "./admin-review";
 import { authRouter } from "./auth";
 import { cartRouter } from "./cart";
 import { claimRouter } from "./claim";
@@ -27,6 +28,7 @@ export const appRouter = router({
   adminDashboard: adminDashboardRouter,
   adminOrder: adminOrderRouter,
   adminProduct: adminProductRouter,
+  adminReview: adminReviewRouter,
   auth: authRouter,
   cart: cartRouter,
   claim: claimRouter,

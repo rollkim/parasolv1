@@ -26,6 +26,7 @@
     "check:admin-category": "tsx --conditions=react-server src/server/services/_integration/admin-category.check.ts",
     "check:admin-dashboard": "tsx --conditions=react-server src/server/services/_integration/admin-dashboard.check.ts",
     "check:admin-customer": "tsx --conditions=react-server src/server/services/_integration/admin-customer.check.ts",
+    "check:admin-review": "tsx --conditions=react-server src/server/services/_integration/admin-review.check.ts",
     "check:admin-auth": "tsx --conditions=react-server src/server/services/_integration/admin-auth.check.ts"
   },
   "dependencies": {
