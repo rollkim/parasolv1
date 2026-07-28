@@ -22,6 +22,7 @@
     "check:claim5": "tsx --conditions=react-server src/server/services/_integration/claim-router.check.ts",
     "check:admin-order": "tsx --conditions=react-server src/server/services/_integration/admin-order.check.ts",
     "check:admin-claim": "tsx --conditions=react-server src/server/services/_integration/admin-claim.check.ts",
+    "check:admin-product": "tsx --conditions=react-server src/server/services/_integration/admin-product.check.ts",
     "check:admin-auth": "tsx --conditions=react-server src/server/services/_integration/admin-auth.check.ts"
   },
   "dependencies": {

@@ -18,6 +18,12 @@ import {
 import { AdminClaimNotFoundError } from "@/server/services/admin-claim.service";
 import { AdminOrderNotFoundError, InvoiceRequiresPreparingError } from "@/server/services/admin-order.service";
 import {
+  AdminProductNotFoundError,
+  DuplicateProductSlugError,
+  DuplicateVariantSkuError,
+  ProductVariantRequiredError,
+} from "@/server/services/admin-product.service";
+import {
   ClaimFeeAlreadySettledError,
   ClaimProcessNotFoundError,
   ClaimTypeMismatchError,
@@ -226,6 +232,24 @@ export function toOrderTRPCError(error: unknown): unknown {
 
   if (error instanceof InvoiceRequiresPreparingError) {
     return new TRPCError({ code: "CONFLICT", message: error.message, cause: error });
+  }
+
+  // ── 관리자 상품 ──
+  if (error instanceof AdminProductNotFoundError) {
+    return new TRPCError({
+      code: "NOT_FOUND",
+      message: "상품을 찾을 수 없습니다. 목록에서 다시 선택해 주세요.",
+      cause: error,
+    });
+  }
+
+  // 어느 항목을 고쳐야 하는지가 문구에 들어 있다 — 저장 실패는 원인을 감출 이유가 없다
+  if (error instanceof DuplicateProductSlugError || error instanceof DuplicateVariantSkuError) {
+    return new TRPCError({ code: "CONFLICT", message: error.message, cause: error });
+  }
+
+  if (error instanceof ProductVariantRequiredError) {
+    return new TRPCError({ code: "BAD_REQUEST", message: error.message, cause: error });
   }
 
   // 미존재와 권한 없음을 구분해 알리지 않는다 — 구분되면 주문번호 대입으로 존재 여부를 캐낼 수 있다

@@ -17,6 +17,12 @@ import {
   InvoiceRequiresPreparingError,
 } from "@/server/services/admin-order.service";
 import {
+  AdminProductNotFoundError,
+  DuplicateProductSlugError,
+  DuplicateVariantSkuError,
+  ProductVariantRequiredError,
+} from "@/server/services/admin-product.service";
+import {
   ClaimFeeAlreadySettledError,
   ClaimProcessNotFoundError,
   ClaimTypeMismatchError,
@@ -97,6 +103,10 @@ const DOMAIN_ERRORS: { name: string; error: Error }[] = [
   { name: "AdminClaimNotFoundError", error: new AdminClaimNotFoundError("RT-20260101-0001") },
   { name: "AdminOrderNotFoundError", error: new AdminOrderNotFoundError("20260101-0001") },
   { name: "InvoiceRequiresPreparingError", error: new InvoiceRequiresPreparingError() },
+  { name: "AdminProductNotFoundError", error: new AdminProductNotFoundError(1) },
+  { name: "DuplicateProductSlugError", error: new DuplicateProductSlugError("oat-cookie") },
+  { name: "DuplicateVariantSkuError", error: new DuplicateVariantSkuError("CK-1001") },
+  { name: "ProductVariantRequiredError", error: new ProductVariantRequiredError() },
 ];
 
 describe("주문 오류 → tRPC 오류 매핑", () => {
