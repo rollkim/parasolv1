@@ -17,7 +17,10 @@ import { ProductListControls } from "@/components/store/product-list-controls"
 import { StoreProductCard } from "@/components/store/product-card"
 import { EmptyState } from "@/components/ui/empty-state"
 import { db } from "@/db"
-import { getStoreNavCategories } from "@/server/services/category.service"
+import {
+  getStoreNavCategories,
+  resolveCategoryPlacement,
+} from "@/server/services/category.service"
 import {
   getProductListPage,
   type ProductSort,
@@ -126,17 +129,13 @@ export default async function ProductListPage({
       : firstFetch
   const currentPage = Math.min(requestedPage, lastPage)
 
-  // h1·브레드크럼 라벨 — 대분류뿐 아니라 중분류(헤더 드로어 진입)도 이름을 찾는다.
+  // 계층 위치 — 빵부스러기·칩·제목이 같은 판정을 쓴다(서버가 단일 진실원).
   // 존재하지 않는 slug면 slug 원문을 그대로 보여 빈 결과의 원인이 드러나게 한다.
-  const matchedCategoryName = categorySlug
-    ? navCategories
-        .flatMap((rootCategory) => [
-          { slug: rootCategory.slug, name: rootCategory.name },
-          ...rootCategory.children,
-        ])
-        .find((categoryNode) => categoryNode.slug === categorySlug)?.name
-    : null
-  const categoryLabel = categorySlug === null ? "전체" : (matchedCategoryName ?? categorySlug)
+  const placement = resolveCategoryPlacement(navCategories, categorySlug)
+  const categoryLabel =
+    categorySlug === null
+      ? "전체"
+      : (placement.child?.name ?? placement.root?.name ?? categorySlug)
 
   const pageNumbers = Array.from({ length: lastPage }, (_, pageIndex) => pageIndex + 1)
 
@@ -150,6 +149,20 @@ export default async function ProductListPage({
         <span aria-hidden="true" className="text-muted-foreground">
           ›
         </span>
+        {/* 중분류를 보고 있으면 대분류가 한 단계 끼어든다 — 계층을 보여주고 상위로 올라갈 길을 준다 */}
+        {placement.child && placement.root ? (
+          <>
+            <Link
+              href={productListHref(placement.root.slug, sort, 1)}
+              className="text-muted-foreground transition-colors hover:text-primary"
+            >
+              {placement.root.name}
+            </Link>
+            <span aria-hidden="true" className="text-muted-foreground">
+              ›
+            </span>
+          </>
+        ) : null}
         <span aria-current="page" className="font-semibold text-foreground">
           {categoryLabel}
         </span>
@@ -169,10 +182,8 @@ export default async function ProductListPage({
       </div>
 
       <ProductListControls
-        categoryChips={navCategories.map((rootCategory) => ({
-          slug: rootCategory.slug,
-          name: rootCategory.name,
-        }))}
+        categoryChips={placement.chips}
+        chipsAllSlug={placement.chipsAllSlug}
         activeCategorySlug={categorySlug}
         activeSort={sort}
       />

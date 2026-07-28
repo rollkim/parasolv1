@@ -26,9 +26,17 @@ import type { ProductSort } from "@/server/services/product.service"
 export type ProductListCategoryChip = { slug: string; name: string }
 
 export type ProductListControlsProps = {
-  /** 대분류 칩('전체' 제외) — 헤더와 같은 getStoreNavCategories 결과를 페이지가 넘긴다 */
+  /**
+   * 이 위치에서 한 단계 더 좁히는 칩('전체' 제외). 대분류를 보고 있으면 그 중분류가,
+   * 전체를 보고 있으면 대분류가 온다 — 서버(resolveCategoryPlacement)가 정한다.
+   */
   categoryChips: ProductListCategoryChip[]
-  /** null = 전체. 중분류 slug(헤더 드로어 진입)면 어느 칩도 활성이 아니다 */
+  /**
+   * '전체' 칩이 가리킬 slug. 대분류 안에서는 '그 대분류 전체'를 뜻하므로 대분류 slug가 오고,
+   * 최상위에서는 null(필터 없음)이다.
+   */
+  chipsAllSlug: string | null
+  /** 현재 선택된 카테고리 — 중분류면 그 중분류 칩이 활성화된다 */
   activeCategorySlug: string | null
   activeSort: ProductSort
 }
@@ -51,14 +59,16 @@ function productListHref(categorySlug: string | null, sort: ProductSort): string
 
 export function ProductListControls({
   categoryChips,
+  chipsAllSlug,
   activeCategorySlug,
   activeSort,
 }: ProductListControlsProps) {
   const router = useRouter()
 
-  // '전체'는 category 테이블에 없는 UI 항목 — slug null이 곧 미필터(파라미터 제거)다
+  // '전체'는 category 테이블에 없는 UI 항목이다. 최상위에서는 미필터(slug null)지만,
+  // 대분류 안에서는 '그 대분류 전체'라 대분류 slug를 가리킨다.
   const chipItems: { slug: string | null; name: string }[] = [
-    { slug: null, name: "전체" },
+    { slug: chipsAllSlug, name: "전체" },
     ...categoryChips,
   ]
 
