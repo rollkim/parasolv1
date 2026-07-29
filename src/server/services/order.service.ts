@@ -21,6 +21,7 @@ import {
 import { normalizePhone } from "@/domain/phone";
 
 import { getCartWithItems, type CartLine } from "./cart.service";
+import { rememberOrderAddress } from "./customer.service";
 import type { DatabaseClient, TransactionClient } from "./db-client";
 import { loadShippingPolicy } from "./shipping-policy.service";
 import { getRequiredTermsDocumentIds } from "./terms.service";
@@ -171,6 +172,33 @@ async function recordTermsAgreements(
  * 잠그지 않으면 두 요청이 같은 카트로 각각 주문을 만들 수 있다.
  */
 export async function createPendingOrder(
+  database: DatabaseClient,
+  input: CreatePendingOrderInput,
+): Promise<CreatePendingOrderResult> {
+  const created = await createPendingOrderInTransaction(database, input);
+
+  // 회원이면 이 배송지를 주소록에 남긴다 — 가입 때 주소를 받지 않으므로 첫 주문이 유일한 계기다.
+  // **주문 트랜잭션 밖**에서, 실패해도 삼킨다: 주소록 사정 때문에 이미 만들어진 주문이
+  // 되돌아가면 안 된다(고객은 결제 직전인데 "주소를 저장하지 못했다"로 막히는 셈).
+  if (input.customerId !== null) {
+    try {
+      await rememberOrderAddress(database, {
+        customerId: input.customerId,
+        recipient: input.shippingAddress.recipient,
+        phone: input.shippingAddress.phone,
+        zipcode: input.shippingAddress.zipcode,
+        addr1: input.shippingAddress.addr1,
+        addr2: input.shippingAddress.addr2 ?? null,
+      });
+    } catch {
+      // 저장 실패는 주문에 영향을 주지 않는다 — 고객은 마이페이지에서 직접 추가할 수 있다
+    }
+  }
+
+  return created;
+}
+
+async function createPendingOrderInTransaction(
   database: DatabaseClient,
   input: CreatePendingOrderInput,
 ): Promise<CreatePendingOrderResult> {

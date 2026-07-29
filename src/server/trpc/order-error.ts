@@ -74,6 +74,7 @@ import {
 } from "@/server/payments/payment-gateway";
 import { StockShortageError } from "@/server/services/inventory.service";
 import { OrderAccessDeniedError } from "@/server/services/order-query.service";
+import { AddressLimitExceededError } from "@/server/services/customer.service";
 import { CartNotFoundError, TermsNotAgreedError } from "@/server/services/order.service";
 import {
   OrderNotFoundError,
@@ -347,6 +348,11 @@ export function toOrderTRPCError(error: unknown): unknown {
   // 접근성·기간 규칙 — 문구가 그대로 무엇을 고쳐야 하는지 알려준다
   if (error instanceof BannerAltRequiredError || error instanceof BannerPeriodInvalidError) {
     return new TRPCError({ code: "BAD_REQUEST", message: error.message, cause: error });
+  }
+
+  // 배송지 상한 — 문구가 무엇을 해야 하는지(지우고 다시) 담고 있다
+  if (error instanceof AddressLimitExceededError) {
+    return new TRPCError({ code: "CONFLICT", message: error.message, cause: error });
   }
 
   // ── 관리자 설정 ──

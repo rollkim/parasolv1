@@ -6,6 +6,7 @@ import { and, desc, eq, inArray, isNull } from "drizzle-orm";
 
 import type { db as Database } from "@/db";
 import { address, customer, customerAuth, loginLog, termsDocument, termsAgreement } from "@/db/schema";
+import { MAX_SAVED_ADDRESSES } from "@/domain/address";
 
 /**
  * 회원 도메인 서비스 — 로컬(아이디/비밀번호) 가입·로그인 검증.
@@ -413,20 +414,45 @@ export type SaveAddressFields = {
   isDefault?: boolean;
 };
 
+export class AddressLimitExceededError extends Error {
+  constructor() {
+    super(
+      `배송지는 ${MAX_SAVED_ADDRESSES}개까지 저장할 수 있어요. 쓰지 않는 배송지를 지우고 다시 시도해 주세요.`,
+    );
+    this.name = "AddressLimitExceededError";
+  }
+}
+
+/** 같은 주소인지 — 우편번호 + 상세주소로 본다(별칭·받는 분이 달라도 같은 곳이면 같은 주소다) */
+function isSameAddress(
+  a: { zipcode: string; addr1: string; addr2: string | null },
+  b: { zipcode: string; addr1: string; addr2?: string | null },
+): boolean {
+  const normalize = (value: string | null | undefined) => (value ?? "").trim();
+  return (
+    normalize(a.zipcode) === normalize(b.zipcode) &&
+    normalize(a.addr1) === normalize(b.addr1) &&
+    normalize(a.addr2) === normalize(b.addr2)
+  );
+}
+
 /**
  * 배송지 등록 — 기본 배송지는 단일 보장: 기본 지정 시 기존 기본을 같은 트랜잭션에서 해제한다.
  * 첫 배송지는 자동으로 기본이 된다 — 체크아웃에서 "기본 배송지 없음" 상태를 만들지 않기 위해.
+ * 상한(5개)을 넘으면 거절한다.
  */
 export async function createAddress(
   database: DatabaseClient,
   input: { customerId: number } & SaveAddressFields,
 ): Promise<CustomerAddress> {
   return database.transaction(async (tx) => {
-    const [existingAddressRow] = await tx
+    const savedRows = await tx
       .select({ addressId: address.id })
       .from(address)
-      .where(eq(address.customerId, input.customerId))
-      .limit(1);
+      .where(eq(address.customerId, input.customerId));
+    if (savedRows.length >= MAX_SAVED_ADDRESSES) throw new AddressLimitExceededError();
+
+    const existingAddressRow = savedRows[0];
     const shouldBeDefault = input.isDefault === true || existingAddressRow === undefined;
 
     if (shouldBeDefault) {
@@ -515,5 +541,55 @@ export async function setDefaultAddress(
       .update(address)
       .set({ isDefault: true })
       .where(eq(address.id, input.addressId));
+  });
+}
+
+/**
+ * 주문 배송지를 주소록에 남긴다 — 주문 생성이 성공한 뒤 호출한다.
+ *
+ * 가입 때 주소를 받지 않으므로(가입 단계를 짧게 두는 편이 이탈이 적다) 첫 주문이
+ * 주소록을 채우는 유일한 계기다. 그러지 않으면 열 번 주문해도 매번 손으로 입력해야 한다.
+ *
+ * **주문을 방해하지 않는 것이 원칙이다.** 이미 있는 주소면 그냥 두고, 상한(5개)을 넘었으면
+ * 저장하지 않고 넘어간다 — 주소록 사정 때문에 주문이 실패하면 안 된다.
+ * (상한 초과 시 가장 오래된 것을 지우는 방식은 쓰지 않는다: 고객이 정해둔 주소를
+ *  시스템이 말없이 없애는 쪽이 더 나쁘다.)
+ */
+export async function rememberOrderAddress(
+  database: DatabaseClient,
+  input: { customerId: number } & SaveAddressFields,
+): Promise<{ saved: boolean; reason: "created" | "duplicate" | "limit" }> {
+  return database.transaction(async (tx) => {
+    const savedRows = await tx
+      .select({
+        addressId: address.id,
+        zipcode: address.zipcode,
+        addr1: address.addr1,
+        addr2: address.addr2,
+      })
+      .from(address)
+      .where(eq(address.customerId, input.customerId));
+
+    if (savedRows.some((row) => isSameAddress(row, input))) {
+      return { saved: false, reason: "duplicate" as const };
+    }
+    if (savedRows.length >= MAX_SAVED_ADDRESSES) {
+      return { saved: false, reason: "limit" as const };
+    }
+
+    // 첫 배송지는 기본이 된다 — 다음 주문 체크아웃이 바로 채워진다
+    const shouldBeDefault = savedRows.length === 0;
+    await tx.insert(address).values({
+      customerId: input.customerId,
+      label: input.label || null,
+      recipient: input.recipient,
+      phone: input.phone,
+      zipcode: input.zipcode,
+      addr1: input.addr1,
+      addr2: input.addr2 || null,
+      isDefault: shouldBeDefault,
+    });
+
+    return { saved: true, reason: "created" as const };
   });
 }

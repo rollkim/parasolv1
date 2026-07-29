@@ -73,6 +73,7 @@ import {
 } from "@/server/payments/payment-gateway";
 import { StockShortageError } from "@/server/services/inventory.service";
 import { OrderAccessDeniedError } from "@/server/services/order-query.service";
+import { AddressLimitExceededError } from "@/server/services/customer.service";
 import { CartNotFoundError, TermsNotAgreedError } from "@/server/services/order.service";
 import {
   OrderNotFoundError,
@@ -154,6 +155,7 @@ const DOMAIN_ERRORS: { name: string; error: Error }[] = [
   { name: "ReviewNotPurchasedError", error: new ReviewNotPurchasedError() },
   { name: "ReviewNotDeliveredError", error: new ReviewNotDeliveredError() },
   { name: "ReviewAlreadyWrittenError", error: new ReviewAlreadyWrittenError() },
+  { name: "AddressLimitExceededError", error: new AddressLimitExceededError() },
 ];
 
 describe("주문 오류 → tRPC 오류 매핑", () => {

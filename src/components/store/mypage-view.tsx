@@ -41,6 +41,7 @@ import { Spinner } from "@/components/ui/spinner"
 import { useToast } from "@/components/ui/toast"
 import { ImagePlaceholder } from "@/components/store/image-placeholder"
 import { formatKrw } from "@/lib/format"
+import { MAX_SAVED_ADDRESSES } from "@/domain/address"
 import { cn } from "@/lib/utils"
 import type { CustomerAddress, MyProfile } from "@/server/services/customer.service"
 import { useTRPC } from "@/trpc/client"
@@ -704,17 +705,45 @@ function AddressesSection() {
     )
   }
 
+  /* 상한은 서버가 판정한다(여기 숫자는 안내용) — 다 찼을 때 폼을 열게 두면
+     주소를 다 입력하고 저장 버튼에서야 거부당한다. 미리 알리고, 그래도 누르면 이유를 말해준다 */
+  const savedAddressCount = addressListQuery.data?.length ?? 0
+  const isAddressBookFull = savedAddressCount >= MAX_SAVED_ADDRESSES
+
+  const handleAddAddressClick = () => {
+    if (isAddressBookFull) {
+      showToast(
+        `배송지는 ${MAX_SAVED_ADDRESSES}개까지 저장할 수 있어요. 쓰지 않는 배송지를 지우고 다시 시도해 주세요.`,
+        { toastVariant: "error" }
+      )
+      return
+    }
+    setAddressFormTarget(null)
+  }
+
   return (
     <>
       <div className="flex items-center justify-between gap-3">
         <p className="m-0 text-sm text-muted-foreground">
           주문할 때 사용할 배송지를 관리해요.
+          {addressListQuery.isSuccess && (
+            <>
+              {" "}
+              <span className={cn(isAddressBookFull && "font-semibold text-foreground")}>
+                ({savedAddressCount}/{MAX_SAVED_ADDRESSES}
+                {isAddressBookFull ? " · 가득 참" : ""})
+              </span>
+            </>
+          )}
         </p>
         <Button
           type="button"
           variant="primary"
           size="sm-44"
-          onClick={() => setAddressFormTarget(null)}
+          // disabled 대신 aria-disabled — 포커스를 유지해 왜 못 누르는지 읽어줄 수 있게 한다
+          aria-disabled={isAddressBookFull}
+          className={cn(isAddressBookFull && "opacity-50")}
+          onClick={handleAddAddressClick}
         >
           + 배송지 추가
         </Button>

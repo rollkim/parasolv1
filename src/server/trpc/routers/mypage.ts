@@ -10,6 +10,7 @@ import {
   updateMyProfile,
 } from "@/server/services/customer.service";
 
+import { withOrderErrorMapping } from "../order-error";
 import { protectedProcedure, router } from "../init";
 
 /**
@@ -79,10 +80,17 @@ export const mypageRouter = router({
     listMyAddresses(ctx.db, ctx.customerId),
   ),
 
+  /**
+   * 배송지 등록 — 상한 초과는 서버가 판정한다.
+   * 매핑을 거치지 않으면 상한 오류가 500(서버 잘못)으로 나간다. 이건 고객이 고칠 수 있는 상황이라
+   * 409 + "지우고 다시" 문구로 내려야 한다.
+   */
   createAddress: protectedProcedure
     .input(addressFieldsSchema)
     .mutation(({ ctx, input }) =>
-      createAddress(ctx.db, { customerId: ctx.customerId, ...input }),
+      withOrderErrorMapping(() =>
+        createAddress(ctx.db, { customerId: ctx.customerId, ...input }),
+      ),
     ),
 
   updateAddress: protectedProcedure
