@@ -10,7 +10,7 @@ import {
 } from "@/domain/order";
 
 import type { TransactionClient } from "./db-client";
-import { earnPurchasePoints } from "./point-earn.service";
+import { earnPurchasePoints, restoreOrderPoints } from "./point-earn.service";
 
 /**
  * 주문 상태 변경의 유일한 통로(초크포인트).
@@ -95,6 +95,13 @@ export async function applyOrderTransition(
   // 같은 트랜잭션이므로 적립이 실패하면 확정도 함께 되돌아간다.
   if (input.toStatus === "confirmed") {
     await earnPurchasePoints(tx, input.orderId);
+  }
+
+  // 취소 = 사용한 적립금 반환. 여기 없으면 결제 실패·주문 취소로 적립금만 사라진다 —
+  // 고객은 돈도 안 냈는데 적립금을 잃는다. 취소 경로도 여럿이라(고객·운영·결제 실패·클레임)
+  // 적립과 같은 이유로 초크포인트에 둔다.
+  if (input.toStatus === "cancelled") {
+    await restoreOrderPoints(tx, input.orderId);
   }
 
   return { changed: true, fromStatus, toStatus: input.toStatus };

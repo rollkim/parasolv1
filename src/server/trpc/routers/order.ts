@@ -115,6 +115,11 @@ export const orderRouter = router({
         /** 장바구니에서 체크한 라인 — 비우면 카트 전체 */
         cartItemIds: z.array(z.number().int().positive()).optional(),
         agreedTermsDocumentIds: z.array(z.number().int().positive()),
+        /**
+         * 사용할 적립금. 여기서는 "정수·음수 아님"만 본다 —
+         * 최소액·단위·잔액·주문금액 초과는 서버 정책과 실제 잔액을 봐야 하므로 서비스가 판정한다.
+         */
+        pointToUse: z.number().int().min(0).optional(),
       }),
     )
     .mutation(async ({ ctx, input }) => {
@@ -139,6 +144,7 @@ export const orderRouter = router({
           cartItemIds: input.cartItemIds,
           agreedTermsDocumentIds: input.agreedTermsDocumentIds,
           agreementIp: ctx.clientIp,
+          pointToUse: input.pointToUse,
         }),
       );
 

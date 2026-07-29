@@ -10,7 +10,7 @@ import {
 } from "@/domain/point";
 
 import type { TransactionClient } from "./db-client";
-import { earnPoints, type PointEarnResult } from "./point.service";
+import { earnPoints, restoreUsedPoints, type PointEarnResult } from "./point.service";
 import { loadPointPolicy } from "./point-policy.service";
 
 /**
@@ -70,6 +70,43 @@ export async function earnPurchasePoints(
     orderId,
     expiresAt: calcExpiresAt(new Date(), policy),
     dedupeKey: `order:${orderId}:purchase`,
+  });
+}
+
+/**
+ * 주문 전체 취소 시 사용 적립금 복원 — applyOrderTransition이 `cancelled`로 바뀔 때 호출한다.
+ *
+ * 여기 없으면 결제 실패·주문 취소로 적립금만 사라진다. 고객은 돈도 안 냈는데 적립금을 잃는다.
+ *
+ * dedupe_key = `order:{id}:point-restore` — 한 주문의 전체 취소는 한 번뿐이다.
+ * 부분 반품의 비례 복원은 이 경로가 아니라 클레임 쪽에서 처리한다(주문은 cancelled가 안 된다).
+ */
+export async function restoreOrderPoints(
+  tx: TransactionClient,
+  orderId: number,
+): Promise<PointEarnResult> {
+  const [orderRow] = await tx
+    .select({
+      customerId: orders.customerId,
+      orderNo: orders.orderNo,
+      pointUsed: orders.pointUsed,
+    })
+    .from(orders)
+    .where(eq(orders.id, orderId))
+    .limit(1);
+
+  if (!orderRow || orderRow.customerId === null || orderRow.pointUsed <= 0) {
+    return { earned: false, reason: "zero_amount" };
+  }
+
+  const policy = await loadPointPolicy(tx);
+  return restoreUsedPoints(tx, {
+    customerId: orderRow.customerId,
+    amount: orderRow.pointUsed,
+    title: `주문 취소 적립금 반환 (${orderRow.orderNo})`,
+    orderId,
+    expiresAt: calcExpiresAt(new Date(), policy),
+    dedupeKey: `order:${orderId}:point-restore`,
   });
 }
 

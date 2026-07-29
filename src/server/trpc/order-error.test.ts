@@ -74,6 +74,14 @@ import {
 import { StockShortageError } from "@/server/services/inventory.service";
 import { OrderAccessDeniedError } from "@/server/services/order-query.service";
 import { AddressLimitExceededError } from "@/server/services/customer.service";
+import {
+  GuestPointUseError,
+  PointUseRejectedError,
+} from "@/server/services/order.service";
+import {
+  PointBalanceShortageError,
+  PointLedgerDriftError,
+} from "@/server/services/point.service";
 import { CartNotFoundError, TermsNotAgreedError } from "@/server/services/order.service";
 import {
   OrderNotFoundError,
@@ -156,6 +164,13 @@ const DOMAIN_ERRORS: { name: string; error: Error }[] = [
   { name: "ReviewNotDeliveredError", error: new ReviewNotDeliveredError() },
   { name: "ReviewAlreadyWrittenError", error: new ReviewAlreadyWrittenError() },
   { name: "AddressLimitExceededError", error: new AddressLimitExceededError() },
+  {
+    name: "PointUseRejectedError",
+    error: new PointUseRejectedError("적립금은 1,000원부터 사용할 수 있어요."),
+  },
+  { name: "GuestPointUseError", error: new GuestPointUseError() },
+  { name: "PointBalanceShortageError", error: new PointBalanceShortageError() },
+  { name: "PointLedgerDriftError", error: new PointLedgerDriftError(1) },
 ];
 
 describe("주문 오류 → tRPC 오류 매핑", () => {

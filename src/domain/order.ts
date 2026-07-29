@@ -194,8 +194,9 @@ export type OrderDraft = {
   addonTotal: number;
   subtotal: number;
   shippingFee: number;
-  couponDiscount: 0; // [2차] — 1차는 항상 0
-  pointUsed: 0; // [2차]
+  couponDiscount: 0; // [2차] — 쿠폰은 아직 0
+  /** 적립금 사용액 — 결제할 금액을 그만큼 줄인다 */
+  pointUsed: number;
   grandTotal: number;
   items: OrderItemSnapshot[];
 };
@@ -248,6 +249,11 @@ export function buildOrderDraft(
   policy: ShippingPolicy,
   /** 배송지 우편번호 — 도서·산간 추가비 판정에 쓴다. 없으면 추가비 없음 */
   shippingZipcode?: string | null,
+  /**
+   * 적립금 사용액. 정책 검증(최소액·단위·잔액)은 서비스가 이미 끝낸 값이 온다 —
+   * 도메인은 결제할 금액을 넘지 않는지만 마지막으로 확인한다.
+   */
+  pointUsed = 0,
 ): OrderDraft {
   if (lines.length === 0) {
     throw new BlockedOrderLineError([]);
@@ -295,6 +301,13 @@ export function buildOrderDraft(
     })),
   }));
 
+  // summary.grandTotal은 주소를 모르는 값이라 다시 더한다
+  const payableBeforePoint = summary.subtotal + shippingFee;
+  if (pointUsed < 0 || pointUsed > payableBeforePoint) {
+    // 여기 걸리면 서비스 검증을 건너뛴 호출이다 — 결제액이 음수가 되기 전에 멈춘다
+    throw new OrderAmountMismatchError(payableBeforePoint, pointUsed);
+  }
+
   return {
     listTotal: summary.listTotal,
     productDiscount: summary.productDiscount,
@@ -303,9 +316,8 @@ export function buildOrderDraft(
     subtotal: summary.subtotal,
     shippingFee,
     couponDiscount: 0,
-    pointUsed: 0,
-    // summary.grandTotal은 주소를 모르는 값이라 다시 더한다
-    grandTotal: summary.subtotal + shippingFee,
+    pointUsed,
+    grandTotal: payableBeforePoint - pointUsed,
     items,
   };
 }

@@ -75,7 +75,16 @@ import {
 import { StockShortageError } from "@/server/services/inventory.service";
 import { OrderAccessDeniedError } from "@/server/services/order-query.service";
 import { AddressLimitExceededError } from "@/server/services/customer.service";
-import { CartNotFoundError, TermsNotAgreedError } from "@/server/services/order.service";
+import {
+  CartNotFoundError,
+  GuestPointUseError,
+  PointUseRejectedError,
+  TermsNotAgreedError,
+} from "@/server/services/order.service";
+import {
+  PointBalanceShortageError,
+  PointLedgerDriftError,
+} from "@/server/services/point.service";
 import {
   OrderNotFoundError,
   OrderNotPayableError,
@@ -103,6 +112,30 @@ export function toOrderTRPCError(error: unknown): unknown {
     return new TRPCError({
       code: "NOT_FOUND",
       message: "장바구니를 찾을 수 없습니다. 상품을 다시 담아 주세요.",
+      cause: error,
+    });
+  }
+
+  // 적립금 사용 거절 — 문구가 이미 원인+다음 행동을 담는다(도메인 checkPointUse가 만든 것)
+  if (error instanceof PointUseRejectedError || error instanceof GuestPointUseError) {
+    return new TRPCError({ code: "BAD_REQUEST", message: error.message, cause: error });
+  }
+
+  // 검증 통과 후 차감 사이에 다른 주문이 잔액을 써버린 경우 — 주문은 롤백됐다
+  if (error instanceof PointBalanceShortageError) {
+    return new TRPCError({
+      code: "CONFLICT",
+      message: "적립금 잔액이 부족합니다. 잔액을 다시 확인하고 주문해 주세요.",
+      cause: error,
+    });
+  }
+
+  // 원장과 잔액이 어긋난 상태 — 고객이 고칠 수 없다. 쓰게 두면 차이가 커지므로 막고 알린다
+  if (error instanceof PointLedgerDriftError) {
+    return new TRPCError({
+      code: "INTERNAL_SERVER_ERROR",
+      message:
+        "적립금 처리 중 문제가 발생했습니다. 적립금 없이 주문하시거나 고객센터로 문의해 주세요.",
       cause: error,
     });
   }
