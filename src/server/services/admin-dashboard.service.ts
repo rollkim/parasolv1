@@ -1,9 +1,10 @@
 import "server-only";
 
-import { and, desc, eq, gte, inArray, isNull, lt, sql } from "drizzle-orm";
+import { and, count, desc, eq, gte, inArray, isNull, lt, sql } from "drizzle-orm";
 
 import {
   board,
+  bulkInquiry,
   category,
   claim,
   orderItem,
@@ -104,9 +105,23 @@ export type DashboardBestSeller = { productId: number; productName: string; sold
 export type DashboardInquiry = {
   postId: number;
   title: string;
+  /** 본문 한 줄 요약 — 제목만으로는 "aaaaa" 같은 글이 무엇인지 알 수 없다 */
+  contentPreview: string;
   categoryCode: string | null;
   isAnswered: boolean;
   createdAt: Date;
+  /** 상품 문의면 상품명 */
+  productName: string | null;
+  /** 클릭 시 이동할 곳 — 어느 메뉴인지는 서버가 정한다 */
+  href: string;
+};
+
+/** 문의 처리 대기 — 메뉴별 건수. 총합 하나로는 어디를 열어야 할지 모른다 */
+export type DashboardInquiryQueueItem = {
+  inquiryKind: "product" | "direct" | "bulk";
+  label: string;
+  href: string;
+  count: number;
 };
 
 export type AdminDashboard = {
@@ -125,6 +140,8 @@ export type AdminDashboard = {
   hourlyOrders: { label: string; count: number }[];
   lowStock: DashboardLowStockItem[];
   bestSellers: DashboardBestSeller[];
+  /** 문의 처리 대기 — 처리 대기열 아래에 온다 */
+  inquiryQueue: DashboardInquiryQueueItem[];
   recentInquiries: DashboardInquiry[];
   excludedMetrics: typeof EXCLUDED_METRICS;
 };
@@ -385,20 +402,79 @@ export async function getAdminDashboard(database: DatabaseClient): Promise<Admin
     .orderBy(desc(sql`coalesce(sum(${orderItem.quantity}), 0)`))
     .limit(5);
 
-  // ── 최근 문의
-  const recentInquiries = await database
+  // ── 문의 처리 대기 (메뉴별 건수)
+  // 총합 하나로는 어디를 열어야 할지 모른다 — 메뉴별로 쪼개야 바로 그 화면으로 갈 수 있다.
+  // 대기 0인 줄도 남긴다: 사라지면 "그 메뉴가 없는 건지 0인 건지"를 구분할 수 없다.
+  const [qnaWaitingRow] = await database
     .select({
-      postId: post.id,
-      title: post.title,
-      categoryCode: post.categoryCode,
-      isAnswered: post.isAnswered,
-      createdAt: post.createdAt,
+      product: sql<number>`count(*) filter (where ${post.productId} is not null)::int`,
+      direct: sql<number>`count(*) filter (where ${post.productId} is null)::int`,
     })
     .from(post)
     .innerJoin(board, eq(post.boardId, board.id))
+    .where(and(eq(board.type, "qna"), eq(post.isAnswered, false)));
+
+  // received = 아직 아무도 연락하지 않은 건. contacted·closed는 손이 간 상태다
+  const [bulkWaitingRow] = await database
+    .select({ waiting: count() })
+    .from(bulkInquiry)
+    .where(eq(bulkInquiry.status, "received"));
+
+  const inquiryQueue = [
+    {
+      inquiryKind: "product" as const,
+      label: "상품 문의",
+      href: "/admin/inquiries/product",
+      count: Number(qnaWaitingRow?.product ?? 0),
+    },
+    {
+      inquiryKind: "direct" as const,
+      label: "1:1 문의",
+      href: "/admin/inquiries/direct",
+      count: Number(qnaWaitingRow?.direct ?? 0),
+    },
+    {
+      inquiryKind: "bulk" as const,
+      label: "단체구매 문의",
+      href: "/admin/inquiries/bulk",
+      count: Number(bulkWaitingRow?.waiting ?? 0),
+    },
+  ];
+
+  // ── 최근 문의 (본문 미리보기 포함 · 7건)
+  // 제목만으로는 "aaaaa" 같은 글이 무엇인지 알 수 없어 목록을 훑는 뜻이 없다.
+  const recentInquiryRows = await database
+    .select({
+      postId: post.id,
+      title: post.title,
+      content: post.content,
+      categoryCode: post.categoryCode,
+      isAnswered: post.isAnswered,
+      createdAt: post.createdAt,
+      productId: post.productId,
+      productName: product.name,
+    })
+    .from(post)
+    .innerJoin(board, eq(post.boardId, board.id))
+    .leftJoin(product, eq(post.productId, product.id))
     .where(eq(board.type, "qna"))
     .orderBy(desc(post.id))
-    .limit(5);
+    .limit(7);
+
+  const recentInquiries = recentInquiryRows.map((row) => ({
+    postId: row.postId,
+    title: row.title,
+    // 본문은 한 줄로 줄여 보낸다 — 전문을 내리면 대시보드가 무거워지고 화면도 넘친다
+    contentPreview:
+      row.content.replace(/\s+/g, " ").trim().slice(0, 60) +
+      (row.content.replace(/\s+/g, " ").trim().length > 60 ? "…" : ""),
+    categoryCode: row.categoryCode,
+    isAnswered: row.isAnswered,
+    createdAt: row.createdAt,
+    productName: row.productName,
+    // 어느 메뉴로 보내야 하는지 서버가 정한다 — 화면이 product_id로 다시 추론하면 규칙이 갈린다
+    href: `/admin/inquiries/${row.productId === null ? "direct" : "product"}?post=${row.postId}`,
+  }));
 
   return {
     kpi: {
@@ -433,6 +509,7 @@ export async function getAdminDashboard(database: DatabaseClient): Promise<Admin
       stock: row.stock,
     })),
     bestSellers: bestSellerRows,
+    inquiryQueue,
     recentInquiries,
     excludedMetrics: EXCLUDED_METRICS,
   };

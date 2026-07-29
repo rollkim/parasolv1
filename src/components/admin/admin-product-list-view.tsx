@@ -259,6 +259,27 @@ export function AdminProductListView() {
                   }
                 />
 
+                {/* 썸네일 — 이름만으로는 어느 상품인지 확신이 안 선다(비슷한 이름의 세트가 많다).
+                    이미지 최적화(next/image)는 5주차 — 그전까지 일반 img */}
+                <span className="size-11 shrink-0 overflow-hidden rounded-[6px] border border-border bg-muted">
+                  {productCard.thumbnailPath ? (
+                    // 바로 옆 링크가 상품명을 읽어주므로 이미지는 장식으로 둔다(중복 낭독 방지)
+                    // eslint-disable-next-line @next/next/no-img-element
+                    <img
+                      src={productCard.thumbnailPath}
+                      alt=""
+                      className="size-full object-cover"
+                    />
+                  ) : (
+                    <span
+                      aria-hidden="true"
+                      className="flex size-full items-center justify-center text-[10px] text-muted-foreground"
+                    >
+                      없음
+                    </span>
+                  )}
+                </span>
+
                 <Link
                   href={`/admin/products/${productCard.productId}`}
                   className="min-w-0 flex-1 text-sm focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring"

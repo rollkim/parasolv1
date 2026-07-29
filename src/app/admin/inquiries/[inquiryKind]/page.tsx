@@ -20,11 +20,25 @@ const INQUIRY_KINDS: InquiryKind[] = ["product", "direct", "bulk"];
 
 export default async function AdminInquiriesPage({
   params,
+  searchParams,
 }: {
   params: Promise<{ inquiryKind: string }>;
+  searchParams: Promise<Record<string, string | string[] | undefined>>;
 }) {
   const { inquiryKind } = await params;
   if (!INQUIRY_KINDS.includes(inquiryKind as InquiryKind)) notFound();
 
-  return <AdminInquiryView activeKind={inquiryKind as InquiryKind} />;
+  // ?post=<id> — 대시보드 '최근 문의'가 특정 문의로 바로 보낸다.
+  // 잘못된 값이면 그냥 목록을 연다(없는 문의로 오류 화면을 띄울 이유가 없다)
+  const { post } = await searchParams;
+  const parsedPostId = Number.parseInt((Array.isArray(post) ? post[0] : post) ?? "", 10);
+  const openPostId =
+    Number.isNaN(parsedPostId) || parsedPostId < 1 ? null : parsedPostId;
+
+  return (
+    <AdminInquiryView
+      activeKind={inquiryKind as InquiryKind}
+      openPostId={openPostId}
+    />
+  );
 }

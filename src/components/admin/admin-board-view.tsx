@@ -83,7 +83,14 @@ export function AdminBoardView({ activeTab }: { activeTab: BoardTab }) {
 }
 
 /** 문의 관리(CS) — 상품 문의 · 1:1 문의 · 단체구매 문의 */
-export function AdminInquiryView({ activeKind }: { activeKind: InquiryKind }) {
+export function AdminInquiryView({
+  activeKind,
+  openPostId = null,
+}: {
+  activeKind: InquiryKind
+  /** ?post=<id> — 대시보드에서 특정 문의로 바로 들어온 경우 */
+  openPostId?: number | null
+}) {
   const trpc = useTRPC()
   const waitingQuery = useQuery(trpc.adminBoard.waitingQnaCount.queryOptions())
 
@@ -113,8 +120,12 @@ export function AdminInquiryView({ activeKind }: { activeKind: InquiryKind }) {
 
       {/* key로 종류를 묶어 새로 마운트한다 — 이전 종류의 페이지·검색어·열린 문의가 남으면
           빈 목록이 나온다. useEffect로 상태를 되돌리면 한 번 잘못 그린 뒤에 고치는 셈이다 */}
-      {activeKind === "product" ? <QnaPanel key="product" inquiryKind="product" /> : null}
-      {activeKind === "direct" ? <QnaPanel key="direct" inquiryKind="direct" /> : null}
+      {activeKind === "product" ? (
+        <QnaPanel key="product" inquiryKind="product" initialOpenPostId={openPostId} />
+      ) : null}
+      {activeKind === "direct" ? (
+        <QnaPanel key="direct" inquiryKind="direct" initialOpenPostId={openPostId} />
+      ) : null}
       {activeKind === "bulk" ? <BulkInquiryPanel /> : null}
     </div>
   )
@@ -569,7 +580,14 @@ function FaqPanel() {
 // 1:1 문의
 // =============================================================
 
-function QnaPanel({ inquiryKind }: { inquiryKind: "product" | "direct" }) {
+function QnaPanel({
+  inquiryKind,
+  initialOpenPostId,
+}: {
+  inquiryKind: "product" | "direct"
+  /** ?post=<id> 딥링크 — 대시보드 '최근 문의'가 특정 문의로 바로 보낸다 */
+  initialOpenPostId: number | null
+}) {
   const trpc = useTRPC()
   const queryClient = useQueryClient()
   const { showToast } = useToast()
@@ -578,7 +596,8 @@ function QnaPanel({ inquiryKind }: { inquiryKind: "product" | "direct" }) {
   const [keywordInput, setKeywordInput] = React.useState("")
   const [appliedKeyword, setAppliedKeyword] = React.useState("")
   const [page, setPage] = React.useState(1)
-  const [openPostId, setOpenPostId] = React.useState<number | null>(null)
+  // 초기값으로 받는다 — useEffect로 나중에 열면 목록을 한 번 그린 뒤 덮어쓰는 셈이다
+  const [openPostId, setOpenPostId] = React.useState<number | null>(initialOpenPostId)
   const [answerDraft, setAnswerDraft] = React.useState("")
   const [editingCommentId, setEditingCommentId] = React.useState<number | null>(null)
 
@@ -878,6 +897,22 @@ function QnaPanel({ inquiryKind }: { inquiryKind: "product" | "direct" }) {
                     {qnaCard.categoryName}
                   </span>
                 ) : null}
+
+                {/* 썸네일 — 상품명만 읽는 것보다 어느 상품인지 훨씬 빨리 알아본다.
+                    상품명이 바로 옆에 있으므로 이미지는 장식으로 둔다(중복 낭독 방지) */}
+                {qnaCard.inquiryProduct ? (
+                  <span className="size-10 shrink-0 overflow-hidden rounded-[6px] border border-border bg-muted">
+                    {qnaCard.inquiryProduct.thumbnailPath ? (
+                      // eslint-disable-next-line @next/next/no-img-element
+                      <img
+                        src={qnaCard.inquiryProduct.thumbnailPath}
+                        alt=""
+                        className="size-full object-cover"
+                      />
+                    ) : null}
+                  </span>
+                ) : null}
+
                 <span className="min-w-0 flex-1 text-sm font-semibold">
                   {/* 어느 상품에 대한 문의인지 모르면 답을 쓸 수 없다 — 제목보다 먼저 온다 */}
                   {qnaCard.inquiryProduct ? (

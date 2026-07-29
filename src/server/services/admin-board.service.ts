@@ -2,7 +2,16 @@ import "server-only";
 
 import { and, asc, count, desc, eq, ilike, isNotNull, isNull, or, sql } from "drizzle-orm";
 
-import { board, bulkInquiry, comment, commonCode, customer, post, product } from "@/db/schema";
+import {
+  board,
+  bulkInquiry,
+  comment,
+  commonCode,
+  customer,
+  post,
+  product,
+  productImage,
+} from "@/db/schema";
 import { formatPhone } from "@/domain/phone";
 
 import type { DatabaseClient, TransactionClient } from "./db-client";
@@ -264,7 +273,13 @@ export type AdminQnaCard = {
   isAnswered: boolean;
   createdAt: Date;
   /** 상품 문의면 그 상품 — 1:1 문의는 null */
-  inquiryProduct: { productId: number; name: string; slug: string } | null;
+  inquiryProduct: {
+    productId: number;
+    name: string;
+    slug: string;
+    thumbnailPath: string | null;
+    thumbnailAlt: string | null;
+  } | null;
 };
 
 export type AdminQnaListResult = {
@@ -333,11 +348,22 @@ export async function listAdminQnas(
       productId: post.productId,
       productName: product.name,
       productSlug: product.slug,
+      thumbnailPath: productImage.path,
+      thumbnailAlt: productImage.alt,
     })
     .from(post)
     .leftJoin(customer, eq(post.customerId, customer.id))
     // 상품이 지워져도 문의는 남는다(product_id는 set null) — 그때는 상품 칸만 빈다
     .leftJoin(product, eq(post.productId, product.id))
+    // 대표 썸네일 1장 — 조건을 조인에 두지 않으면 이미지 수만큼 문의가 중복된다
+    .leftJoin(
+      productImage,
+      and(
+        eq(productImage.productId, product.id),
+        eq(productImage.kind, "thumbnail"),
+        eq(productImage.isPrimary, true),
+      ),
+    )
     .leftJoin(
       commonCode,
       and(eq(commonCode.groupCode, "qna_type"), eq(commonCode.code, post.categoryCode)),
@@ -380,7 +406,13 @@ export async function listAdminQnas(
       createdAt: row.createdAt,
       inquiryProduct:
         row.productId !== null && row.productName !== null && row.productSlug !== null
-          ? { productId: row.productId, name: row.productName, slug: row.productSlug }
+          ? {
+              productId: row.productId,
+              name: row.productName,
+              slug: row.productSlug,
+              thumbnailPath: row.thumbnailPath,
+              thumbnailAlt: row.thumbnailAlt,
+            }
           : null,
     })),
     totalCount: totalRow?.total ?? 0,

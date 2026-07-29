@@ -192,6 +192,34 @@ export function AdminDashboardView() {
         </ul>
       </SectionCard>
 
+      {/* 문의 처리 대기 — 총합 하나로는 어디를 열어야 할지 모른다. 메뉴별로 쪼개 바로 보낸다.
+          대기 0인 줄도 남긴다: 사라지면 "그 메뉴가 없는 건지 0인 건지"를 구분할 수 없다 */}
+      <SectionCard title="문의 처리 대기">
+        <ul className="m-0 grid list-none grid-cols-1 gap-2 p-0 sm:grid-cols-3">
+          {dashboard.inquiryQueue.map((inquiryItem) => (
+            <li key={inquiryItem.inquiryKind}>
+              <Link
+                href={inquiryItem.href}
+                className={cn(
+                  "flex items-center justify-between gap-2 rounded-[calc(var(--radius)-4px)] border p-3 transition-colors hover:border-primary focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring",
+                  inquiryItem.count > 0 ? "border-border" : "border-border opacity-60",
+                )}
+              >
+                <span className="text-[13px] font-semibold">{inquiryItem.label}</span>
+                <span
+                  className={cn(
+                    "font-heading text-xl font-extrabold",
+                    inquiryItem.count > 0 && "text-destructive",
+                  )}
+                >
+                  {inquiryItem.count}
+                </span>
+              </Link>
+            </li>
+          ))}
+        </ul>
+      </SectionCard>
+
       <div className="grid grid-cols-1 gap-4 xl:grid-cols-[minmax(0,1fr)_340px]">
         <div className="flex flex-col gap-4">
           <SectionCard
@@ -333,17 +361,32 @@ export function AdminDashboardView() {
             {dashboard.recentInquiries.length === 0 ? (
               <p className="m-0 text-[13px] text-muted-foreground">아직 문의가 없어요.</p>
             ) : (
-              <ul className="m-0 flex list-none flex-col gap-2 p-0">
+              <ul className="m-0 flex list-none flex-col gap-1 p-0">
                 {dashboard.recentInquiries.map((inquiry) => (
-                  <li key={inquiry.postId} className="text-[13px]">
-                    <span className="flex items-center gap-1.5">
-                      {!inquiry.isAnswered ? (
-                        <span className="shrink-0 rounded-[4px] border border-destructive px-1.5 text-[11px] font-bold text-destructive">
-                          미답변
-                        </span>
-                      ) : null}
-                      <span className="min-w-0 truncate">{inquiry.title}</span>
-                    </span>
+                  <li key={inquiry.postId}>
+                    {/* 링크가 없으면 여기서 본 문의를 메뉴에서 다시 찾아야 한다 */}
+                    <Link
+                      href={inquiry.href}
+                      className="block rounded-[6px] p-1.5 text-[13px] transition-colors hover:bg-muted focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring"
+                    >
+                      <span className="flex items-center gap-1.5">
+                        {!inquiry.isAnswered ? (
+                          <span className="shrink-0 rounded-[4px] border border-destructive px-1.5 text-[11px] font-bold text-destructive">
+                            미답변
+                          </span>
+                        ) : null}
+                        {inquiry.productName ? (
+                          <span className="shrink-0 text-[11px] font-bold text-primary">
+                            [{inquiry.productName}]
+                          </span>
+                        ) : null}
+                        <span className="min-w-0 truncate font-semibold">{inquiry.title}</span>
+                      </span>
+                      {/* 제목만으로는 "aaaaa" 같은 글이 무엇인지 알 수 없다 */}
+                      <span className="mt-0.5 block truncate text-[12px] text-muted-foreground">
+                        {inquiry.contentPreview}
+                      </span>
+                    </Link>
                   </li>
                 ))}
               </ul>
