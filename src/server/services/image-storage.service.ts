@@ -1,7 +1,7 @@
 import "server-only";
 
 import { randomBytes } from "node:crypto";
-import { mkdir, readFile, writeFile } from "node:fs/promises";
+import { mkdir, readFile, unlink, writeFile } from "node:fs/promises";
 import path from "node:path";
 
 /**
@@ -134,6 +134,31 @@ export async function storeProductImage(input: {
   await writeFile(absolutePath, Buffer.from(input.bytes));
 
   return relativePath;
+}
+
+/**
+ * 파일 삭제 — 정리 배치만 호출한다.
+ *
+ * 결과를 세 갈래로 돌려준다. "이미 없음"과 "지우기 실패"를 구분해야 하기 때문이다 —
+ * 이미 없으면 원장에서 지워도 되지만, 실패한 것을 지우면 그 파일을 아무도 기억하지 못한다.
+ */
+export async function deleteStoredImage(
+  storagePath: string,
+): Promise<"deleted" | "missing" | "failed"> {
+  let absolutePath: string;
+  try {
+    absolutePath = resolveStoredImageFile(storagePath);
+  } catch {
+    // 루트 밖을 가리키는 경로 — 애초에 우리가 쓴 파일이 아니다
+    return "missing";
+  }
+  try {
+    await unlink(absolutePath);
+    return "deleted";
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === "ENOENT") return "missing";
+    return "failed";
+  }
 }
 
 /** 서빙 라우트용 — 없으면 ImageNotFoundError(404로 번역된다) */

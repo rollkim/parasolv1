@@ -856,6 +856,36 @@ export const siteSetting = pgTable("site_setting", {
 });
 
 // =============================================================
+// 업로드 파일 원장 — 고아 파일 방지
+// =============================================================
+/**
+ * 디스크에 쓴 파일을 **행으로 소유**한다.
+ *
+ * 이게 없으면 파일이 새는 지점이 셋이다: 올리고 저장 안 한 경우 · 폼에서 뺀 경우 ·
+ * 상품을 지운 경우. 셋 다 DB에서는 사라지는데 디스크에는 남는다.
+ * 디스크를 훑어 DB와 대조하는 방식은 파일이 수만 개가 되면 느리고, 업로드 중인 파일을
+ * 지울 위험이 있다 — 파일이 생길 때 행부터 남기면 그 위험이 없다.
+ *
+ * owner가 null = 아직 아무 데도 안 붙은 임시 파일.
+ * delete_after = 지워도 되는 시각(즉시 삭제하지 않는 이유는 되돌릴 시간을 주기 위해서다 —
+ * 삭제는 되돌릴 수 없다).
+ */
+export const uploadedFile = pgTable("uploaded_file", {
+  id: bigserial("id", { mode: "number" }).primaryKey(),
+  storagePath: text("storage_path").notNull(),   // "products/202607/ab12cd34.jpg"
+  byteSize: integer("byte_size").notNull(),
+  ownerType: text("owner_type"),                 // product / banner / review / article
+  ownerId: bigint("owner_id", { mode: "number" }),
+  deleteAfter: timestamp("delete_after", { withTimezone: true }),
+  ...createdOnly,
+}, (t) => [
+  uniqueIndex("uploaded_file_path_uq").on(t.storagePath),
+  index("uploaded_file_orphan_idx").on(t.createdAt).where(sql`${t.ownerType} IS NULL`),
+  index("uploaded_file_delete_idx").on(t.deleteAfter).where(sql`${t.deleteAfter} IS NOT NULL`),
+  index("uploaded_file_owner_idx").on(t.ownerType, t.ownerId),
+]);
+
+// =============================================================
 // 추후 계획 (인덱스 · 시퀀스)
 // =============================================================
 // 주문/클레임 채번: 전역 시퀀스 order_no_seq·claim_no_seq(일별 리셋 없음) — 날짜 접두는 표시용,

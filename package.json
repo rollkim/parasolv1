@@ -12,6 +12,7 @@
     "db:seed:dev": "tsx src/db/seed/seed-dev.ts",
     "test": "vitest run",
     "ops:reconcile": "tsx --conditions=react-server src/server/services/_ops/reconcile-payments.ts",
+    "ops:sweep-files": "tsx --conditions=react-server src/server/services/_ops/sweep-files.ts",
     "check:order2": "tsx --conditions=react-server src/server/services/_integration/order-phase2.check.ts",
     "check:order3": "tsx --conditions=react-server src/server/services/_integration/order-phase3.check.ts",
     "check:order4": "tsx --conditions=react-server src/server/services/_integration/order-phase4.check.ts",
@@ -38,6 +39,7 @@
     "check:point-earn": "tsx --conditions=react-server src/server/services/_integration/point-earn.check.ts",
     "check:point-use": "tsx --conditions=react-server src/server/services/_integration/point-use.check.ts",
     "check:direct-buy": "tsx --conditions=react-server src/server/services/_integration/direct-buy.check.ts",
+    "check:files": "tsx --conditions=react-server src/server/services/_integration/uploaded-file.check.ts",
     "check:story": "tsx --conditions=react-server src/server/services/_integration/story.check.ts",
     "check:review-qna": "tsx --conditions=react-server src/server/services/_integration/review-qna.check.ts",
     "check:admin-auth": "tsx --conditions=react-server src/server/services/_integration/admin-auth.check.ts"

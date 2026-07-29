@@ -11,6 +11,7 @@ import {
   storeProductImage,
   UnsupportedImageTypeError,
 } from "@/server/services/image-storage.service";
+import { recordUploadedFile } from "@/server/services/uploaded-file.service";
 
 /**
  * 리뷰 사진 업로드 — 회원 전용.
@@ -73,15 +74,17 @@ export async function POST(request: Request) {
   const storedPaths: string[] = [];
   try {
     for (const file of files) {
-      storedPaths.push(
-        await storeProductImage({
-          bytes: await file.arrayBuffer(),
-          mimeType: file.type,
-          now,
-          // 폴더를 고정한다 — 회원이 상품·배너 폴더에 쓸 수 있으면 안 된다
-          folder: "reviews",
-        }),
-      );
+      const bytes = await file.arrayBuffer();
+      const storedPath = await storeProductImage({
+        bytes,
+        mimeType: file.type,
+        now,
+        // 폴더를 고정한다 — 회원이 상품·배너 폴더에 쓸 수 있으면 안 된다
+        folder: "reviews",
+      });
+      // 리뷰를 끝내 등록하지 않으면 이 파일은 주인 없이 남는다 — 원장에 있어야 배치가 치운다
+      await recordUploadedFile(db, { storagePath: storedPath, byteSize: bytes.byteLength });
+      storedPaths.push(storedPath);
     }
   } catch (error) {
     if (error instanceof UnsupportedImageTypeError || error instanceof ImageTooLargeError) {

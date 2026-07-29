@@ -18,6 +18,7 @@ import {
 
 import type { DatabaseClient, TransactionClient } from "./db-client";
 import { serializeActor, type TransitionActor } from "./order-status.service";
+import { claimFiles, releaseOwnerFiles } from "./uploaded-file.service";
 
 /**
  * 관리자 상품 관리 — 목록·조회·저장.
@@ -770,6 +771,15 @@ export async function saveAdminProduct(
       );
     }
 
+    // 이 상품이 쓰는 파일을 확정한다. 폼에서 뺀 이미지는 여기서 삭제 예약되고,
+    // 정리 배치가 유예 기간 뒤에 실제로 지운다 — 안 하면 디스크에만 남아 고아가 된다.
+    // 같은 트랜잭션이라 저장이 실패하면 소유 정보도 함께 되돌아간다
+    await claimFiles(tx, {
+      ownerType: "product",
+      ownerId: productId,
+      keepPaths: input.images.map((formImage) => formImage.path),
+    });
+
     // ── ⑦ 표시가 캐시 — 판매 중인 판매 단위의 최저가. 목록·정렬이 이 값을 읽는다
     const [priceRow] = await tx
       .select({ minPrice: sql<number>`coalesce(min(${productVariant.price}), 0)::int` })
@@ -846,6 +856,12 @@ export async function deleteAdminProducts(
             isNull(productVariant.deletedAt),
           ),
         );
+
+      // 상품이 내려가면 그 이미지도 쓸 곳이 없다 — 삭제 예약해 두면 배치가 유예 뒤 지운다.
+      // 소프트 삭제라 되살릴 수 있으니 파일을 바로 지우지 않는다(유예 안에 되살리면 예약이 풀린다)
+      for (const deletedProduct of deleted) {
+        await releaseOwnerFiles(tx, { ownerType: "product", ownerId: deletedProduct.id });
+      }
     }
     return { deletedCount: deleted.length };
   });

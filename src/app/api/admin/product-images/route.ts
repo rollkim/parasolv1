@@ -3,6 +3,7 @@ import { NextResponse } from "next/server";
 import { db } from "@/db";
 import { readAdminSessionUserId } from "@/server/auth/admin-session";
 import { getAdminSessionProfile } from "@/server/services/admin-auth.service";
+import { recordUploadedFile } from "@/server/services/uploaded-file.service";
 import {
   IMAGE_FOLDERS,
   ImageTooLargeError,
@@ -74,14 +75,17 @@ export async function POST(request: Request) {
   const storedPaths: string[] = [];
   try {
     for (const file of files) {
-      storedPaths.push(
-        await storeProductImage({
-          bytes: await file.arrayBuffer(),
-          mimeType: file.type,
-          now,
-          folder,
-        }),
-      );
+      const bytes = await file.arrayBuffer();
+      const storedPath = await storeProductImage({
+        bytes,
+        mimeType: file.type,
+        now,
+        folder,
+      });
+      // 파일을 쓴 직후 원장에 남긴다 — 여기서 기록하지 않으면 폼을 저장하지 않고 나갔을 때
+      // 그 파일을 아무도 기억하지 못한다(= 영구 고아). 주인은 폼 저장 때 정해진다
+      await recordUploadedFile(db, { storagePath: storedPath, byteSize: bytes.byteLength });
+      storedPaths.push(storedPath);
     }
   } catch (error) {
     if (error instanceof UnsupportedImageTypeError || error instanceof ImageTooLargeError) {
@@ -90,6 +94,6 @@ export async function POST(request: Request) {
     throw error;
   }
 
-  // 경로만 돌려준다 — DB 기록은 상품 저장 시 alt·순서와 함께 한 번에 한다
+  // 경로만 돌려준다 — 상품과의 연결(alt·순서·소유)은 상품 저장 시 한 번에 한다
   return NextResponse.json({ storedPaths });
 }

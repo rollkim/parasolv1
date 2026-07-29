@@ -6,6 +6,7 @@ import { banner, displaySection, displaySectionProduct, product } from "@/db/sch
 
 import type { DatabaseClient, TransactionClient } from "./db-client";
 import { serializeActor, type TransitionActor } from "./order-status.service";
+import { claimFiles, releaseOwnerFiles } from "./uploaded-file.service";
 
 /**
  * 관리자 배너·진열 관리.
@@ -154,27 +155,36 @@ export async function saveAdminBanner(
     endsAt: input.endsAt,
   };
 
-  if (input.bannerId === null) {
-    // 같은 슬롯 맨 뒤에 붙인다 — 중간에 끼면 어디 생겼는지 못 찾는다
-    const [lastRow] = await database
-      .select({ maxSortOrder: sql<number>`coalesce(max(${banner.sortOrder}), -1)::int` })
-      .from(banner)
-      .where(eq(banner.slot, input.slot));
+  // 이미지 소유를 배너 저장과 한 트랜잭션에 묶는다 — 저장이 실패하면 소유도 되돌아가야
+  // "배너엔 안 붙었는데 파일은 주인이 있다"가 안 생긴다
+  return database.transaction(async (tx) => {
+    const keepPaths = input.imagePath ? [input.imagePath] : [];
 
-    const [inserted] = await database
-      .insert(banner)
-      .values({ ...values, sortOrder: (lastRow?.maxSortOrder ?? -1) + 1, createdBy: actorText })
+    if (input.bannerId === null) {
+      // 같은 슬롯 맨 뒤에 붙인다 — 중간에 끼면 어디 생겼는지 못 찾는다
+      const [lastRow] = await tx
+        .select({ maxSortOrder: sql<number>`coalesce(max(${banner.sortOrder}), -1)::int` })
+        .from(banner)
+        .where(eq(banner.slot, input.slot));
+
+      const [inserted] = await tx
+        .insert(banner)
+        .values({ ...values, sortOrder: (lastRow?.maxSortOrder ?? -1) + 1, createdBy: actorText })
+        .returning({ id: banner.id });
+      await claimFiles(tx, { ownerType: "banner", ownerId: inserted.id, keepPaths });
+      return { bannerId: inserted.id };
+    }
+
+    const updated = await tx
+      .update(banner)
+      .set({ ...values, updatedBy: actorText })
+      .where(eq(banner.id, input.bannerId))
       .returning({ id: banner.id });
-    return { bannerId: inserted.id };
-  }
-
-  const updated = await database
-    .update(banner)
-    .set({ ...values, updatedBy: actorText })
-    .where(eq(banner.id, input.bannerId))
-    .returning({ id: banner.id });
-  if (updated.length === 0) throw new AdminBannerNotFoundError(input.bannerId);
-  return { bannerId: updated[0].id };
+    if (updated.length === 0) throw new AdminBannerNotFoundError(input.bannerId);
+    // 이미지를 바꾸면 이전 파일이 여기서 삭제 예약된다
+    await claimFiles(tx, { ownerType: "banner", ownerId: updated[0].id, keepPaths });
+    return { bannerId: updated[0].id };
+  });
 }
 
 /**
@@ -219,12 +229,16 @@ export async function deleteAdminBanner(
   database: DatabaseClient,
   input: { bannerId: number },
 ): Promise<{ bannerId: number }> {
-  const deleted = await database
-    .delete(banner)
-    .where(eq(banner.id, input.bannerId))
-    .returning({ id: banner.id });
-  if (deleted.length === 0) throw new AdminBannerNotFoundError(input.bannerId);
-  return { bannerId: deleted[0].id };
+  return database.transaction(async (tx) => {
+    const deleted = await tx
+      .delete(banner)
+      .where(eq(banner.id, input.bannerId))
+      .returning({ id: banner.id });
+    if (deleted.length === 0) throw new AdminBannerNotFoundError(input.bannerId);
+    // 배너는 진짜 삭제라 이미지도 쓸 곳이 없어진다 — 유예 뒤 배치가 지운다
+    await releaseOwnerFiles(tx, { ownerType: "banner", ownerId: deleted[0].id });
+    return { bannerId: deleted[0].id };
+  });
 }
 
 // =============================================================
