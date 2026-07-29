@@ -146,6 +146,15 @@ export function requiresTransitionMemo(to: ClaimStatus): boolean {
 export const CLAIM_WINDOW_DAYS = 7;
 const CLAIM_WINDOW_MS = CLAIM_WINDOW_DAYS * 24 * 60 * 60 * 1000;
 
+/**
+ * 자동 구매확정 기한 — 배송완료 시각 기준. 클레임 기한 **다음 날**이다.
+ *
+ * 확정 배치가 여기 사는 이유는 이 값의 근거가 클레임 기한이기 때문이다. 따로 8을 적어두면
+ * 클레임 기한을 바꿀 때 한쪽만 바뀌어, 클레임 기간 중에 자동확정이 나거나(확정된 주문에
+ * 반품 신청이 들어오는 경합) 확정이 며칠씩 늦어 적립이 밀린다. 파생시켜 두면 갈라질 수 없다.
+ */
+export const AUTO_CONFIRM_DAYS = CLAIM_WINDOW_DAYS + 1;
+
 /** 주문 상태 — order 도메인과 결합하지 않기 위해 문자열 리터럴만 공유한다 */
 export type ClaimableOrderStatus =
   | "pending"

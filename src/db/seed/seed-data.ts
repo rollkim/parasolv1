@@ -326,10 +326,13 @@ export const SITE_SETTINGS: { key: string; value: unknown }[] = [
   },
   {
     // [2차] 적립금 정책 — earnRate도 0.1% 단위 정수(10 = 1.0%)
+    // useUnitPoint·minUsePoint는 "얼마부터 얼마 단위로 쓰나" — 화면 안내와 서버 검증이 같은 값을 본다
     key: "point_policy",
     value: {
       earnRate: 10,
       expiryDays: 365,
+      useUnitPoint: 10,
+      minUsePoint: 1000,
       signupBonusPoint: 2000,
       reviewBonusPoint: 500,
       photoReviewBonusPoint: 200,
