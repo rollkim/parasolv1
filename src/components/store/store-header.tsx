@@ -9,58 +9,58 @@
 //  - 칩 높이 38px → 44px 상향(터치 전용 내비게이션 · KWCAG). 검색 버튼도 터치 기기에서만 38px → 44px(pointer-coarse)로 올리고, 모바일 인풋을 46px → 48px로 맞춰 여백을 확보한다.
 //  - 카테고리 활성 표시는 색만으로 전달하지 않도록 aria-current="page"를 함께 준다.
 
-import * as React from "react"
-import Link from "next/link"
+import * as React from "react";
+import Link from "next/link";
 
-import { BellIcon, HeartIcon, TicketIcon, UserIcon } from "lucide-react"
+import { BellIcon, HeartIcon, TicketIcon, UserIcon } from "lucide-react";
 
-import { Button } from "@/components/ui/button"
-import { Input } from "@/components/ui/input"
-import { cn } from "@/lib/utils"
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { cn } from "@/lib/utils";
 
-import { CartCountBadge } from "./cart-count-badge"
-import { StoreMobileNav } from "./store-mobile-nav"
+import { CartCountBadge } from "./cart-count-badge";
+import { StoreMobileNav } from "./store-mobile-nav";
 
 /** 대분류 + (선택) 중분류. category 테이블(slug/name/parent_id)에서 조립해 주입한다. */
 export type StoreCategoryNode = {
-  slug: string
-  name: string
-  children?: { slug: string; name: string }[]
-}
+  slug: string;
+  name: string;
+  children?: { slug: string; name: string }[];
+};
 
 /** 드로어(클라이언트 컴포넌트)에 넘기는 형태. 링크 조립을 서버에서 끝내 함수를 경계 밖으로 넘기지 않는다. */
 export type StoreDrawerCategory = {
-  slug: string
-  name: string
-  href: string
-  children: { slug: string; name: string; href: string }[]
-}
+  slug: string;
+  name: string;
+  href: string;
+  children: { slug: string; name: string; href: string }[];
+};
 
 /** 유틸바·드로어 퀵링크 공용. icon은 드로어 퀵링크에서만 쓴다. */
 export type StoreNavLink = {
-  label: string
-  href: string
-  icon?: React.ReactNode
-}
+  label: string;
+  href: string;
+  icon?: React.ReactNode;
+};
 
 export type StoreHeaderProps = {
   /** site_setting의 상호. 워드마크와 홈 링크 접근명에 쓰인다 — 하드코딩 금지 대상. */
-  siteName: string
-  categories: StoreCategoryNode[]
+  siteName: string;
+  categories: StoreCategoryNode[];
   /**
    * 현재 카테고리 페이지의 slug. 상품목록의 미필터 상태는 ALL_CATEGORY_SLUG("all")를 넘긴다.
    * 미지정이면 어느 항목도 활성이 아니다 — 카테고리 페이지가 아닌 화면(홈·장바구니 등)이 여기 해당한다.
    */
-  activeCategorySlug?: string
-  cartCount?: number
-  utilLinks?: StoreNavLink[]
+  activeCategorySlug?: string;
+  cartCount?: number;
+  utilLinks?: StoreNavLink[];
   /** 유틸바 끝의 동작 요소 슬롯(로그아웃 버튼 등) — 링크가 아니어서 utilLinks로 표현할 수 없다 */
-  utilTrailing?: React.ReactNode
-  drawerQuickLinks?: StoreNavLink[]
-  searchPlaceholder?: string
+  utilTrailing?: React.ReactNode;
+  drawerQuickLinks?: StoreNavLink[];
+  searchPlaceholder?: string;
   /** 모바일 폼은 폭이 좁아 축약 문구를 따로 받는다(미지정 시 데스크톱 문구 사용). */
-  searchPlaceholderMobile?: string
-}
+  searchPlaceholderMobile?: string;
+};
 
 // 스토어프론트 라우트가 아직 확정되지 않아 잠정값 — 확정되면 이 상수만 교체한다.
 // (store) 레이아웃이 로그인 상태별 utilLinks를 조립할 때도 이 상수를 쓴다.
@@ -77,10 +77,10 @@ export const STORE_ROUTE = {
   coupons: "/mypage/coupons",
   support: "/support",
   faq: "/support/faq",
-} as const
+} as const;
 
 /** '전체' 항목의 활성 키. category 테이블에 없는 UI 전용 값이라 호출부가 이 상수로 지정한다. */
-export const ALL_CATEGORY_SLUG = "all"
+export const ALL_CATEGORY_SLUG = "all";
 
 const DEFAULT_UTIL_LINKS: StoreNavLink[] = [
   { label: "고객센터", href: STORE_ROUTE.support },
@@ -88,7 +88,7 @@ const DEFAULT_UTIL_LINKS: StoreNavLink[] = [
   { label: "로그인", href: STORE_ROUTE.login },
   { label: "회원가입", href: STORE_ROUTE.signup },
   { label: "마이페이지", href: STORE_ROUTE.mypage },
-]
+];
 
 const DEFAULT_DRAWER_QUICK_LINKS: StoreNavLink[] = [
   {
@@ -111,10 +111,10 @@ const DEFAULT_DRAWER_QUICK_LINKS: StoreNavLink[] = [
     href: STORE_ROUTE.support,
     icon: <BellIcon className="size-[18px]" aria-hidden="true" />,
   },
-]
+];
 
 function categoryHref(slug: string) {
-  return `${STORE_ROUTE.products}?category=${encodeURIComponent(slug)}`
+  return `${STORE_ROUTE.products}?category=${encodeURIComponent(slug)}`;
 }
 
 /**
@@ -141,7 +141,7 @@ export function ParasolMark({ className }: { className?: string }) {
         d="M12 12v7.4a2 2 0 0 0 4 0"
       />
     </svg>
-  )
+  );
 }
 
 // 검색 폼은 데스크톱·모바일 두 벌이 동시에 DOM에 있고 표시만 갈린다.
@@ -151,10 +151,10 @@ function StoreSearchForm({
   formLayout,
   placeholder,
 }: {
-  formLayout: "desktop" | "mobile"
-  placeholder: string
+  formLayout: "desktop" | "mobile";
+  placeholder: string;
 }) {
-  const isDesktop = formLayout === "desktop"
+  const isDesktop = formLayout === "desktop";
 
   return (
     <form
@@ -165,7 +165,7 @@ function StoreSearchForm({
         "relative",
         isDesktop
           ? "mx-auto hidden w-full max-w-[520px] flex-1 md:block"
-          : "pb-3 md:hidden"
+          : "pb-3 md:hidden",
       )}
     >
       <Input
@@ -175,7 +175,7 @@ function StoreSearchForm({
         size="modal"
         className={cn(
           "rounded-full text-[15px]",
-          isDesktop ? "pr-[52px] pl-[18px]" : "pr-[50px] pl-4"
+          isDesktop ? "pr-[52px] pl-[18px]" : "pr-[50px] pl-4",
         )}
       />
       {/* 터치 기기에서만 44px로 키우고(KWCAG) 오프셋을 2px로 줄여 48px 인풋 안에 그대로 앉힌다 */}
@@ -198,7 +198,7 @@ function StoreSearchForm({
         </svg>
       </Button>
     </form>
-  )
+  );
 }
 
 export function StoreHeader({
@@ -222,7 +222,7 @@ export function StoreHeader({
       name: categoryNode.name,
       href: categoryHref(categoryNode.slug),
     })),
-  ]
+  ];
 
   // 함수는 RSC 경계를 넘지 못하므로 드로어용 링크도 여기서 미리 조립해 넘긴다.
   const drawerCategories: StoreDrawerCategory[] = categories.map(
@@ -235,8 +235,8 @@ export function StoreHeader({
         name: childNode.name,
         href: categoryHref(childNode.slug),
       })),
-    })
-  )
+    }),
+  );
 
   return (
     <>
@@ -248,120 +248,145 @@ export function StoreHeader({
         본문 바로가기
       </a>
 
-      <header className="border-b border-border bg-card px-4 md:px-10">
-        {/* 상단 유틸바 — 데스크톱 전용 */}
-        <div className="hidden justify-end gap-[14px] pt-[9px] text-xs text-muted-foreground md:flex">
-          {utilLinks.map((link, index) => (
-            <React.Fragment key={link.href + link.label}>
-              {index > 0 && <span aria-hidden="true">·</span>}
-              <Link
-                href={link.href}
-                className="transition-colors hover:text-primary"
-              >
-                {link.label}
-              </Link>
-            </React.Fragment>
-          ))}
-          {utilTrailing != null && (
-            <>
-              {utilLinks.length > 0 && <span aria-hidden="true">·</span>}
-              {utilTrailing}
-            </>
-          )}
-        </div>
+      {/* 테두리·배경은 화면 전체를 가로지르고, 내용만 1280px로 모은다(목업 구조 · 푸터와 같은 폭).
+          헤더에 컨테이너가 없으면 넓은 화면에서 로고·검색·카테고리만 왼쪽 끝으로 밀린다 */}
+      <header className="border-b border-border bg-card">
+        <div className="mx-auto w-full max-w-[1280px] px-4 md:px-10">
+          {/* 상단 유틸바 — 데스크톱 전용 */}
+          <div className="hidden justify-end gap-[14px] pt-[9px] text-xs text-muted-foreground md:flex">
+            {utilLinks.map((link, index) => (
+              <React.Fragment key={link.href + link.label}>
+                {index > 0 && <span aria-hidden="true">·</span>}
+                <Link
+                  href={link.href}
+                  className="transition-colors hover:text-primary"
+                >
+                  {link.label}
+                </Link>
+              </React.Fragment>
+            ))}
+            {utilTrailing != null && (
+              <>
+                {utilLinks.length > 0 && <span aria-hidden="true">·</span>}
+                {utilTrailing}
+              </>
+            )}
+          </div>
 
-        <div className="flex items-center gap-3 py-3">
-          <StoreMobileNav
-            siteName={siteName}
-            brandMark={<ParasolMark className="size-6" />}
-            categories={drawerCategories}
-            quickLinks={drawerQuickLinks}
-            loginHref={STORE_ROUTE.login}
-            allProductsHref={STORE_ROUTE.products}
+          <div className="flex items-center gap-3 py-3">
+            <StoreMobileNav
+              siteName={siteName}
+              brandMark={<ParasolMark className="size-6" />}
+              categories={drawerCategories}
+              quickLinks={drawerQuickLinks}
+              loginHref={STORE_ROUTE.login}
+              allProductsHref={STORE_ROUTE.products}
+            />
+
+            <Link
+              href={STORE_ROUTE.home}
+              aria-label={`${siteName} 홈`}
+              className="flex items-center gap-2 text-foreground"
+            >
+              <ParasolMark className="size-[26px]" />
+              <span className="font-heading text-[23px] font-extrabold tracking-[-0.01em]">
+                {siteName}
+              </span>
+            </Link>
+
+            <StoreSearchForm
+              formLayout="desktop"
+              placeholder={searchPlaceholder}
+            />
+
+            <div className="ml-auto flex items-center gap-0.5">
+              {/* 모바일에는 헤더 내 찜 진입점이 없다 — 하단 바로가기 nav가 담당(목업 메인 L475) */}
+              <Button
+                asChild
+                variant="ghost"
+                size="icon-sm"
+                className="hidden text-foreground hover:bg-transparent hover:text-accent md:inline-flex"
+              >
+                <Link href={STORE_ROUTE.wishlist} aria-label="찜 목록">
+                  <svg
+                    viewBox="0 0 24 24"
+                    className="size-[23px]"
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth="1.8"
+                    aria-hidden="true"
+                  >
+                    <path d="M12 20.5 4.2 12.9a4.6 4.6 0 0 1 6.5-6.5l1.3 1.3 1.3-1.3a4.6 4.6 0 0 1 6.5 6.5Z" />
+                  </svg>
+                </Link>
+              </Button>
+
+              {/* 뱃지 숫자는 aria-label에 가려 낭독되지 않으므로 링크 이름에 개수를 합친다 */}
+              <Button
+                asChild
+                variant="ghost"
+                size="icon-sm"
+                className="relative text-foreground hover:bg-transparent hover:text-primary"
+              >
+                <Link
+                  href={STORE_ROUTE.cart}
+                  aria-label={
+                    cartCount > 0 ? `장바구니 (${cartCount}개)` : "장바구니"
+                  }
+                >
+                  <svg
+                    viewBox="0 0 24 24"
+                    className="size-[23px]"
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth="1.8"
+                    aria-hidden="true"
+                  >
+                    <path
+                      d="M6 7h13l-1.2 8.4a2 2 0 0 1-2 1.7H9.2a2 2 0 0 1-2-1.7L6 4H3"
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                    />
+                    <circle cx="9.5" cy="20" r="1.3" />
+                    <circle cx="16.5" cy="20" r="1.3" />
+                  </svg>
+                  {/* 개수 0이면 뱃지 자체를 렌더하지 않는다. 라벨은 링크가, 변경 낭독은 aria-live가 담당(CountBadge 규약).
+                    서버 값은 초기값일 뿐이고 실제 개수는 카트 캐시를 구독한다 — 담기·삭제가 어디서 일어나든 따라온다 */}
+                  <CartCountBadge initialCount={cartCount} />
+                </Link>
+              </Button>
+            </div>
+          </div>
+
+          <StoreSearchForm
+            formLayout="mobile"
+            placeholder={searchPlaceholderMobile ?? searchPlaceholder}
           />
 
-          <Link
-            href={STORE_ROUTE.home}
-            aria-label={`${siteName} 홈`}
-            className="flex items-center gap-2 text-foreground"
+          {/* 카테고리 내비 — 데스크톱 전용 */}
+          <nav
+            aria-label="카테고리"
+            className="hidden flex-wrap gap-1.5 border-t border-border md:flex"
           >
-            <ParasolMark className="size-[26px]" />
-            <span className="font-heading text-[23px] font-extrabold tracking-[-0.01em]">
-              {siteName}
-            </span>
-          </Link>
-
-          <StoreSearchForm formLayout="desktop" placeholder={searchPlaceholder} />
-
-          <div className="ml-auto flex items-center gap-0.5">
-            {/* 모바일에는 헤더 내 찜 진입점이 없다 — 하단 바로가기 nav가 담당(목업 메인 L475) */}
-            <Button
-              asChild
-              variant="ghost"
-              size="icon-sm"
-              className="hidden text-foreground hover:bg-transparent hover:text-accent md:inline-flex"
-            >
-              <Link href={STORE_ROUTE.wishlist} aria-label="찜 목록">
-                <svg
-                  viewBox="0 0 24 24"
-                  className="size-[23px]"
-                  fill="none"
-                  stroke="currentColor"
-                  strokeWidth="1.8"
-                  aria-hidden="true"
-                >
-                  <path d="M12 20.5 4.2 12.9a4.6 4.6 0 0 1 6.5-6.5l1.3 1.3 1.3-1.3a4.6 4.6 0 0 1 6.5 6.5Z" />
-                </svg>
-              </Link>
-            </Button>
-
-            {/* 뱃지 숫자는 aria-label에 가려 낭독되지 않으므로 링크 이름에 개수를 합친다 */}
-            <Button
-              asChild
-              variant="ghost"
-              size="icon-sm"
-              className="relative text-foreground hover:bg-transparent hover:text-primary"
-            >
+            {navItems.map((navItem) => (
               <Link
-                href={STORE_ROUTE.cart}
-                aria-label={
-                  cartCount > 0 ? `장바구니 (${cartCount}개)` : "장바구니"
+                key={navItem.slug}
+                href={navItem.href}
+                aria-current={
+                  navItem.slug === activeCategorySlug ? "page" : undefined
                 }
+                className="inline-flex min-h-[46px] items-center px-3 text-sm font-semibold text-foreground transition-colors hover:text-primary aria-[current=page]:text-primary"
               >
-                <svg
-                  viewBox="0 0 24 24"
-                  className="size-[23px]"
-                  fill="none"
-                  stroke="currentColor"
-                  strokeWidth="1.8"
-                  aria-hidden="true"
-                >
-                  <path
-                    d="M6 7h13l-1.2 8.4a2 2 0 0 1-2 1.7H9.2a2 2 0 0 1-2-1.7L6 4H3"
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                  />
-                  <circle cx="9.5" cy="20" r="1.3" />
-                  <circle cx="16.5" cy="20" r="1.3" />
-                </svg>
-                {/* 개수 0이면 뱃지 자체를 렌더하지 않는다. 라벨은 링크가, 변경 낭독은 aria-live가 담당(CountBadge 규약).
-                    서버 값은 초기값일 뿐이고 실제 개수는 카트 캐시를 구독한다 — 담기·삭제가 어디서 일어나든 따라온다 */}
-                <CartCountBadge initialCount={cartCount} />
+                {navItem.name}
               </Link>
-            </Button>
-          </div>
+            ))}
+          </nav>
         </div>
+      </header>
 
-        <StoreSearchForm
-          formLayout="mobile"
-          placeholder={searchPlaceholderMobile ?? searchPlaceholder}
-        />
-
-        {/* 카테고리 내비 — 데스크톱 전용 */}
-        <nav
-          aria-label="카테고리"
-          className="hidden flex-wrap gap-1.5 border-t border-border md:flex"
-        >
+      {/* 모바일 카테고리 칩 스트립 — 목업에서도 header 바깥 형제 요소다 */}
+      <div className="border-b border-border bg-card md:hidden">
+        <div className="mx-auto flex w-full max-w-[1280px] gap-2 overflow-x-auto px-4 py-3">
           {navItems.map((navItem) => (
             <Link
               key={navItem.slug}
@@ -369,29 +394,13 @@ export function StoreHeader({
               aria-current={
                 navItem.slug === activeCategorySlug ? "page" : undefined
               }
-              className="inline-flex min-h-[46px] items-center px-3 text-sm font-semibold text-foreground transition-colors hover:text-primary aria-[current=page]:text-primary"
+              className="inline-flex min-h-11 shrink-0 items-center rounded-full border border-border bg-card px-[15px] text-[13px] font-semibold whitespace-nowrap text-foreground aria-[current=page]:border-primary aria-[current=page]:bg-primary aria-[current=page]:text-primary-foreground"
             >
               {navItem.name}
             </Link>
           ))}
-        </nav>
-      </header>
-
-      {/* 모바일 카테고리 칩 스트립 — 목업에서도 header 바깥 형제 요소다 */}
-      <div className="flex gap-2 overflow-x-auto border-b border-border bg-card px-4 py-3 md:hidden">
-        {navItems.map((navItem) => (
-          <Link
-            key={navItem.slug}
-            href={navItem.href}
-            aria-current={
-              navItem.slug === activeCategorySlug ? "page" : undefined
-            }
-            className="inline-flex min-h-11 shrink-0 items-center rounded-full border border-border bg-card px-[15px] text-[13px] font-semibold whitespace-nowrap text-foreground aria-[current=page]:border-primary aria-[current=page]:bg-primary aria-[current=page]:text-primary-foreground"
-          >
-            {navItem.name}
-          </Link>
-        ))}
+        </div>
       </div>
     </>
-  )
+  );
 }

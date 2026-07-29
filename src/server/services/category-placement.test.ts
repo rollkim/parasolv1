@@ -58,11 +58,11 @@ describe("카테고리 계층 위치", () => {
     expect(placement.chips.some((chip) => chip.slug === "oat-cookie")).toBe(true);
   });
 
-  it("자식 없는 대분류: 더 좁힐 것이 없으므로 형제 대분류로 이동할 수 있게 둔다", () => {
+  it("자식 없는 대분류: 칩 줄을 비운다 — 대분류로 폴백하면 그 줄의 의미가 흔들린다", () => {
     const placement = resolveCategoryPlacement(NAV, "gift");
     expect(placement.root).toEqual({ slug: "gift", name: "선물세트" });
-    expect(placement.chips.map((chip) => chip.slug)).toEqual(["bakery", "coffee", "gift"]);
-    // 대분류 목록으로 돌아갔으므로 '전체'도 미필터를 뜻한다
+    // 상품은 이미 대분류로 걸러져 나온다. 단지 더 좁힐 수단이 없을 뿐이다
+    expect(placement.chips).toEqual([]);
     expect(placement.chipsAllSlug).toBeNull();
   });
 

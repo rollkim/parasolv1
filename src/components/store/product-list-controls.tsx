@@ -1,4 +1,4 @@
-"use client"
+"use client";
 
 // 핸드오프 규격: 상품목록.dc.html L230~236(정렬 select) · L383~386(CATS) · L437~446(필터·정렬 변경 시 page:1 리셋)
 //
@@ -12,7 +12,7 @@
 //  - 가격대·혜택(할인/품절 제외) 필터와 모바일 필터 바텀시트는 미구현 —
 //    getProductListPage가 카테고리·정렬·페이지만 지원해 화면만 먼저 만들 수 없다(서비스 확장 시 추가).
 
-import { useRouter } from "next/navigation"
+import { useRouter } from "next/navigation";
 
 import {
   Select,
@@ -20,41 +20,44 @@ import {
   SelectItem,
   SelectTrigger,
   SelectValue,
-} from "@/components/ui/select"
-import type { ProductSort } from "@/server/services/product.service"
+} from "@/components/ui/select";
+import type { ProductSort } from "@/server/services/product.service";
 
-export type ProductListCategoryChip = { slug: string; name: string }
+export type ProductListCategoryChip = { slug: string; name: string };
 
 export type ProductListControlsProps = {
   /**
    * 이 위치에서 한 단계 더 좁히는 칩('전체' 제외). 대분류를 보고 있으면 그 중분류가,
    * 전체를 보고 있으면 대분류가 온다 — 서버(resolveCategoryPlacement)가 정한다.
    */
-  categoryChips: ProductListCategoryChip[]
+  categoryChips: ProductListCategoryChip[];
   /**
    * '전체' 칩이 가리킬 slug. 대분류 안에서는 '그 대분류 전체'를 뜻하므로 대분류 slug가 오고,
    * 최상위에서는 null(필터 없음)이다.
    */
-  chipsAllSlug: string | null
+  chipsAllSlug: string | null;
   /** 현재 선택된 카테고리 — 중분류면 그 중분류 칩이 활성화된다 */
-  activeCategorySlug: string | null
-  activeSort: ProductSort
-}
+  activeCategorySlug: string | null;
+  activeSort: ProductSort;
+};
 
 const PRODUCT_SORT_OPTIONS: { sortValue: ProductSort; sortLabel: string }[] = [
   { sortValue: "latest", sortLabel: "신상품순" },
   { sortValue: "popular", sortLabel: "인기순" },
   { sortValue: "price_low", sortLabel: "낮은가격순" },
   { sortValue: "price_high", sortLabel: "높은가격순" },
-]
+];
 
 /** 목록 쿼리 조립 — 기본값(전체·신상품순)은 파라미터를 생략해 /products가 정규 URL이 되게 한다 */
-function productListHref(categorySlug: string | null, sort: ProductSort): string {
-  const listQuery = new URLSearchParams()
-  if (categorySlug) listQuery.set("category", categorySlug)
-  if (sort !== "latest") listQuery.set("sort", sort)
-  const queryString = listQuery.toString()
-  return queryString ? `/products?${queryString}` : "/products"
+function productListHref(
+  categorySlug: string | null,
+  sort: ProductSort,
+): string {
+  const listQuery = new URLSearchParams();
+  if (categorySlug) listQuery.set("category", categorySlug);
+  if (sort !== "latest") listQuery.set("sort", sort);
+  const queryString = listQuery.toString();
+  return queryString ? `/products?${queryString}` : "/products";
 }
 
 export function ProductListControls({
@@ -63,36 +66,44 @@ export function ProductListControls({
   activeCategorySlug,
   activeSort,
 }: ProductListControlsProps) {
-  const router = useRouter()
+  const router = useRouter();
 
   // '전체'는 category 테이블에 없는 UI 항목이다. 최상위에서는 미필터(slug null)지만,
   // 대분류 안에서는 '그 대분류 전체'라 대분류 slug를 가리킨다.
   const chipItems: { slug: string | null; name: string }[] = [
     { slug: chipsAllSlug, name: "전체" },
     ...categoryChips,
-  ]
+  ];
+
+  // 하위가 없는 대분류(잼·스프레드 등)에서는 줄 전체를 숨긴다.
+  // 좁힐 것이 없는데 '전체' 하나만 남으면, 그 칩은 카테고리를 벗어나는 링크라 오히려 헷갈린다.
+  const hasCategoryChips = categoryChips.length > 0;
 
   return (
     // [탭 순서] 목업 L121 주석의 7 카테고리 → 8 정렬을 DOM 순서로 그대로 구현 — tabindex 조작 없음
     <div className="mb-4 flex flex-wrap items-center gap-3">
-      <div
-        role="group"
-        aria-label="카테고리 필터"
-        // 모바일은 가로 스크롤, 데스크톱은 줄바꿈. -my는 스크롤 컨테이너가 포커스 링을 세로로 자르지 않게 하는 여유분
-        className="-my-1 flex min-w-0 basis-full gap-2 overflow-x-auto py-1 md:flex-1 md:basis-auto md:flex-wrap md:overflow-visible"
-      >
-        {chipItems.map((chipItem) => (
-          <button
-            key={chipItem.slug ?? "all"}
-            type="button"
-            aria-pressed={chipItem.slug === activeCategorySlug}
-            onClick={() => router.push(productListHref(chipItem.slug, activeSort))}
-            className="inline-flex min-h-11 shrink-0 cursor-pointer items-center rounded-full border border-border bg-card px-[15px] text-[13px] font-semibold whitespace-nowrap text-foreground transition-colors hover:bg-muted aria-pressed:border-primary aria-pressed:bg-primary aria-pressed:text-primary-foreground aria-pressed:hover:bg-primary"
-          >
-            {chipItem.name}
-          </button>
-        ))}
-      </div>
+      {hasCategoryChips ? (
+        <div
+          role="group"
+          aria-label="카테고리 필터"
+          // 모바일은 가로 스크롤, 데스크톱은 줄바꿈. -my는 스크롤 컨테이너가 포커스 링을 세로로 자르지 않게 하는 여유분
+          className="-my-1 flex min-w-0 basis-full gap-2 overflow-x-auto py-1 md:flex-1 md:basis-auto md:flex-wrap md:overflow-visible"
+        >
+          {chipItems.map((chipItem) => (
+            <button
+              key={chipItem.slug ?? "all"}
+              type="button"
+              aria-pressed={chipItem.slug === activeCategorySlug}
+              onClick={() =>
+                router.push(productListHref(chipItem.slug, activeSort))
+              }
+              className="inline-flex min-h-11 shrink-0 cursor-pointer items-center rounded-full border border-border bg-card px-[15px] text-[13px] font-semibold whitespace-nowrap text-foreground transition-colors hover:bg-muted aria-pressed:border-primary aria-pressed:bg-primary aria-pressed:text-primary-foreground aria-pressed:hover:bg-primary"
+            >
+              {chipItem.name}
+            </button>
+          ))}
+        </div>
+      ) : null}
 
       <div className="ml-auto flex items-center gap-2">
         {/* 라벨 텍스트는 데스크톱 전용(목업 툴바) — 접근명은 트리거 aria-label이 담당하므로 장식 처리 */}
@@ -105,7 +116,9 @@ export function ProductListControls({
         <Select
           value={activeSort}
           onValueChange={(nextSort) =>
-            router.push(productListHref(activeCategorySlug, nextSort as ProductSort))
+            router.push(
+              productListHref(activeCategorySlug, nextSort as ProductSort),
+            )
           }
         >
           <SelectTrigger selectPreset="storefrontSort" aria-label="정렬">
@@ -113,7 +126,10 @@ export function ProductListControls({
           </SelectTrigger>
           <SelectContent>
             {PRODUCT_SORT_OPTIONS.map((sortOption) => (
-              <SelectItem key={sortOption.sortValue} value={sortOption.sortValue}>
+              <SelectItem
+                key={sortOption.sortValue}
+                value={sortOption.sortValue}
+              >
                 {sortOption.sortLabel}
               </SelectItem>
             ))}
@@ -121,5 +137,5 @@ export function ProductListControls({
         </Select>
       </div>
     </div>
-  )
+  );
 }

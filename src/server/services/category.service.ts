@@ -83,8 +83,10 @@ export function resolveCategoryPlacement(
     return {
       root: { slug: matchedRoot.slug, name: matchedRoot.name },
       child: null,
-      // 자식이 없는 대분류는 더 좁힐 것이 없다 — 형제 대분류로 이동할 수 있게 둔다
-      chips: matchedRoot.children.length > 0 ? matchedRoot.children : rootChips,
+      // 하위가 없으면 **칩 줄을 비운다.** 상품은 이미 대분류로 걸러져 나오고, 단지 더 좁힐
+      // 수단이 없을 뿐이다. 형제 대분류로 폴백하면 같은 자리가 어떤 때는 중분류를, 어떤 때는
+      // 대분류를 뜻하게 되어 그 줄이 무엇인지 알 수 없어진다(대분류 이동은 상단 메뉴 몫).
+      chips: matchedRoot.children,
       chipsAllSlug: matchedRoot.children.length > 0 ? matchedRoot.slug : null,
       unknown: false,
     };
