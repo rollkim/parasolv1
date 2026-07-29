@@ -24,13 +24,14 @@ export type ProductDetailTabsProps = {
   /** 짧은 소개문 — 상세 설명이 없을 때의 대체 본문 */
   productSummary: string | null
   /**
-   * 관리자가 입력한 상세 설명 — **평문**이다.
+   * 관리자가 입력한 상세 설명 — **살균을 마친 HTML**이다.
    *
-   * 관리자 상품 폼이 일반 textarea라 HTML을 만드는 곳이 없다. 그런데도 HTML로 렌더하면
-   * ① 관리자가 붙여넣은 스크립트가 전 방문자에게 실행되고(저장형 XSS)
-   * ② "5 < 10" 같은 평범한 문장이 태그로 먹혀 본문이 깨진다.
-   * 서식 편집기를 붙이는 시점에 **새니타이저(DOMPurify 계열)를 함께** 도입하고
-   * 그때 이 prop을 HTML로 되돌린다 — 편집기 없이 HTML 렌더만 열어두면 얻는 것 없이 위험만 남는다.
+   * 관리자 폼이 서식 에디터(Tiptap)라 HTML이 들어온다. 저장 시 서버가 허용 목록으로 씻으므로
+   * (admin-product.service → html-sanitize.service) 여기 오는 값은 이미 안전하다.
+   * 씻는 자리를 저장 한 곳으로 못박은 이유: 렌더 시점에 씻으면 이 값을 쓰는 화면이 늘 때마다
+   * 잊을 수 있고, 잊은 화면 하나가 곧 저장형 XSS 구멍이 된다.
+   *
+   * 옛 데이터(평문)도 그대로 그려진다 — 태그가 없으니 글자로 보인다.
    */
   descriptionText: string | null
   /** 세로로 이어붙는 상세 이미지 스택 (관리자 '상세 이미지' 등록 반영) */
@@ -83,9 +84,15 @@ export function ProductDetailTabs({
           className="mx-auto w-full max-w-[720px] py-7"
         >
           {descriptionText ? (
-            /* 평문을 그대로 그린다 — 줄바꿈만 살리고 태그는 글자로 보인다.
-               HTML로 넣지 않는 것이 이 화면의 XSS 방어 자체다(prop 주석 참고) */
-            <p className="whitespace-pre-wrap text-base leading-[1.8]">{descriptionText}</p>
+            /* 서식 본문(HTML)을 그린다. **저장 시 서버가 이미 살균했다**
+               (admin-product.service → html-sanitize.service) — 씻은 것만 DB에 들어가므로
+               여기서 다시 씻지 않는다. 렌더 시점에 씻으면 화면이 늘 때마다 잊을 수 있고,
+               잊은 화면 하나가 곧 구멍이다.
+               태그별 여백·목록 표시는 여기서 준다 — 저장된 HTML에는 style이 없다(살균이 버린다) */
+            <div
+              className="text-base leading-[1.8] [&_blockquote]:my-5 [&_blockquote]:border-l-[3px] [&_blockquote]:border-primary [&_blockquote]:pl-4 [&_h2]:mt-7 [&_h2]:mb-2.5 [&_h2]:font-heading [&_h2]:text-xl [&_h2]:font-extrabold [&_h3]:mt-5 [&_h3]:mb-2 [&_h3]:font-bold [&_img]:my-5 [&_img]:max-w-full [&_img]:rounded-lg [&_li]:mb-1 [&_ol]:my-4 [&_ol]:list-decimal [&_ol]:pl-6 [&_p]:mb-4 [&_ul]:my-4 [&_ul]:list-disc [&_ul]:pl-6 [&_a]:text-primary [&_a]:underline"
+              dangerouslySetInnerHTML={{ __html: descriptionText }}
+            />
           ) : productSummary ? (
             <p className="text-base leading-[1.8]">{productSummary}</p>
           ) : null}

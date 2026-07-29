@@ -7,8 +7,8 @@
 //  - **URL 주소(slug) 입력칸을 더했다.** 목업에 없는데 DB가 NOT NULL + 영문 소문자만 허용하고,
 //    이게 스토어 주소(/products/{slug})다. 상품명이 한글이라 자동 생성이 불가능해 없으면
 //    저장 자체가 안 된다.
-//  - 상세설명은 일반 textarea다. WYSIWYG 에디터는 별도 범위이고, 서식 HTML을 그대로 저장하면
-//    XSS 정화 설계가 먼저 필요하다.
+//  - 상세설명은 서식 에디터(Tiptap)다. 저장할 때 서버가 살균하므로(html-sanitize.service)
+//    에디터가 만든 HTML을 그대로 믿지 않는다 — 화면에서 막는 것은 우회된다.
 //  - 재고를 여기서 고치면 조정 건수를 알려준다 — 조용히 숫자만 바뀌지 않게.
 
 import * as React from "react"
@@ -22,12 +22,12 @@ import type { inferRouterOutputs } from "@trpc/server"
 import type { AppRouter } from "@/server/trpc/routers/_app"
 
 import { ImageDropUploader } from "@/components/admin/image-drop-uploader"
+import { RichTextEditor } from "@/components/admin/rich-text-editor"
 import { Button } from "@/components/ui/button"
 import { Checkbox } from "@/components/ui/checkbox"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Spinner } from "@/components/ui/spinner"
-import { Textarea } from "@/components/ui/textarea"
 import { useToast } from "@/components/ui/toast"
 import { useTRPC } from "@/trpc/client"
 
@@ -829,20 +829,18 @@ function ProductFormFields({
 
       <section className="rounded-[var(--radius)] border border-border bg-card p-4">
         <h2 className="m-0 font-heading text-[15px] font-extrabold">상세 설명</h2>
-        <Label htmlFor="product-description" className="sr-only">
-          상세 설명
-        </Label>
-        <Textarea
-          id="product-description"
-          size="compact"
-          className="mt-2"
-          placeholder="상품 상세 설명을 입력하세요."
-          value={description}
-          onChange={(event) => setDescription(event.target.value)}
-        />
+        <div className="mt-2">
+          <RichTextEditor
+            value={description}
+            onChange={setDescription}
+            placeholder="상품 상세 설명을 입력하세요. 사진도 넣을 수 있어요."
+            imagePurpose="product"
+            uploadEndpoint="/api/admin/product-images"
+          />
+        </div>
         <p className="m-0 mt-2 text-[12px] text-muted-foreground">
-          줄바꿈은 그대로 보입니다. HTML 태그는 글자 그대로 표시됩니다 — 서식 편집기는 아직
-          연결되지 않았습니다.
+          서식과 사진을 넣을 수 있습니다. 저장할 때 서버가 안전한 형태로 정리하므로,
+          붙여넣은 내용의 일부 서식은 사라질 수 있습니다.
         </p>
       </section>
 

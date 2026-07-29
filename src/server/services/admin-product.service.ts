@@ -17,6 +17,7 @@ import {
 } from "@/db/schema";
 
 import type { DatabaseClient, TransactionClient } from "./db-client";
+import { sanitizeRichText } from "./html-sanitize.service";
 import { serializeActor, type TransitionActor } from "./order-status.service";
 import { claimFiles, releaseOwnerFiles } from "./uploaded-file.service";
 
@@ -566,7 +567,9 @@ export async function saveAdminProduct(
       name: input.name,
       slug: input.slug,
       summary: input.summary,
-      description: input.description,
+      // 서식 본문은 **저장할 때** 씻는다 — 렌더 시점에 씻으면 새 화면을 만들 때마다 잊을 수 있고,
+      // 잊은 화면 하나가 곧 저장형 XSS 구멍이다. 씻은 것만 DB에 들어가면 화면은 신경 쓸 게 없다
+      description: sanitizeRichText(input.description),
       status: input.productStatus,
       badgeLabel: input.badgeLabel,
     };
