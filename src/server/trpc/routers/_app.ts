@@ -2,6 +2,7 @@ import { createCallerFactory, router } from "../init";
 import { adminAuthRouter } from "./admin-auth";
 import { adminBoardRouter } from "./admin-board";
 import { adminCategoryRouter } from "./admin-category";
+import { bulkInquiryRouter } from "./bulk-inquiry";
 import { adminClaimRouter } from "./admin-claim";
 import { adminCustomerRouter } from "./admin-customer";
 import { adminDashboardRouter } from "./admin-dashboard";
@@ -28,6 +29,7 @@ export const appRouter = router({
   adminAuth: adminAuthRouter,
   adminBoard: adminBoardRouter,
   adminCategory: adminCategoryRouter,
+  bulkInquiry: bulkInquiryRouter,
   adminClaim: adminClaimRouter,
   adminCustomer: adminCustomerRouter,
   adminDashboard: adminDashboardRouter,

@@ -75,6 +75,7 @@ import {
 import { StockShortageError } from "@/server/services/inventory.service";
 import { OrderAccessDeniedError } from "@/server/services/order-query.service";
 import { AddressLimitExceededError } from "@/server/services/customer.service";
+import { UnknownBulkPurchaseTypeError } from "@/server/services/bulk-inquiry.service";
 import {
   CartNotFoundError,
   GuestPointUseError,
@@ -138,6 +139,10 @@ export function toOrderTRPCError(error: unknown): unknown {
         "적립금 처리 중 문제가 발생했습니다. 적립금 없이 주문하시거나 고객센터로 문의해 주세요.",
       cause: error,
     });
+  }
+
+  if (error instanceof UnknownBulkPurchaseTypeError) {
+    return new TRPCError({ code: "BAD_REQUEST", message: error.message, cause: error });
   }
 
   if (error instanceof TermsNotAgreedError) {
