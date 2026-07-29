@@ -10,6 +10,7 @@ import {
 } from "@/domain/order";
 
 import type { TransactionClient } from "./db-client";
+import { earnPurchasePoints } from "./point-earn.service";
 
 /**
  * 주문 상태 변경의 유일한 통로(초크포인트).
@@ -87,6 +88,14 @@ export async function applyOrderTransition(
     actor: actorText,
     memo: input.memo ?? null,
   });
+
+  // 구매확정 = 적립 시점. 초크포인트 안에 두는 이유는 확정에 이르는 경로가 여럿이기 때문이다
+  // (고객 확정 · 자동확정 배치 · 운영 개입). 호출부마다 붙이면 언젠가 한 곳을 빠뜨리고,
+  // 빠뜨린 경로로 확정된 주문은 적립이 영영 안 된다. 여기 있으면 빠뜨릴 자리가 없다.
+  // 같은 트랜잭션이므로 적립이 실패하면 확정도 함께 되돌아간다.
+  if (input.toStatus === "confirmed") {
+    await earnPurchasePoints(tx, input.orderId);
+  }
 
   return { changed: true, fromStatus, toStatus: input.toStatus };
 }

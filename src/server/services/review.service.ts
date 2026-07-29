@@ -7,6 +7,7 @@ import { maskOrdererName } from "@/domain/order";
 
 import { getActiveCommonCodesWithMeta } from "./common-code.service";
 import type { DatabaseClient, QueryClient, TransactionClient } from "./db-client";
+import { earnReviewPoints } from "./point-earn.service";
 
 /**
  * 리뷰 도메인 서비스 — 스토어프론트 조회·작성.
@@ -276,6 +277,14 @@ export async function createReview(
 
     // 작성 즉시 상품 카드·상세의 별점이 맞아야 한다
     await recomputeProductRating(tx, purchased.productId);
+
+    // 리뷰 적립 — 사진이 있으면 추가분이 붙는다.
+    // 중복 방지는 주문 항목 기준이라(리뷰 id가 아니라) 지웠다 다시 써도 한 번뿐이다
+    await earnReviewPoints(tx, {
+      customerId: input.customerId,
+      orderItemId: input.orderItemId,
+      hasPhoto: (input.images?.length ?? 0) > 0,
+    });
 
     return { reviewId: inserted.id, productId: purchased.productId };
   });

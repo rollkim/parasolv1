@@ -35,6 +35,7 @@
     "check:remote-shipping": "tsx --conditions=react-server src/server/services/_integration/remote-shipping.check.ts",
     "check:address-book": "tsx --conditions=react-server src/server/services/_integration/address-book.check.ts",
     "check:point": "tsx --conditions=react-server src/server/services/_integration/point-ledger.check.ts",
+    "check:point-earn": "tsx --conditions=react-server src/server/services/_integration/point-earn.check.ts",
     "check:story": "tsx --conditions=react-server src/server/services/_integration/story.check.ts",
     "check:review-qna": "tsx --conditions=react-server src/server/services/_integration/review-qna.check.ts",
     "check:admin-auth": "tsx --conditions=react-server src/server/services/_integration/admin-auth.check.ts"

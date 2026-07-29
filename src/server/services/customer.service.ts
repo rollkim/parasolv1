@@ -8,6 +8,8 @@ import type { db as Database } from "@/db";
 import { address, customer, customerAuth, loginLog, termsDocument, termsAgreement } from "@/db/schema";
 import { MAX_SAVED_ADDRESSES } from "@/domain/address";
 
+import { earnSignupBonus } from "./point-earn.service";
+
 /**
  * 회원 도메인 서비스 — 로컬(아이디/비밀번호) 가입·로그인 검증.
  * 세션 발급·쿠키 등 HTTP 관심사는 auth 라우터가 담당하고, 여기는 DB·규칙만 다룬다(RULE-14).
@@ -137,6 +139,11 @@ export async function signupLocalCustomer(
         ip: input.ip ?? null,
       })),
     );
+
+    // 가입 축하 적립 — 같은 트랜잭션이라 적립이 실패하면 가입도 되돌아간다.
+    // 가입만 되고 적립이 빠진 회원은 나중에 찾아내 보정할 방법이 없다(언제 가입했는지로
+    // 소급하면 정책이 바뀐 구간에서 금액이 틀린다).
+    await earnSignupBonus(tx, createdCustomer.id);
 
     return { customerId: createdCustomer.id, name: createdCustomer.name };
   });
