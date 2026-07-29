@@ -28,6 +28,7 @@ import { useSearchParams } from "next/navigation"
 
 import { useMutation, useQuery } from "@tanstack/react-query"
 
+import { isRemoteAreaZipcode } from "@/domain/cart"
 import { Button } from "@/components/ui/button"
 import { Checkbox } from "@/components/ui/checkbox"
 import { ImagePlaceholder } from "@/components/store/image-placeholder"
@@ -451,6 +452,16 @@ export function CheckoutView() {
     )
   }
 
+  // 도서·산간 추가비는 주소가 정해져야 나온다. **서버 주문 생성과 같은 도메인 함수**를 써서
+  // 화면에 보인 금액과 실제 결제액이 갈리지 않게 한다.
+  const selectedZipcode = needsAddressInput
+    ? addressInput.zipcode
+    : (selectedSavedAddress?.zipcode ?? "")
+  const remoteSurcharge =
+    cartSummary && isRemoteAreaZipcode(selectedZipcode)
+      ? (checkoutView?.shippingPolicy.remoteSurcharge ?? 0)
+      : 0
+
   const summaryRows = cartSummary
     ? [
         { label: "총 상품금액", value: formatKrw(cartSummary.listTotal) },
@@ -470,10 +481,14 @@ export function CheckoutView() {
           label: "배송비",
           value: cartSummary.shippingFee === 0 ? "무료" : formatKrw(cartSummary.shippingFee),
         },
+        ...(remoteSurcharge > 0
+          ? [{ label: "도서·산간 추가", value: `+${formatKrw(remoteSurcharge)}` }]
+          : []),
       ]
     : []
 
-  const payLabel = cartSummary ? `${formatKrw(cartSummary.grandTotal)} 결제하기` : "결제하기"
+  const payableTotal = cartSummary ? cartSummary.grandTotal + remoteSurcharge : 0
+  const payLabel = cartSummary ? `${formatKrw(payableTotal)} 결제하기` : "결제하기"
   const isSubmitting = createOrderMutation.isPending || launchingPayment
 
   const orderSummaryCard = (
@@ -494,7 +509,7 @@ export function CheckoutView() {
       <div className="mt-3.5 flex items-center justify-between border-t border-border pt-3.5">
         <span className="text-sm font-bold">결제금액</span>
         <strong className="font-heading text-lg font-extrabold">
-          {cartSummary ? formatKrw(cartSummary.grandTotal) : "-"}
+          {cartSummary ? formatKrw(payableTotal) : "-"}
         </strong>
       </div>
 

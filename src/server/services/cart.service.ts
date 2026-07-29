@@ -105,7 +105,12 @@ export type CartView = {
   summary: CartSummary;
 };
 
-/** 토큰의 카트 1건 — sessionToken에 유니크 제약이 없으므로 최신 것을 쓴다 */
+/**
+ * 토큰의 카트 1건.
+ *
+ * 유니크 인덱스(cart_session_token_uq)를 붙인 뒤에는 토큰당 하나뿐이지만,
+ * 인덱스 적용 전 데이터가 남아 있을 수 있어 최신 것을 고르는 규칙은 유지한다.
+ */
 async function findCartByToken(client: QueryClient, cartToken: string) {
   const [cartRow] = await client
     .select({ id: cart.id })
@@ -460,15 +465,21 @@ export async function addCartItem(
 
   // 카트 확보 → 병합 대상 탐색 → 반영까지 한 트랜잭션 — 라인과 addon이 어긋나지 않게
   return database.transaction(async (tx) => {
+    // 같은 토큰으로 두 요청이 동시에 담으면 둘 다 "카트 없음"을 보고 각자 만든다 —
+    // 그러면 장바구니가 둘로 갈라져 방금 담은 상품이 사라진 것처럼 보인다.
+    // 유니크 인덱스가 두 번째 INSERT를 막고, DO NOTHING + 재조회로 진 쪽이 이긴 카트에 합류한다.
     const existingCart = await findCartByToken(tx, input.cartToken);
-    const cartId = existingCart
-      ? existingCart.id
-      : (
-          await tx
-            .insert(cart)
-            .values({ sessionToken: input.cartToken })
-            .returning({ id: cart.id })
-        )[0].id;
+    let cartId: number;
+    if (existingCart) {
+      cartId = existingCart.id;
+    } else {
+      const inserted = await tx
+        .insert(cart)
+        .values({ sessionToken: input.cartToken })
+        .onConflictDoNothing()
+        .returning({ id: cart.id });
+      cartId = inserted[0]?.id ?? (await findCartByToken(tx, input.cartToken))!.id;
+    }
 
     const candidateRows = await tx
       .select({ cartItemId: cartItem.id, quantity: cartItem.quantity })

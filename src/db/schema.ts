@@ -290,7 +290,11 @@ export const cart = pgTable("cart", {
   customerId: bigint("customer_id", { mode: "number" }).references(() => customer.id, { onDelete: "set null" }),
   sessionToken: text("session_token"),
   ...auditTimes,
-}, (t) => [index("cart_session_idx").on(t.sessionToken)]);
+}, (t) => [
+  // 토큰당 카트 1개 — 동시 담기가 카트를 둘로 쪼개면 방금 담은 상품이 사라진 것처럼 보인다.
+  // 회원 카트는 토큰이 NULL일 수 있고, Postgres는 NULL을 서로 다르게 보므로 부분 인덱스가 맞다.
+  uniqueIndex("cart_session_token_uq").on(t.sessionToken).where(sql`${t.sessionToken} IS NOT NULL`),
+]);
 
 // 유니크 제약 없음(v0.1 결함 수정): 같은 variant라도 추가상품 조합이 다르면 별개 라인.
 // 추가상품이 동일한 라인끼리의 병합은 애플리케이션에서 처리한다.

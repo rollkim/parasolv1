@@ -355,10 +355,10 @@ function ShippingPolicyForm({
               setForm({ ...form, remoteSurcharge: toNumber(event.target.value) })
             }
           />
-          {/* 저장은 되지만 아직 계산에 안 들어간다 — 숫자만 보이면 적용되는 줄 안다 */}
           <p className="m-0 text-[12px] text-muted-foreground">
-            아직 주문 금액에 반영되지 않습니다 — 도서·산간 지역 판정 기능이 붙으면 이 값을
-            사용합니다.
+            제주·울릉도 등 도서 지역 우편번호에 자동으로 더해집니다.{" "}
+            <b className="text-foreground">무료배송이어도 이 금액은 붙습니다</b> — 택배사가
+            실제로 청구하기 때문입니다. 0이면 추가하지 않습니다.
           </p>
         </div>
 

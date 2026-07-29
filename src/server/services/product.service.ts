@@ -320,7 +320,7 @@ export type ProductDetail = {
   slug: string;
   name: string;
   summary: string | null;
-  descriptionHtml: string | null;
+  descriptionText: string | null;
   badgeLabel: string | null;
   makerName: string | null;
   makerSlug: string | null;
@@ -353,7 +353,7 @@ export async function getProductDetail(
       slug: product.slug,
       name: product.name,
       summary: product.summary,
-      descriptionHtml: product.description,
+      descriptionText: product.description,
       badgeLabel: product.badgeLabel,
       reviewCount: product.reviewCount,
       ratingSum: product.ratingSum,
@@ -452,7 +452,7 @@ export async function getProductDetail(
     slug: productRow.slug,
     name: productRow.name,
     summary: productRow.summary,
-    descriptionHtml: productRow.descriptionHtml,
+    descriptionText: productRow.descriptionText,
     badgeLabel: productRow.badgeLabel,
     makerName: productRow.makerName,
     makerSlug: productRow.makerSlug,

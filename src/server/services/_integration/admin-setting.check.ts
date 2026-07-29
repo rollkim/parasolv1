@@ -132,7 +132,7 @@ async function main() {
     const reread = await caller.adminSetting.get();
     check(
       reread.shippingPolicy.remoteSurcharge === 3500,
-      "도서·산간 값도 저장된다(아직 계산에는 미반영 — 화면이 그렇게 밝힌다)",
+      "도서·산간 값도 저장된다 (주문 반영은 check:remote-shipping이 확인한다)",
     );
 
     console.log("\n[4] 배송 정책 검증 — 잘못된 값 차단 기대");

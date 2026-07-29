@@ -868,6 +868,10 @@ function ProductFormFields({
           value={description}
           onChange={(event) => setDescription(event.target.value)}
         />
+        <p className="m-0 mt-2 text-[12px] text-muted-foreground">
+          줄바꿈은 그대로 보입니다. HTML 태그는 글자 그대로 표시됩니다 — 서식 편집기는 아직
+          연결되지 않았습니다.
+        </p>
       </section>
 
       <div className="flex flex-wrap gap-2">

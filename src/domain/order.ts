@@ -8,6 +8,7 @@
 
 import {
   calcCartSummary,
+  calcShippingFeeForAddress,
   type CartLineForSummary,
   type ShippingPolicy,
 } from "./cart";
@@ -245,6 +246,8 @@ function addonLineTotal(addon: OrderDraftLine["addons"][number]): number {
 export function buildOrderDraft(
   lines: OrderDraftLine[],
   policy: ShippingPolicy,
+  /** 배송지 우편번호 — 도서·산간 추가비 판정에 쓴다. 없으면 추가비 없음 */
+  shippingZipcode?: string | null,
 ): OrderDraft {
   if (lines.length === 0) {
     throw new BlockedOrderLineError([]);
@@ -265,6 +268,9 @@ export function buildOrderDraft(
     orderable: true,
   }));
   const summary = calcCartSummary(summaryLines, policy);
+  // 도서·산간 추가비는 주소가 있어야 정해진다 — 카트 요약은 주소를 모르므로 여기서 더한다.
+  // 화면(체크아웃)도 같은 함수를 쓰므로 보인 금액과 결제액이 갈리지 않는다.
+  const shippingFee = calcShippingFeeForAddress(summary.goodsTotal, policy, shippingZipcode);
 
   const items: OrderItemSnapshot[] = lines.map((line) => ({
     variantId: line.variantId,
@@ -295,10 +301,11 @@ export function buildOrderDraft(
     goodsTotal: summary.goodsTotal,
     addonTotal: summary.addonTotal,
     subtotal: summary.subtotal,
-    shippingFee: summary.shippingFee,
+    shippingFee,
     couponDiscount: 0,
     pointUsed: 0,
-    grandTotal: summary.grandTotal,
+    // summary.grandTotal은 주소를 모르는 값이라 다시 더한다
+    grandTotal: summary.subtotal + shippingFee,
     items,
   };
 }

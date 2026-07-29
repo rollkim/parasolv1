@@ -197,7 +197,13 @@ export async function createPendingOrder(
         : cartView.lines.filter((line) => selectedIds.includes(line.cartItemId));
 
     // 선택 라인 중 주문 불가가 있으면 도메인이 throw — 부분 진행 금지(설계 D6)
-    const draft = buildOrderDraft(selectedLines.map(toDraftLine), shippingPolicy);
+    // 배송지 우편번호를 함께 넘긴다 — 도서·산간 추가비가 여기서 확정된다.
+    // 체크아웃 화면도 같은 도메인 함수로 계산하므로 보인 금액과 결제액이 갈리지 않는다.
+    const draft = buildOrderDraft(
+      selectedLines.map(toDraftLine),
+      shippingPolicy,
+      input.shippingAddress.zipcode,
+    );
 
     const orderNo = await allocateOrderNo(tx);
     const guestToken = input.customerId === null ? randomUUID() : null;

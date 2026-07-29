@@ -2,8 +2,11 @@ import "server-only";
 
 import { createHmac } from "node:crypto";
 
+import type { ShippingPolicy } from "@/domain/cart";
+
 import type { CartView } from "./cart.service";
 import { getCartWithItems } from "./cart.service";
+import { loadShippingPolicy } from "./shipping-policy.service";
 import {
   listMyAddresses,
   getMyProfile,
@@ -37,6 +40,12 @@ export type CheckoutView = {
   addresses: CustomerAddress[];
   /** 동의 대상 약관 — isRequired가 필수 여부의 진실원(화면이 정하지 않는다) */
   terms: TermsDocumentSummary[];
+  /**
+   * 배송 정책 — 화면이 **도서·산간 추가비를 같은 도메인 함수로** 계산하기 위해 필요하다.
+   * 주소는 화면에서 정해지므로 카트 요약(주소를 모르는 값)만으로는 결제액을 그릴 수 없다.
+   * 계산식은 domain/cart의 calcShippingFeeForAddress 하나뿐이라 서버와 갈라지지 않는다.
+   */
+  shippingPolicy: ShippingPolicy;
   /**
    * 토스 클라이언트 키 — 브라우저로 나가도 되는 공개 키다.
    * 시크릿 키는 서버에만 둔다(RULE-11). 미발급이면 null이고 화면은 준비중을 표시한다.
@@ -115,6 +124,7 @@ export async function getCheckoutView(
 ): Promise<CheckoutView> {
   const cart = await getCartWithItems(database, input.cartToken);
   const terms = (await getTermsDocuments(database)).filter(isCheckoutConsent);
+  const shippingPolicy = await loadShippingPolicy(database);
 
   if (input.customerId === null) {
     return {
@@ -123,6 +133,7 @@ export async function getCheckoutView(
       ordererPrefill: toOrdererPrefill(null),
       addresses: [],
       terms,
+      shippingPolicy,
       tossClientKey: process.env.NEXT_PUBLIC_TOSS_CLIENT_KEY ?? null,
       tossPaymentUiMode: resolvePaymentUiMode(),
       tossCustomerKey: deriveTossCustomerKey(null),
@@ -139,6 +150,7 @@ export async function getCheckoutView(
     ordererPrefill: toOrdererPrefill(profile),
     addresses,
     terms,
+    shippingPolicy,
     tossClientKey: process.env.NEXT_PUBLIC_TOSS_CLIENT_KEY ?? null,
     tossPaymentUiMode: resolvePaymentUiMode(),
     tossCustomerKey: deriveTossCustomerKey(input.customerId),

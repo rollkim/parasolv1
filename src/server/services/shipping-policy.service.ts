@@ -13,7 +13,11 @@ import { getSiteSetting } from "./site-setting.service";
  * 정책값을 코드에 복사하지 않는 것이 요점이다 — 배송비를 바꾸면 클레임 배송비도 따라간다.
  */
 
-const DEFAULT_SHIPPING_POLICY: ShippingPolicy = { baseFee: 3000, freeThreshold: 30000 };
+const DEFAULT_SHIPPING_POLICY: ShippingPolicy = {
+  baseFee: 3000,
+  freeThreshold: 30000,
+  remoteSurcharge: 0,
+};
 
 export async function loadShippingPolicy(client: QueryClient): Promise<ShippingPolicy> {
   const stored = await getSiteSetting(client, "shipping_policy");
@@ -23,7 +27,13 @@ export async function loadShippingPolicy(client: QueryClient): Promise<ShippingP
       typeof candidate.baseFee === "number" &&
       typeof candidate.freeThreshold === "number"
     ) {
-      return { baseFee: candidate.baseFee, freeThreshold: candidate.freeThreshold };
+      return {
+        baseFee: candidate.baseFee,
+        freeThreshold: candidate.freeThreshold,
+        // 설정에 없으면 0 — 값을 넣지 않은 몰에 갑자기 추가비가 붙으면 안 된다
+        remoteSurcharge:
+          typeof candidate.remoteSurcharge === "number" ? candidate.remoteSurcharge : 0,
+      };
     }
   }
   return DEFAULT_SHIPPING_POLICY;

@@ -65,7 +65,7 @@ export default async function ProductDetailPage({
       <ProductPurchasePanel productDetail={productDetail}>
         <ProductDetailTabs
           productSummary={productDetail.summary}
-          descriptionHtml={productDetail.descriptionHtml}
+          descriptionText={productDetail.descriptionText}
           detailImages={productDetail.detailImages}
         />
       </ProductPurchasePanel>

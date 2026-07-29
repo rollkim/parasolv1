@@ -11,6 +11,7 @@
     "db:seed": "tsx src/db/seed/index.ts",
     "db:seed:dev": "tsx src/db/seed/seed-dev.ts",
     "test": "vitest run",
+    "ops:reconcile": "tsx --conditions=react-server src/server/services/_ops/reconcile-payments.ts",
     "check:order2": "tsx --conditions=react-server src/server/services/_integration/order-phase2.check.ts",
     "check:order3": "tsx --conditions=react-server src/server/services/_integration/order-phase3.check.ts",
     "check:order4": "tsx --conditions=react-server src/server/services/_integration/order-phase4.check.ts",
@@ -30,6 +31,8 @@
     "check:admin-board": "tsx --conditions=react-server src/server/services/_integration/admin-board.check.ts",
     "check:admin-display": "tsx --conditions=react-server src/server/services/_integration/admin-display.check.ts",
     "check:admin-setting": "tsx --conditions=react-server src/server/services/_integration/admin-setting.check.ts",
+    "check:reconcile": "tsx --conditions=react-server src/server/services/_integration/payment-reconcile.check.ts",
+    "check:remote-shipping": "tsx --conditions=react-server src/server/services/_integration/remote-shipping.check.ts",
     "check:admin-auth": "tsx --conditions=react-server src/server/services/_integration/admin-auth.check.ts"
   },
   "dependencies": {

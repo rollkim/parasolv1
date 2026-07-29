@@ -20,17 +20,25 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { cn } from "@/lib/utils"
 
 export type ProductDetailTabsProps = {
-  /** 짧은 소개문 — 상세 HTML이 없을 때의 대체 본문 */
+  /** 짧은 소개문 — 상세 설명이 없을 때의 대체 본문 */
   productSummary: string | null
-  /** 관리자 에디터 산출 상세 HTML */
-  descriptionHtml: string | null
+  /**
+   * 관리자가 입력한 상세 설명 — **평문**이다.
+   *
+   * 관리자 상품 폼이 일반 textarea라 HTML을 만드는 곳이 없다. 그런데도 HTML로 렌더하면
+   * ① 관리자가 붙여넣은 스크립트가 전 방문자에게 실행되고(저장형 XSS)
+   * ② "5 < 10" 같은 평범한 문장이 태그로 먹혀 본문이 깨진다.
+   * 서식 편집기를 붙이는 시점에 **새니타이저(DOMPurify 계열)를 함께** 도입하고
+   * 그때 이 prop을 HTML로 되돌린다 — 편집기 없이 HTML 렌더만 열어두면 얻는 것 없이 위험만 남는다.
+   */
+  descriptionText: string | null
   /** 세로로 이어붙는 상세 이미지 스택 (관리자 '상세 이미지' 등록 반영) */
   detailImages: { path: string; alt: string }[]
 }
 
 export function ProductDetailTabs({
   productSummary,
-  descriptionHtml,
+  descriptionText,
   detailImages,
 }: ProductDetailTabsProps) {
   const [activeTabValue, setActiveTabValue] = React.useState("description")
@@ -46,7 +54,7 @@ export function ProductDetailTabs({
     return () => window.removeEventListener("hashchange", activateReviewsFromHash)
   }, [])
 
-  const hasDescriptionText = Boolean(descriptionHtml || productSummary)
+  const hasDescriptionText = Boolean(descriptionText || productSummary)
 
   return (
     // id="reviews"는 별점 행 앵커의 목적지(목업 실측) — 탭 영역 전체로 스크롤한다
@@ -67,13 +75,10 @@ export function ProductDetailTabs({
           value="description"
           className="mx-auto w-full max-w-[720px] py-7"
         >
-          {descriptionHtml ? (
-            /* 관리자 리치에디터 산출 HTML — 신뢰 경계 내부(관리자 작성)지만
-               TODO(5주차): 저장·렌더 경로에 새니타이즈(DOMPurify 계열) 도입 */
-            <div
-              className="text-base leading-[1.8] [&_img]:h-auto [&_img]:max-w-full"
-              dangerouslySetInnerHTML={{ __html: descriptionHtml }}
-            />
+          {descriptionText ? (
+            /* 평문을 그대로 그린다 — 줄바꿈만 살리고 태그는 글자로 보인다.
+               HTML로 넣지 않는 것이 이 화면의 XSS 방어 자체다(prop 주석 참고) */
+            <p className="whitespace-pre-wrap text-base leading-[1.8]">{descriptionText}</p>
           ) : productSummary ? (
             <p className="text-base leading-[1.8]">{productSummary}</p>
           ) : null}
