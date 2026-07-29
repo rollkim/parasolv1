@@ -148,9 +148,15 @@ export const ADMIN_NAV_GROUPS: AdminNavGroup[] = [
         children: [
           {
             childId: "notice",
-            label: "공지·FAQ",
+            label: "공지사항",
             href: "/admin/boards/notice",
-            pageTitle: "공지·FAQ",
+            pageTitle: "공지사항",
+          },
+          {
+            childId: "faq",
+            label: "FAQ",
+            href: "/admin/boards/faq",
+            pageTitle: "FAQ",
           },
           {
             childId: "qna",

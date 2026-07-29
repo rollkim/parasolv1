@@ -21,6 +21,10 @@ import {
   AdminCustomerNotFoundError,
   CustomerAlreadyWithdrawnError,
 } from "@/server/services/admin-customer.service";
+import {
+  AdminBoardNotFoundError,
+  AdminPostNotFoundError,
+} from "@/server/services/admin-board.service";
 import { AdminReviewNotFoundError } from "@/server/services/admin-review.service";
 import {
   AdminCategoryNotFoundError,
@@ -296,6 +300,24 @@ export function toOrderTRPCError(error: unknown): unknown {
 
   if (error instanceof CustomerAlreadyWithdrawnError) {
     return new TRPCError({ code: "CONFLICT", message: error.message, cause: error });
+  }
+
+  // ── 관리자 게시판 ──
+  if (error instanceof AdminPostNotFoundError) {
+    return new TRPCError({
+      code: "NOT_FOUND",
+      message: "글을 찾을 수 없습니다. 목록을 새로고침해 주세요.",
+      cause: error,
+    });
+  }
+
+  // 시드가 만들어야 할 게시판이 없는 상태 — 운영자가 고칠 수 없으므로 원인을 그대로 알린다
+  if (error instanceof AdminBoardNotFoundError) {
+    return new TRPCError({
+      code: "INTERNAL_SERVER_ERROR",
+      message: "게시판 설정이 없습니다. 관리자에게 시드 데이터 확인을 요청해 주세요.",
+      cause: error,
+    });
   }
 
   // ── 관리자 리뷰 ──
