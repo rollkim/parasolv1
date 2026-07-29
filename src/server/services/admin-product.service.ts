@@ -291,6 +291,11 @@ export type AdminProductFormData = {
   badgeLabel: string | null;
   makerId: number | null;
   categoryIds: number[];
+  /**
+   * 대표 카테고리 — 브레드크럼·SEO 정규 URL이 이 값을 따른다.
+   * 생략하거나 categoryIds에 없는 값이면 첫 번째를 대표로 삼는다(대표 없는 상품을 만들지 않는다).
+   */
+  primaryCategoryId?: number;
   options: AdminProductFormOption[];
   variants: AdminProductFormVariant[];
   addons: AdminProductFormAddon[];
@@ -397,7 +402,10 @@ export async function getAdminProductForm(
   if (!productRow) throw new AdminProductNotFoundError(productId);
 
   const categoryRows = await database
-    .select({ categoryId: productCategory.categoryId })
+    .select({
+      categoryId: productCategory.categoryId,
+      isPrimary: productCategory.isPrimary,
+    })
     .from(productCategory)
     .where(eq(productCategory.productId, productId));
 
@@ -471,6 +479,7 @@ export async function getAdminProductForm(
       badgeLabel: productRow.badgeLabel,
       makerId: productRow.makerId,
       categoryIds: categoryRows.map((row) => row.categoryId),
+      primaryCategoryId: categoryRows.find((row) => row.isPrimary)?.categoryId,
       options,
       variants: variantRows.map((row) => ({
         optionLabels: labelsByVariant.get(row.variantId) ?? [],
@@ -595,11 +604,22 @@ export async function saveAdminProduct(
     }
 
     // ── ② 카테고리 (이력 가치가 없어 교체가 맞다)
+    //    대표는 폼이 지정한 것, 없으면 첫 번째. 여러 카테고리에 걸린 상품의 브레드크럼·SEO가
+    //    이 값을 따르므로 "지정 안 함"을 허용하면 화면마다 다른 분류가 나온다.
     await tx.delete(productCategory).where(eq(productCategory.productId, productId));
     if (input.categoryIds.length > 0) {
-      await tx
-        .insert(productCategory)
-        .values(input.categoryIds.map((categoryId) => ({ productId, categoryId })));
+      const primaryCategoryId =
+        input.primaryCategoryId !== undefined &&
+        input.categoryIds.includes(input.primaryCategoryId)
+          ? input.primaryCategoryId
+          : input.categoryIds[0];
+      await tx.insert(productCategory).values(
+        input.categoryIds.map((categoryId) => ({
+          productId,
+          categoryId,
+          isPrimary: categoryId === primaryCategoryId,
+        })),
+      );
     }
 
     // ── ③ 기존 조합을 먼저 읽는다 — 옵션을 지우면 라벨을 알 수 없게 된다

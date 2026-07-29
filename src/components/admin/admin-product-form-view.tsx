@@ -139,6 +139,9 @@ function ProductFormFields({
   )
   const [makerId, setMakerId] = React.useState<number | null>(initialForm.makerId)
   const [categoryIds, setCategoryIds] = React.useState<number[]>(initialForm.categoryIds)
+  const [primaryCategoryId, setPrimaryCategoryId] = React.useState<number | undefined>(
+    initialForm.primaryCategoryId,
+  )
   const [useOptions, setUseOptions] = React.useState(initialForm.options.length > 0)
   const [optionGroups, setOptionGroups] = React.useState<OptionGroup[]>(initialForm.options)
   const [valueDrafts, setValueDrafts] = React.useState<string[]>(initialForm.options.map(() => ""))
@@ -214,6 +217,15 @@ function ProductFormFields({
     }
   }
 
+  /* 고른 카테고리만 대표 후보다. 체크를 풀면 대표 지정이 유령으로 남으므로 여기서 걸러낸다 */
+  const selectedCategoryOptions = loadedForm.categoryOptions.filter((categoryOption) =>
+    categoryIds.includes(categoryOption.categoryId),
+  )
+  const effectivePrimaryCategoryId =
+    primaryCategoryId !== undefined && categoryIds.includes(primaryCategoryId)
+      ? primaryCategoryId
+      : selectedCategoryOptions[0]?.categoryId
+
   function submitProduct(event: React.FormEvent) {
     event.preventDefault()
     if (saveMutation.isPending) return
@@ -243,6 +255,7 @@ function ProductFormFields({
         badgeLabel: null,
         makerId,
         categoryIds,
+        primaryCategoryId: effectivePrimaryCategoryId,
         options: useOptions
           ? optionGroups.filter((optionGroup) => optionGroup.values.length > 0)
           : [],
@@ -380,6 +393,35 @@ function ProductFormFields({
               ))}
             </div>
           </fieldset>
+
+          {/* 대표 카테고리 — 둘 이상 골랐을 때만 물어본다.
+              하나뿐이면 답이 정해져 있어 선택지를 내밀 이유가 없다(서버가 첫 번째를 대표로 삼는다) */}
+          {selectedCategoryOptions.length > 1 && (
+            <fieldset className="m-0 border-0 p-0">
+              <legend className="mb-1.5 text-[13px] font-bold">대표 카테고리</legend>
+              <p className="m-0 mb-2 text-xs text-muted-foreground">
+                상품 상세의 위치 표시(홈 › 대분류 › 중분류)와 검색 노출에 쓰입니다.
+              </p>
+              <div className="flex flex-wrap gap-2">
+                {selectedCategoryOptions.map((categoryOption) => (
+                  <Button
+                    key={categoryOption.categoryId}
+                    type="button"
+                    variant={
+                      effectivePrimaryCategoryId === categoryOption.categoryId
+                        ? "primary"
+                        : "outline"
+                    }
+                    size="sm-44"
+                    aria-pressed={effectivePrimaryCategoryId === categoryOption.categoryId}
+                    onClick={() => setPrimaryCategoryId(categoryOption.categoryId)}
+                  >
+                    {categoryOption.name}
+                  </Button>
+                ))}
+              </div>
+            </fieldset>
+          )}
         </div>
       </section>
 

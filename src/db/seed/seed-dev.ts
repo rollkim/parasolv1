@@ -563,10 +563,12 @@ async function runDevSeed() {
       productIdBySlug.set(productSeed.slug, insertedProduct.id);
 
       await tx.insert(productCategory).values(
-        productSeed.categorySlugs.map((categorySlug) => ({
+        productSeed.categorySlugs.map((categorySlug, categoryIndex) => ({
           productId: insertedProduct.id,
           // 위에서 존재를 검증했으므로 단언해도 안전하다
           categoryId: categoryIdBySlug.get(categorySlug)!,
+          // 첫 slug가 대표 — 브레드크럼·SEO가 이 값을 본다. 대표 없는 상품을 만들지 않는다
+          isPrimary: categoryIndex === 0,
         })),
       );
 

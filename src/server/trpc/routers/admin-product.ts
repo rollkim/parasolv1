@@ -42,6 +42,8 @@ const productFormSchema = z.object({
   badgeLabel: z.string().trim().max(20).nullable(),
   makerId: z.number().int().positive().nullable(),
   categoryIds: z.array(z.number().int().positive()).max(20),
+  // 대표가 categoryIds에 없으면 서비스가 첫 번째로 되돌린다 — 여기서는 형태만 본다
+  primaryCategoryId: z.number().int().positive().optional(),
   options: z
     .array(
       z.object({

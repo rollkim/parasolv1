@@ -134,7 +134,14 @@ export const product = pgTable("product", {
 export const productCategory = pgTable("product_category", {
   productId: bigint("product_id", { mode: "number" }).notNull().references(() => product.id, { onDelete: "cascade" }),
   categoryId: bigint("category_id", { mode: "number" }).notNull().references(() => category.id, { onDelete: "cascade" }),
-}, (t) => [primaryKey({ columns: [t.productId, t.categoryId] })]);
+  // 대표 카테고리 — 브레드크럼·SEO 정규 URL·통계 분류가 모두 이 값을 본다.
+  // 없으면 세 곳이 각자 다른 규칙으로 카테고리를 고르게 된다.
+  isPrimary: boolean("is_primary").notNull().default(false),
+}, (t) => [
+  primaryKey({ columns: [t.productId, t.categoryId] }),
+  // 상품당 대표는 하나뿐임을 DB가 보장한다 — 애플리케이션이 두 개를 세우면 여기서 막힌다
+  uniqueIndex("product_category_primary_uq").on(t.productId).where(sql`${t.isPrimary}`),
+]);
 
 export const productOption = pgTable("product_option", {
   id: bigserial("id", { mode: "number" }).primaryKey(),

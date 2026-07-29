@@ -351,11 +351,12 @@ export type ProductDetail = {
 /**
  * 브레드크럼에 쓸 카테고리 경로 — 대분류 → 중분류.
  *
- * product_category는 다대다라 상품 하나가 여러 카테고리에 걸릴 수 있는데, 브레드크럼은
- * 하나만 보여줄 수 있다. **가장 깊은 카테고리**를 고른다 — 중분류가 대분류보다 상품을 잘 설명한다.
- * 같은 깊이면 sortOrder → id 순으로 정해 매 요청 같은 답이 나오게 한다(새로고침마다 바뀌면 안 된다).
+ * product_category는 다대다라 상품 하나가 여러 카테고리에 걸릴 수 있다. 어느 것을 보여줄지는
+ * **운영자가 정한 대표(is_primary)**를 따른다 — 선물세트에도 대추칩에도 걸린 상품의 소속은
+ * 규칙으로 유추할 문제가 아니다.
  *
- * 대표 카테고리를 관리자가 직접 고르게 하려면 product_category에 표식이 필요하다(미결 항목).
+ * 대표가 지정되지 않은 옛 데이터를 위한 차선: 가장 깊은 카테고리 → sortOrder → id.
+ * 매 요청 같은 답이 나오도록 정렬을 못 박는다(새로고침마다 브레드크럼이 바뀌면 안 된다).
  */
 async function loadCategoryPath(
   database: typeof Database,
@@ -367,7 +368,7 @@ async function loadCategoryPath(
       slug: category.slug,
       name: category.name,
       parentId: category.parentId,
-      sortOrder: category.sortOrder,
+      isPrimary: productCategory.isPrimary,
     })
     .from(productCategory)
     .innerJoin(category, eq(productCategory.categoryId, category.id))
@@ -376,8 +377,11 @@ async function loadCategoryPath(
 
   if (linked.length === 0) return [];
 
-  // 하위(parentId 있음)를 먼저 — 없으면 최상위라도 쓴다
-  const chosen = linked.find((row) => row.parentId !== null) ?? linked[0];
+  // 운영자 지정이 최우선, 없으면 하위(parentId 있음), 그것도 없으면 최상위
+  const chosen =
+    linked.find((row) => row.isPrimary) ??
+    linked.find((row) => row.parentId !== null) ??
+    linked[0];
   if (chosen.parentId === null) return [{ slug: chosen.slug, name: chosen.name }];
 
   const [parentRow] = await database
