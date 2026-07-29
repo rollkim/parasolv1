@@ -12,6 +12,13 @@ import { calcReadMinutes, parseArticleBlocks, type ArticleBlock } from "@/domain
  * 공개 기준은 `published_at IS NOT NULL AND published_at <= now()` 한 가지다.
  * 예약 발행을 따로 만들지 않고 미래 시각으로 두면 자동으로 감춰지게 했다 — 상태 컬럼이
  * 하나 늘면 "발행됐는데 안 보임"류 불일치가 생긴다.
+ *
+ * [범위 결정 2026-07-29] article은 **이야기 전용**이다. 뉴스·보도자료까지 담는 범용 통으로
+ * 만들지 않는다 — 범용 컨테이너는 board/post가 이미 하고 있어서, 둘이 되면 새 콘텐츠마다
+ * "게시판인가 아티클인가"를 매번 판단해야 한다. 경계는 '읽히려고 쓴 편집 콘텐츠'(article)
+ * 대 '기록하고 주고받는 글'(post).
+ * 나중에 이야기와 섞이면 안 되는 글 묶음이 생기면 그때 `channel_code`(기본값 'story') 한 컬럼과
+ * 라우트 하나를 더한다 — 안전한 기본값이 있어 운영 중에도 싼 변경이다.
  */
 
 type DatabaseClient = typeof Database;
