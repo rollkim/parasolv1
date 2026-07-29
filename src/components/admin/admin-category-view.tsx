@@ -377,6 +377,7 @@ export function AdminCategoryView() {
               </div>
               <label className="flex cursor-pointer items-center gap-2 text-[13px]">
                 <Checkbox
+                  aria-label="스토어에 노출"
                   checked={editIsActive}
                   onCheckedChange={(checked) => setEditIsActive(checked === true)}
                 />

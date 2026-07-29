@@ -225,6 +225,7 @@ export function AdminProductListView() {
           <div className="flex items-center justify-between">
             <label className="flex items-center gap-2 text-[13px]">
               <Checkbox
+                aria-label="이 페이지 전체 선택"
                 checked={allVisibleChecked}
                 onCheckedChange={(checked) =>
                   setSelectedIds(checked === true ? visibleIds : [])

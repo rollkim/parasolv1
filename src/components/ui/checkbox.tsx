@@ -13,10 +13,21 @@ import { Check } from "lucide-react"
 
 import { cn } from "@/lib/utils"
 
+/**
+ * 접근 가능한 이름을 **타입으로 강제**한다.
+ *
+ * Radix 체크박스는 role="checkbox"인 <button>이라, `<label>`로 감싸도 이름이 붙지 않는다
+ * (버튼의 이름은 자기 콘텐츠에서 오는데 안에는 체크 아이콘뿐이다). 스크린리더에는
+ * "체크박스"라고만 읽혀 무엇을 켜는지 알 수 없다 — 실제로 상품 등록 화면에서 15개가 그랬다.
+ * 그래서 aria-label 또는 aria-labelledby 중 하나를 반드시 받게 한다.
+ */
+type CheckboxProps = React.ComponentProps<typeof CheckboxPrimitive.Root> &
+  ({ "aria-label": string } | { "aria-labelledby": string })
+
 function Checkbox({
   className,
   ...props
-}: React.ComponentProps<typeof CheckboxPrimitive.Root>) {
+}: CheckboxProps) {
   return (
     <CheckboxPrimitive.Root
       data-slot="checkbox"

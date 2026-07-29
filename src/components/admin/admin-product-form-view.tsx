@@ -365,6 +365,7 @@ function ProductFormFields({
                   className="flex cursor-pointer items-center gap-2 text-[13px]"
                 >
                   <Checkbox
+                    aria-label={`카테고리 ${categoryOption.name}`}
                     checked={categoryIds.includes(categoryOption.categoryId)}
                     onCheckedChange={(checked) =>
                       setCategoryIds((previous) =>
@@ -387,6 +388,7 @@ function ProductFormFields({
           <h2 className="m-0 font-heading text-[15px] font-extrabold">옵션 · 판매 단위</h2>
           <label className="flex cursor-pointer items-center gap-2 text-[13px]">
             <Checkbox
+              aria-label="옵션 사용"
               checked={useOptions}
               onCheckedChange={(checked) => {
                 setUseOptions(checked === true)
@@ -675,6 +677,7 @@ function ProductFormFields({
                             <td className="p-2">
                               <label className="flex items-center gap-2">
                                 <Checkbox
+                                  aria-label={`${optionLabels.join(" ")} 판매 여부`}
                                   checked={variantRow.isActive}
                                   onCheckedChange={(checked) =>
                                     patchVariant(optionLabels, { isActive: checked === true })

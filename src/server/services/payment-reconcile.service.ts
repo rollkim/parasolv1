@@ -79,7 +79,7 @@ export async function reconcilePendingPayments(
         eq(payment.status, "ready"),
         isNotNull(payment.paymentKey),
         isNull(payment.claimId),
-        lt(payment.createdAt, sql`now() - ${sql.raw(`interval '${stuckMinutes} minutes'`)}`),
+        lt(payment.createdAt, sql`now() - make_interval(mins => ${stuckMinutes})`),
       ),
     )
     .orderBy(payment.createdAt)
@@ -190,7 +190,7 @@ export async function countStuckPayments(
         eq(payment.status, "ready"),
         isNotNull(payment.paymentKey),
         isNull(payment.claimId),
-        lt(payment.createdAt, sql`now() - ${sql.raw(`interval '${stuckMinutes} minutes'`)}`),
+        lt(payment.createdAt, sql`now() - make_interval(mins => ${stuckMinutes})`),
       ),
     );
   return row?.total ?? 0;

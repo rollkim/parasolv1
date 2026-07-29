@@ -144,7 +144,11 @@ function NoticeEditorForm({
         />
       </div>
       <label className="flex cursor-pointer items-center gap-2 text-[13px]">
-        <Checkbox checked={isPinned} onCheckedChange={(checked) => setIsPinned(checked === true)} />
+        <Checkbox
+          aria-label="목록 상단에 고정"
+          checked={isPinned}
+          onCheckedChange={(checked) => setIsPinned(checked === true)}
+        />
         목록 상단에 고정
       </label>
       <div className="flex gap-2">

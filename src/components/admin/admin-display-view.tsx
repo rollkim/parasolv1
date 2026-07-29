@@ -355,6 +355,7 @@ function BannerPanel() {
 
           <label className="flex cursor-pointer items-center gap-2 text-[13px]">
             <Checkbox
+              aria-label="활성"
               checked={draft.isActive}
               onCheckedChange={(checked) => setDraft({ ...draft, isActive: checked === true })}
             />
@@ -683,6 +684,7 @@ function SectionPanel() {
                     <li key={productOption.productId}>
                       <label className="flex cursor-pointer items-center gap-2 text-[13px]">
                         <Checkbox
+                          aria-label={`${productOption.name} 노출`}
                           checked={selectedIndex >= 0}
                           onCheckedChange={(checked) =>
                             setDraft({
@@ -713,6 +715,7 @@ function SectionPanel() {
 
           <label className="flex cursor-pointer items-center gap-2 text-[13px]">
             <Checkbox
+              aria-label="메인에 노출"
               checked={draft.isActive}
               onCheckedChange={(checked) => setDraft({ ...draft, isActive: checked === true })}
             />

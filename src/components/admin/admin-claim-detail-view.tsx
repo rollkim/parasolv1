@@ -560,6 +560,7 @@ export function AdminClaimDetailView({ claimNo }: { claimNo: string }) {
               (pendingAction === "refund" && claimDetail.claimType === "return")) ? (
               <label className="flex cursor-pointer items-start gap-2.5 text-[13px]">
                 <Checkbox
+                  aria-label="회수품을 판매 재고로 되돌립니다"
                   checked={restockable}
                   onCheckedChange={(checked) => setRestockable(checked === true)}
                 />

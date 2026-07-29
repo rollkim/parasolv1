@@ -180,6 +180,7 @@ export function ProductQnaPanel({
 
           <label className="flex cursor-pointer items-center gap-2 text-[13px]">
             <Checkbox
+              aria-label="비밀글로 문의하기"
               checked={form.isSecret}
               onCheckedChange={(checked) => setForm({ ...form, isSecret: checked === true })}
             />
