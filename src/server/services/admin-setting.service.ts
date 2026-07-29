@@ -72,7 +72,7 @@ const DEFAULT_ANALYTICS: AnalyticsSetting = { ga4MeasurementId: "", naverWcsId: 
 export const SERVER_MANAGED_KEYS: { label: string; reason: string }[] = [
   {
     label: "토스페이먼츠 시크릿 키",
-    reason: "서버 환경변수(TOSS_SECRET_KEY)가 소유합니다. DB에 두면 관리자 화면이 뚫릴 때 함께 나갑니다.",
+    reason: "서버 환경변수(TOSS_SECRET_KEY)가 소유합니다.",
   },
   {
     label: "소셜 로그인 시크릿",

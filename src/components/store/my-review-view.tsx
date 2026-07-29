@@ -20,6 +20,7 @@ import { Label } from "@/components/ui/label"
 import { Spinner } from "@/components/ui/spinner"
 import { Textarea } from "@/components/ui/textarea"
 import { useToast } from "@/components/ui/toast"
+import { resizeImageFile } from "@/lib/image-resize"
 import { cn } from "@/lib/utils"
 import { useTRPC } from "@/trpc/client"
 
@@ -168,7 +169,11 @@ function ReviewWriteForm({
     setIsUploading(true)
     try {
       const formData = new FormData()
-      for (const file of Array.from(fileList).slice(0, 5)) formData.append("files", file)
+      // 휴대폰 사진은 한 장이 10MB를 넘기도 한다 — 올리기 전에 줄여야 모바일 회선에서 끊기지 않는다
+      for (const file of Array.from(fileList).slice(0, 5)) {
+        const resized = await resizeImageFile(file, "review")
+        formData.append("files", resized.blob, resized.fileName)
+      }
       const response = await fetch("/api/reviews/images", { method: "POST", body: formData })
       const payload = (await response.json()) as { storedPaths?: string[]; message?: string }
       if (!response.ok) {

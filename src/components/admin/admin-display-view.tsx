@@ -13,6 +13,7 @@ import * as React from "react"
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 
+import { ImageDropUploader } from "@/components/admin/image-drop-uploader"
 import { Button } from "@/components/ui/button"
 import { Checkbox } from "@/components/ui/checkbox"
 import { EmptyState } from "@/components/ui/empty-state"
@@ -124,32 +125,18 @@ function BannerPanel() {
   const deleteMutation = useMutation(trpc.adminDisplay.deleteBanner.mutationOptions())
 
   const [draft, setDraft] = React.useState<BannerDraft | null>(null)
-  const [isUploading, setIsUploading] = React.useState(false)
 
   function refreshBanners() {
     void queryClient.invalidateQueries(trpc.adminDisplay.pathFilter())
   }
 
-  async function uploadHeroImage(fileList: FileList | null) {
-    if (!fileList || fileList.length === 0 || !draft || isUploading) return
-    setIsUploading(true)
-    try {
-      const formData = new FormData()
-      formData.append("files", fileList[0])
-      formData.append("folder", "banners")
-      const response = await fetch("/api/admin/product-images", { method: "POST", body: formData })
-      const payload = (await response.json()) as { storedPaths?: string[]; message?: string }
-      if (!response.ok) {
-        showToast(payload.message ?? "이미지를 올리지 못했습니다.", { toastVariant: "error" })
-        return
-      }
-      setDraft({ ...draft, imagePath: payload.storedPaths?.[0] ?? null })
-    } catch {
-      showToast("이미지를 올리지 못했습니다.", { toastVariant: "error" })
-    } finally {
-      setIsUploading(false)
-    }
-  }
+  /**
+   * 배너 이미지 — 상품과 같은 공용 업로더를 쓴다(끌어다 놓기·미리보기·자동 축소).
+   * 배너는 한 장뿐이라 목록이 아니라 단일 값이므로, 공용 컴포넌트의 배열을 여기서 감싼다.
+   */
+  const heroImages = draft?.imagePath
+    ? [{ path: draft.imagePath, alt: draft.alt }]
+    : []
 
   function submitBanner(event: React.FormEvent) {
     event.preventDefault()
@@ -233,53 +220,26 @@ function BannerPanel() {
                 />
               </div>
 
-              <div className="flex flex-col gap-1.5">
-                <Label htmlFor="banner-image">이미지</Label>
-                {draft.imagePath ? (
-                  <div className="flex items-center gap-2">
-                    {/* eslint-disable-next-line @next/next/no-img-element */}
-                    <img
-                      src={`/api/uploads/${draft.imagePath}`}
-                      alt=""
-                      className="h-14 w-24 rounded-[calc(var(--radius)-6px)] border border-border object-cover"
-                    />
-                    <Button
-                      type="button"
-                      variant="ghost"
-                      size="admin-38"
-                      onClick={() => setDraft({ ...draft, imagePath: null })}
-                    >
-                      이미지 제거
-                    </Button>
-                  </div>
-                ) : null}
-                <input
-                  id="banner-image"
-                  type="file"
-                  accept="image/jpeg,image/png,image/webp,image/avif"
-                  disabled={isUploading}
-                  className="text-[13px] file:mr-2 file:min-h-9 file:rounded-[calc(var(--radius)-4px)] file:border file:border-border file:bg-card file:px-3 file:text-[13px] file:font-bold"
-                  onChange={(event) => {
-                    void uploadHeroImage(event.target.files)
-                    event.target.value = ""
-                  }}
-                />
-              </div>
-
-              <div className="flex flex-col gap-1.5">
-                <Label htmlFor="banner-alt">대체 텍스트 {draft.imagePath ? "*" : ""}</Label>
-                <Input
-                  id="banner-alt"
-                  size="admin"
-                  required={draft.imagePath !== null}
-                  placeholder="이미지가 어떤 내용인지 설명"
-                  value={draft.alt}
-                  onChange={(event) => setDraft({ ...draft, alt: event.target.value })}
-                />
-                <p className="m-0 text-[12px] text-muted-foreground">
-                  이미지를 올렸으면 필수입니다 — 화면을 못 보는 이용자에게 유일한 설명입니다.
-                </p>
-              </div>
+              {/* 배너는 한 장이라 새로 올리면 교체된다(multiple 없음).
+                  대체 텍스트도 업로더 안에서 받으므로 별도 입력칸을 두지 않는다 —
+                  두 군데서 받으면 어느 쪽이 저장되는지 알 수 없다 */}
+              <ImageDropUploader
+                images={heroImages}
+                onChange={(nextImages) => {
+                  const picked = nextImages.at(-1) ?? null
+                  setDraft({
+                    ...draft,
+                    imagePath: picked?.path ?? null,
+                    alt: picked?.alt ?? "",
+                  })
+                }}
+                purpose="banner"
+                uploadEndpoint="/api/admin/product-images"
+                folder="banners"
+                multiple={false}
+                label="배너 이미지 올리기"
+                helpText="가로로 길게 쓰이므로 가로 1920 이상 원본을 권합니다."
+              />
             </>
           ) : (
             <>
