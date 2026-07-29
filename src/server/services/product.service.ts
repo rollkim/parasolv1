@@ -319,6 +319,11 @@ export type ProductDetail = {
   productId: number;
   slug: string;
   name: string;
+  /**
+   * 브레드크럼용 카테고리 경로 — 대분류 → 중분류 순. 카테고리가 없으면 빈 배열.
+   * 상품이 여러 카테고리에 속할 수 있어(product_category는 다대다) 대표 하나를 골라 그 조상을 편다.
+   */
+  categoryPath: { slug: string; name: string }[];
   summary: string | null;
   descriptionText: string | null;
   badgeLabel: string | null;
@@ -342,6 +347,50 @@ export type ProductDetail = {
   }[];
   addons: { addonId: number; addonName: string; price: number; stock: number }[];
 };
+
+/**
+ * 브레드크럼에 쓸 카테고리 경로 — 대분류 → 중분류.
+ *
+ * product_category는 다대다라 상품 하나가 여러 카테고리에 걸릴 수 있는데, 브레드크럼은
+ * 하나만 보여줄 수 있다. **가장 깊은 카테고리**를 고른다 — 중분류가 대분류보다 상품을 잘 설명한다.
+ * 같은 깊이면 sortOrder → id 순으로 정해 매 요청 같은 답이 나오게 한다(새로고침마다 바뀌면 안 된다).
+ *
+ * 대표 카테고리를 관리자가 직접 고르게 하려면 product_category에 표식이 필요하다(미결 항목).
+ */
+async function loadCategoryPath(
+  database: typeof Database,
+  productId: number,
+): Promise<{ slug: string; name: string }[]> {
+  const linked = await database
+    .select({
+      categoryId: category.id,
+      slug: category.slug,
+      name: category.name,
+      parentId: category.parentId,
+      sortOrder: category.sortOrder,
+    })
+    .from(productCategory)
+    .innerJoin(category, eq(productCategory.categoryId, category.id))
+    .where(and(eq(productCategory.productId, productId), eq(category.isActive, true)))
+    .orderBy(asc(category.sortOrder), asc(category.id));
+
+  if (linked.length === 0) return [];
+
+  // 하위(parentId 있음)를 먼저 — 없으면 최상위라도 쓴다
+  const chosen = linked.find((row) => row.parentId !== null) ?? linked[0];
+  if (chosen.parentId === null) return [{ slug: chosen.slug, name: chosen.name }];
+
+  const [parentRow] = await database
+    .select({ slug: category.slug, name: category.name })
+    .from(category)
+    .where(and(eq(category.id, chosen.parentId), eq(category.isActive, true)))
+    .limit(1);
+
+  // 부모가 비활성이면 자식만 — 비활성 카테고리로 가는 링크를 만들지 않는다
+  return parentRow
+    ? [parentRow, { slug: chosen.slug, name: chosen.name }]
+    : [{ slug: chosen.slug, name: chosen.name }];
+}
 
 export async function getProductDetail(
   database: typeof Database,
@@ -447,10 +496,13 @@ export async function getProductDetail(
     valueIdsByVariant.set(link.variantId, list);
   }
 
+  const categoryPath = await loadCategoryPath(database, productRow.productId);
+
   return {
     productId: productRow.productId,
     slug: productRow.slug,
     name: productRow.name,
+    categoryPath,
     summary: productRow.summary,
     descriptionText: productRow.descriptionText,
     badgeLabel: productRow.badgeLabel,

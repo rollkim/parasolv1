@@ -1,7 +1,7 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { cache } from "react";
+import { Fragment, cache } from "react";
 
 import { ProductDetailTabs } from "@/components/store/product-detail-tabs";
 import { ProductPurchasePanel } from "@/components/store/product-purchase-panel";
@@ -43,8 +43,10 @@ export default async function ProductDetailPage({
   return (
     // 목업 #pmstore: width min(1280px,100%) · main[data-r=pad] 좌우 16px→40px(≥768)
     <div className="mx-auto w-full max-w-[1280px] px-4 pt-[18px] md:px-10">
-      {/* 브레드크럼 — ProductDetail에 카테고리 정보가 없어(서비스 읽기 전용)
-          '홈 › 전체 상품 › 상품명'으로 구성. 카테고리 필드 추가 시 중간 단계를 교체한다 */}
+      {/* 브레드크럼 — 홈 › 대분류 › 중분류 › 상품명.
+          목업(L147~151)은 카테고리 한 단계만 보여주지만 상위까지 펴서 넣는다 —
+          한 단계만 있으면 그게 대분류인지 중분류인지 알 수 없어 되짚어 올라갈 수가 없다.
+          카테고리가 없는 상품은 '전체 상품'으로 대신한다(빈 칸을 남기지 않는다) */}
       <nav
         aria-label="위치"
         className="mb-4 flex flex-wrap items-center gap-1.5 text-xs text-muted-foreground"
@@ -52,10 +54,26 @@ export default async function ProductDetailPage({
         <Link href="/" className="hover:text-primary">
           홈
         </Link>
-        <span aria-hidden="true">›</span>
-        <Link href="/products" className="hover:text-primary">
-          전체 상품
-        </Link>
+        {productDetail.categoryPath.length === 0 ? (
+          <>
+            <span aria-hidden="true">›</span>
+            <Link href="/products" className="hover:text-primary">
+              전체 상품
+            </Link>
+          </>
+        ) : (
+          productDetail.categoryPath.map((categoryStep) => (
+            <Fragment key={categoryStep.slug}>
+              <span aria-hidden="true">›</span>
+              <Link
+                href={`/products?category=${categoryStep.slug}`}
+                className="hover:text-primary"
+              >
+                {categoryStep.name}
+              </Link>
+            </Fragment>
+          ))
+        )}
         <span aria-hidden="true">›</span>
         <span aria-current="page" className="font-semibold text-foreground">
           {productDetail.name}
