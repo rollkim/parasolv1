@@ -10,6 +10,7 @@ import {
   listMyOrders,
   lookupGuestOrder,
 } from "@/server/services/order-query.service";
+import { isDirectBuyToken } from "@/server/services/cart.service";
 import { createPendingOrder } from "@/server/services/order.service";
 import { confirmPayment } from "@/server/services/payment.service";
 
@@ -19,6 +20,21 @@ import { withOrderErrorMapping } from "../order-error";
 
 /** 주문 직후 완료 화면을 보는 동안만 필요하다 — 오래 두면 공용 PC에서 남의 주문이 열린다 */
 const GUEST_ORDER_COOKIE_MAX_AGE_SECONDS = 60 * 60;
+
+/**
+ * 체크아웃이 읽을 카트 토큰을 정한다.
+ *
+ * 바로구매는 토큰이 URL(`/checkout?buy=…`)로 오므로, **바로구매로 만든 토큰만** 허용한다.
+ * 접두사 검사가 없으면 남의 장바구니 토큰을 URL에 넣어 그 사람 장바구니를 들여다볼 수 있다.
+ * 일반 장바구니 토큰은 지금처럼 쿠키에서만 온다.
+ */
+function resolveCheckoutToken(
+  cookieCartToken: string | null,
+  buyToken: string | undefined,
+): string | null {
+  if (buyToken && isDirectBuyToken(buyToken)) return buyToken;
+  return cookieCartToken;
+}
 
 /**
  * 비회원 주문완료 화면의 본인 확인 수단 — URL이 아니라 쿠키로 넘긴다.
@@ -98,9 +114,14 @@ export const orderRouter = router({
    * 체크아웃 진입 데이터 — 카트 요약·주문자 프리필·배송지·약관·위젯 키를 한 번에.
    * 비회원도 호출하므로 publicProcedure이고, 회원 전용 값은 서비스가 세션 기준으로 채운다.
    */
-  getCheckoutView: publicProcedure.query(({ ctx }) =>
-    getCheckoutView(ctx.db, { cartToken: ctx.cartToken, customerId: ctx.customerId }),
-  ),
+  getCheckoutView: publicProcedure
+    .input(z.object({ buyToken: z.string().max(64).optional() }).optional())
+    .query(({ ctx, input }) =>
+      getCheckoutView(ctx.db, {
+        cartToken: resolveCheckoutToken(ctx.cartToken, input?.buyToken),
+        customerId: ctx.customerId,
+      }),
+    ),
 
   /**
    * 체크아웃 — 결제 전 주문(pending)을 만든다.
@@ -120,13 +141,15 @@ export const orderRouter = router({
          * 최소액·단위·잔액·주문금액 초과는 서버 정책과 실제 잔액을 봐야 하므로 서비스가 판정한다.
          */
         pointToUse: z.number().int().min(0).optional(),
+        /** 바로구매 — 장바구니가 아니라 이 임시 카트로 주문한다 */
+        buyToken: z.string().max(64).optional(),
       }),
     )
     .mutation(async ({ ctx, input }) => {
       const created = await withOrderErrorMapping(() =>
         createPendingOrder(ctx.db, {
           // 토큰이 없으면 카트도 없다 — 서비스의 CartNotFoundError에 맡긴다
-          cartToken: ctx.cartToken ?? "",
+          cartToken: resolveCheckoutToken(ctx.cartToken, input.buyToken) ?? "",
           customerId: ctx.customerId,
           orderer: {
             name: input.orderer.name,

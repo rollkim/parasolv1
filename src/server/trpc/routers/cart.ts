@@ -3,6 +3,7 @@ import { z } from "zod";
 
 import {
   addCartItem,
+  createDirectBuyCart,
   getCartItemCount,
   getCartWithItems,
   removeCartItem,
@@ -63,6 +64,22 @@ export const cartRouter = router({
       const cartToken = await ensureCartToken(ctx.cartToken);
       return addCartItem(ctx.db, { cartToken, ...input });
     }),
+
+  /**
+   * 바로구매 — 장바구니를 건드리지 않고 임시 카트를 만들어 그 토큰을 돌려준다.
+   * 화면은 이 토큰으로 /checkout?buy=<token>으로 이동한다(카트 쿠키는 그대로).
+   */
+  startDirectBuy: publicProcedure
+    .input(
+      z.object({
+        variantId: z.number().int().positive(),
+        quantity: z.number().int().min(1).max(999),
+        addons: z.array(addonSelectionSchema).optional(),
+      }),
+    )
+    .mutation(({ ctx, input }) =>
+      createDirectBuyCart(ctx.db, { customerId: ctx.customerId, ...input }),
+    ),
 
   updateQuantity: publicProcedure
     .input(

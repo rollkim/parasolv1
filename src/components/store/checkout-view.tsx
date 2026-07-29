@@ -150,7 +150,12 @@ export function CheckoutView() {
   const trpc = useTRPC()
   const { showToast } = useToast()
 
-  const checkoutQuery = useQuery(trpc.order.getCheckoutView.queryOptions())
+  /* 바로구매 — ?buy=<token>이면 장바구니가 아니라 그 임시 카트로 주문서를 그린다.
+     서버가 접두사(bn_)를 검사하므로 남의 장바구니 토큰을 넣어도 통하지 않는다 */
+  const searchParams = useSearchParams()
+  const buyToken = searchParams.get("buy") ?? undefined
+
+  const checkoutQuery = useQuery(trpc.order.getCheckoutView.queryOptions({ buyToken }))
   const createOrderMutation = useMutation(trpc.order.createOrder.mutationOptions())
 
   const [orderMode, setOrderMode] = React.useState<"member" | "guest">("member")
@@ -178,7 +183,6 @@ export function CheckoutView() {
   const addressDetailRef = React.useRef<HTMLInputElement>(null)
 
   // 결제 실패로 되돌아온 경우 — 토스가 준 코드를 사용자 문구로 옮긴다
-  const searchParams = useSearchParams()
   const payErrorCode = searchParams.get("payError")
   const payErrorMessage = payErrorCode
     ? (PAY_ERROR_MESSAGES[payErrorCode] ??
@@ -416,6 +420,9 @@ export function CheckoutView() {
         shippingAddress,
         cartItemIds: orderableLines.map((line) => line.cartItemId),
         agreedTermsDocumentIds: agreedTermsIds,
+        // 주문 생성도 같은 토큰을 봐야 한다 — 여기서 빠지면 주문서는 바로구매 상품을 그렸는데
+        // 실제 주문은 장바구니로 만들어진다
+        buyToken,
       },
       {
         onSuccess: (created) => {

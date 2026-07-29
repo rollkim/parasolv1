@@ -1,5 +1,7 @@
 import "server-only";
 
+import { randomUUID } from "node:crypto";
+
 import { TRPCError } from "@trpc/server";
 import { and, asc, count, desc, eq, inArray } from "drizzle-orm";
 
@@ -338,6 +340,12 @@ export type CartAddonSelection = {
 
 export type CartMutationResult = {
   cartItemId: number;
+  /**
+   * 이미 담겨 있던 라인에 합쳐졌는지.
+   * 화면은 이걸 보고 "이미 장바구니에 있어요 · 장바구니로 갈까요?"를 묻는다 —
+   * 조용히 수량만 늘리면 담을 때마다 몇 개가 됐는지 알 수 없다.
+   */
+  mergedIntoExisting: boolean;
   /** 실제 반영된 수량 — 재고 초과 요청은 재고만큼 보정된다(RULE-11) */
   appliedQuantity: number;
   /** 재고 부족으로 수량이 보정되었는지 — true면 원인+해결 토스트를 띄운다 */
@@ -411,6 +419,58 @@ export type AddCartItemInput = {
   quantity: number;
   addons?: CartAddonSelection[];
 };
+
+/**
+ * 바로구매 토큰 접두사.
+ *
+ * 체크아웃이 URL로 받은 토큰을 그대로 쓰면 남의 장바구니 토큰을 넣어 내용을 들여다볼 수 있다.
+ * 접두사를 강제해 **바로구매로 만든 카트만** URL 경유를 허용한다 — 일반 장바구니 토큰은
+ * 지금처럼 쿠키에만 있고 URL로는 절대 통하지 않는다.
+ */
+export const DIRECT_BUY_TOKEN_PREFIX = "bn_";
+
+export function isDirectBuyToken(token: string): boolean {
+  return token.startsWith(DIRECT_BUY_TOKEN_PREFIX);
+}
+
+/**
+ * 바로구매 — 장바구니와 **무관한** 임시 카트를 만들어 그 토큰을 돌려준다.
+ *
+ * 장바구니에 합치지 않는 이유: '바로 구매'는 지금 이 화면에서 고른 것만 사는 동선이다.
+ * 담긴 것과 합치면 화면에서 1개를 골랐는데 결제창에 3개가 뜨는 일이 생긴다.
+ *
+ * 검증된 주문 경로(getCheckoutView·createPendingOrder)를 그대로 쓰기 위해 카트 형태를 빌린다 —
+ * 별도 주문 경로를 만들면 금액·재고 규칙이 두 벌이 되고, 언젠가 한쪽만 고쳐진다.
+ */
+export async function createDirectBuyCart(
+  database: DatabaseClient,
+  input: {
+    customerId: number | null;
+    variantId: number;
+    quantity: number;
+    addons?: CartAddonSelection[];
+  },
+): Promise<{ buyToken: string; appliedQuantity: number; stockLimited: boolean }> {
+  const buyToken = `${DIRECT_BUY_TOKEN_PREFIX}${randomUUID()}`;
+  await database.insert(cart).values({
+    sessionToken: buyToken,
+    customerId: input.customerId,
+  });
+
+  // 담기와 같은 함수를 쓴다 — 재고 보정·품절 판정이 장바구니와 어긋나지 않게
+  const added = await addCartItem(database, {
+    cartToken: buyToken,
+    variantId: input.variantId,
+    quantity: input.quantity,
+    addons: input.addons,
+  });
+
+  return {
+    buyToken,
+    appliedQuantity: added.appliedQuantity,
+    stockLimited: added.stockLimited,
+  };
+}
 
 /**
  * 카트 담기 — 카트가 없으면 생성하고, 동일 variant + 동일 addon 조합 라인은 수량을 병합한다.
@@ -552,6 +612,7 @@ export async function addCartItem(
 
       return {
         cartItemId: mergeTarget.cartItemId,
+        mergedIntoExisting: true,
         appliedQuantity,
         stockLimited: desiredQuantity > appliedQuantity,
         addonStockLimited,
@@ -586,6 +647,7 @@ export async function addCartItem(
 
     return {
       cartItemId: insertedItem.id,
+      mergedIntoExisting: false,
       appliedQuantity,
       stockLimited: input.quantity > appliedQuantity,
       addonStockLimited,
@@ -647,6 +709,8 @@ export async function updateCartItemQuantity(
 
   return {
     cartItemId: itemRow.cartItemId,
+    // 장바구니 화면에서 수량을 직접 바꾼 것이라 '이미 담겨 있다' 안내가 필요 없다
+    mergedIntoExisting: false,
     appliedQuantity,
     stockLimited: input.quantity > appliedQuantity,
     addonStockLimited: false, // 수량 변경은 addon을 건드리지 않는다

@@ -25,6 +25,14 @@ import { useRouter } from "next/navigation"
 
 import { Button } from "@/components/ui/button"
 import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog"
+import {
   Sheet,
   SheetBody,
   SheetContent,
@@ -238,6 +246,9 @@ export function ProductPurchasePanel({
   const queryClient = useQueryClient()
   const router = useRouter()
   const addCartItemMutation = useMutation(trpc.cart.addItem.mutationOptions())
+  const directBuyMutation = useMutation(trpc.cart.startDirectBuy.mutationOptions())
+  /** 이미 담겨 있던 상품에 합쳐진 경우의 현재 수량 — null이면 안내가 뜨지 않는다 */
+  const [mergedCartQuantity, setMergedCartQuantity] = React.useState<number | null>(null)
 
   const submitAddToCart = (afterAdd: "stay" | "goCart") => {
     if (!confirmedVariant || !variantBuyable || addCartItemMutation.isPending) return
@@ -255,6 +266,19 @@ export function ProductPurchasePanel({
       },
       {
         onSuccess: (addResult) => {
+          // 카트 화면 캐시 + 헤더 뱃지(서버 렌더 (store) 레이아웃)를 함께 갱신한다
+          void queryClient.invalidateQueries(trpc.cart.pathFilter())
+          router.refresh()
+
+          // 이미 담겨 있던 상품 — 조용히 수량만 늘리면 지금 몇 개가 됐는지 알 수 없다.
+          // 수량을 조정할 곳(장바구니)으로 갈지 물어본다.
+          // 핸드오프 §5는 '파괴적 동작만 확인 모달'이지만, 이건 알림이 아니라 **선택을 묻는 것**이라
+          // 토스트로는 표현할 수 없다(사용자 결정: 이동 여부를 묻는다).
+          if (addResult.mergedIntoExisting) {
+            setMergedCartQuantity(addResult.appliedQuantity)
+            return
+          }
+
           // 서버가 재고 초과를 보정해 담은 경우 — 원인+해결을 함께 안내(RULE-11)
           if (addResult.stockLimited) {
             showToast(
@@ -264,9 +288,6 @@ export function ProductPurchasePanel({
           } else {
             showToast("장바구니에 담았어요")
           }
-          // 카트 화면 캐시 + 헤더 뱃지(서버 렌더 (store) 레이아웃)를 함께 갱신한다
-          void queryClient.invalidateQueries(trpc.cart.pathFilter())
-          router.refresh()
           if (afterAdd === "goCart") router.push("/cart")
         },
         onError: (addError) =>
@@ -276,8 +297,43 @@ export function ProductPurchasePanel({
   }
 
   const handleAddCartClick = () => submitAddToCart("stay")
-  // 체크아웃 미구현 — 담기 후 장바구니로 이동해 흐름을 잇는다. TODO(체크아웃 배선 시 /checkout 직행으로 교체)
-  const handleBuyNowClick = () => submitAddToCart("goCart")
+
+  /**
+   * 바로 구매 — **장바구니와 무관하다.** 지금 화면에서 고른 옵션·수량 그대로 결제로 간다.
+   *
+   * 장바구니에 담아 합치면 담긴 수량과 더해져, 화면에서 1개를 골랐는데 결제창에 3개가 뜬다.
+   * 서버가 임시 카트를 만들어 토큰을 주고, 체크아웃은 그 토큰으로 주문서를 그린다 —
+   * 장바구니 쿠키는 그대로다.
+   */
+  const handleBuyNowClick = () => {
+    if (!confirmedVariant || !variantBuyable || directBuyMutation.isPending) return
+    const selectedAddons = addons
+      .filter((addon) => (addonQuantityById[addon.addonId] ?? 0) > 0)
+      .map((addon) => ({
+        addonId: addon.addonId,
+        quantity: addonQuantityById[addon.addonId],
+      }))
+    directBuyMutation.mutate(
+      {
+        variantId: confirmedVariant.variantId,
+        quantity,
+        addons: selectedAddons.length > 0 ? selectedAddons : undefined,
+      },
+      {
+        onSuccess: (buyResult) => {
+          // 재고가 모자라 수량이 줄었으면 결제 화면으로 넘어가기 전에 알린다
+          if (buyResult.stockLimited) {
+            showToast(
+              `재고가 부족해 ${buyResult.appliedQuantity}개로 진행해요.`,
+              { toastVariant: "info" },
+            )
+          }
+          router.push(`/checkout?buy=${buyResult.buyToken}`)
+        },
+        onError: (buyError) => showToast(buyError.message, { toastVariant: "error" }),
+      },
+    )
+  }
   // TODO(3주차): 재입고 알림 실배선으로 교체 — 지금은 안내 토스트만
   const handleRestockNotifyClick = () =>
     showToast(`재입고 알림은 3주차에 열려요 · ${name}`, { toastVariant: "info" })
@@ -743,6 +799,47 @@ export function ProductPurchasePanel({
           </SheetFooter>
         </SheetContent>
       </Sheet>
+
+      {/* 이미 담겨 있던 상품 — 수량을 조정할 곳으로 갈지 묻는다.
+          핸드오프 §5는 '파괴적 동작만 확인 모달'이지만 이건 알림이 아니라 선택을 묻는 것이라
+          토스트로 표현할 수 없다(사용자 결정) */}
+      <Dialog
+        open={mergedCartQuantity !== null}
+        onOpenChange={(nextOpen) => {
+          if (!nextOpen) setMergedCartQuantity(null)
+        }}
+      >
+        <DialogContent className="max-w-[380px]">
+          <DialogHeader>
+            <DialogTitle>이미 장바구니에 있어요</DialogTitle>
+            <DialogDescription>
+              같은 옵션의 상품이 담겨 있어 수량이 {mergedCartQuantity ?? 0}개가 되었어요.
+              장바구니에서 수량을 조정하시겠어요?
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button
+              type="button"
+              variant="outline"
+              size="md-48"
+              onClick={() => setMergedCartQuantity(null)}
+            >
+              계속 둘러보기
+            </Button>
+            <Button
+              type="button"
+              variant="primary"
+              size="md-48"
+              onClick={() => {
+                setMergedCartQuantity(null)
+                router.push("/cart")
+              }}
+            >
+              장바구니로 이동
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </>
   )
 }
