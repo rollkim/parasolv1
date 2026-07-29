@@ -4,7 +4,9 @@ import { and, asc, desc, eq, isNotNull, ne, sql } from "drizzle-orm";
 
 import type { db as Database } from "@/db";
 import { article, commonCode, product, productImage } from "@/db/schema";
-import { calcReadMinutes, parseArticleBlocks, type ArticleBlock } from "@/domain/article";
+import { calcReadMinutes } from "@/domain/article";
+
+import { richTextToPlainText } from "./html-sanitize.service";
 
 /**
  * 이야기(브랜드 스토리) 조회 서비스 — 핸드오프 'PaRaSOL 이야기.dc.html'.
@@ -61,7 +63,8 @@ export type StoryDetail = {
   publishedAt: Date;
   readMinutes: number;
   coverImagePath: string | null;
-  blocks: ArticleBlock[];
+  /** 살균을 마친 본문 HTML — 화면은 그대로 그린다(상품 설명과 같은 방식) */
+  contentHtml: string;
   /** 이 이야기의 제품 — 판매 중지·삭제된 상품은 내려주지 않는다 */
   relatedProduct: {
     slug: string;
@@ -126,7 +129,7 @@ export async function getStoryListPage(
     coverImagePath: row.coverImagePath,
     // publishedAt은 공개 조건이 이미 not-null을 보장한다
     publishedAt: row.publishedAt as Date,
-    readMinutes: calcReadMinutes(row.content),
+    readMinutes: calcReadMinutes(richTextToPlainText(row.content)),
   });
 
   // 칩은 '글이 있는 분류'만 — 눌러도 빈 목록이 나오는 칩을 두지 않는다
@@ -229,9 +232,9 @@ export async function getStoryDetail(
       : null,
     authorName: articleRow.authorName,
     publishedAt: articleRow.publishedAt as Date,
-    readMinutes: calcReadMinutes(articleRow.content),
+    readMinutes: calcReadMinutes(richTextToPlainText(articleRow.content)),
     coverImagePath: articleRow.coverImagePath,
-    blocks: parseArticleBlocks(articleRow.content),
+    contentHtml: articleRow.content,
     relatedProduct: relatedProductRow
       ? {
           slug: relatedProductRow.slug,

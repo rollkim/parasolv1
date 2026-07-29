@@ -4,8 +4,8 @@
 //
 // 목업과 의도적으로 다르게 간 부분(사유):
 //  - 목업의 '이야기 목록' 버튼(상태 되돌리기)은 Link로 — 상세가 독립 URL이라 뒤로가기가 아니라 이동이다.
-//  - 본문은 HTML이 아니라 블록 배열을 React로 그린다. 관리자 입력을 그대로 innerHTML에 넣으면
-//    그 순간 XSS가 된다(상품 설명에서 descriptionHtml을 버린 것과 같은 이유).
+//  - 본문은 저장 시 서버가 살균한 HTML이다(html-sanitize.service). 씻는 자리를 저장 한 곳으로
+//    못박아, 이 값을 쓰는 화면이 늘어도 잊을 자리가 없게 했다(상품 상세와 같은 규약).
 //  - 이미지 최적화(next/image)는 5주차 — 그전까지 일반 img (상품카드와 동일)
 
 import type { Metadata } from "next";
@@ -17,6 +17,7 @@ import { Button } from "@/components/ui/button";
 import { db } from "@/db";
 import { formatDateDot } from "@/lib/format-date";
 import { getStoryDetail } from "@/server/services/article.service";
+import { richTextToPlainText } from "@/server/services/html-sanitize.service";
 
 type StoryDetailPageProps = { params: Promise<{ slug: string }> };
 
@@ -28,10 +29,8 @@ export async function generateMetadata({
   if (!story) return { title: "이야기" };
   return {
     title: story.title,
-    // 첫 문단이 요약을 겸한다 — summary 컬럼은 목록 카드용이라 여기서 다시 읽지 않는다
-    description:
-      story.blocks.find((block) => block.blockKind === "paragraph")?.text.slice(0, 120) ??
-      undefined,
+    // 본문 첫 120자 — HTML을 그대로 넣으면 태그가 검색 결과에 노출된다
+    description: richTextToPlainText(story.contentHtml).slice(0, 120) || undefined,
   };
 }
 
@@ -97,53 +96,13 @@ export default async function StoryDetailPage({ params }: StoryDetailPageProps) 
           <span>{story.readMinutes}분 분량</span>
         </div>
 
-        <div className="text-base leading-[1.9] text-foreground">
-          {story.blocks.map((block, blockIndex) => {
-            // 블록은 순서가 곧 정체성이라 인덱스를 key로 쓴다(재정렬 없는 정적 렌더)
-            switch (block.blockKind) {
-              case "subheading":
-                return (
-                  <h2
-                    key={blockIndex}
-                    className="mt-8 mb-3.5 font-heading text-xl font-extrabold"
-                  >
-                    {block.text}
-                  </h2>
-                );
-              case "quote":
-                return (
-                  <blockquote
-                    key={blockIndex}
-                    className="my-7 border-l-[3px] border-primary py-1 pl-5 font-heading text-[clamp(18px,2.4vw,22px)] leading-[1.5] font-extrabold text-foreground"
-                  >
-                    {block.text}
-                  </blockquote>
-                );
-              case "image":
-                return (
-                  <figure key={blockIndex} className="my-7">
-                    <div className="relative aspect-[3/2] overflow-hidden rounded-[var(--radius)] border border-border bg-muted">
-                      {/* 캡션이 곧 대체텍스트 — 도메인 파서가 캡션 없는 이미지를 만들지 않는다 */}
-                      <img
-                        src={block.imagePath}
-                        alt={block.caption}
-                        className="absolute inset-0 size-full object-cover"
-                      />
-                    </div>
-                    <figcaption className="mt-2 text-center text-xs text-muted-foreground">
-                      {block.caption}
-                    </figcaption>
-                  </figure>
-                );
-              case "paragraph":
-                return (
-                  <p key={blockIndex} className="m-0 mb-[22px] text-pretty">
-                    {block.text}
-                  </p>
-                );
-            }
-          })}
-        </div>
+        {/* 본문은 **저장 시 서버가 이미 살균했다**(admin-story.service → html-sanitize.service).
+            씻은 것만 DB에 들어가므로 여기서 다시 씻지 않는다 — 상품 상세와 같은 규약이다.
+            태그별 여백·인용선은 여기서 준다(저장된 HTML에는 style이 없다, 살균이 버린다) */}
+        <div
+          className="text-base leading-[1.9] text-foreground [&_blockquote]:my-7 [&_blockquote]:border-l-[3px] [&_blockquote]:border-primary [&_blockquote]:py-1 [&_blockquote]:pl-5 [&_blockquote]:font-heading [&_blockquote]:text-[clamp(18px,2.4vw,22px)] [&_blockquote]:leading-[1.5] [&_blockquote]:font-extrabold [&_h2]:mt-8 [&_h2]:mb-3.5 [&_h2]:font-heading [&_h2]:text-xl [&_h2]:font-extrabold [&_h3]:mt-6 [&_h3]:mb-2.5 [&_h3]:font-bold [&_img]:my-7 [&_img]:max-w-full [&_img]:rounded-[var(--radius)] [&_li]:mb-1 [&_ol]:my-5 [&_ol]:list-decimal [&_ol]:pl-6 [&_p]:mb-[22px] [&_p]:text-pretty [&_ul]:my-5 [&_ul]:list-disc [&_ul]:pl-6 [&_a]:text-primary [&_a]:underline"
+          dangerouslySetInnerHTML={{ __html: story.contentHtml }}
+        />
 
         {story.relatedProduct && (
           <div className="mt-9 flex items-center gap-3.5 rounded-[var(--radius)] border border-border bg-card p-[18px]">

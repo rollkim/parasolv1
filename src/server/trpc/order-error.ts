@@ -77,6 +77,10 @@ import { OrderAccessDeniedError } from "@/server/services/order-query.service";
 import { AddressLimitExceededError } from "@/server/services/customer.service";
 import { UnknownBulkPurchaseTypeError } from "@/server/services/bulk-inquiry.service";
 import {
+  AdminStoryNotFoundError,
+  DuplicateStorySlugError,
+} from "@/server/services/admin-story.service";
+import {
   CartNotFoundError,
   GuestPointUseError,
   PointUseRejectedError,
@@ -139,6 +143,20 @@ export function toOrderTRPCError(error: unknown): unknown {
         "적립금 처리 중 문제가 발생했습니다. 적립금 없이 주문하시거나 고객센터로 문의해 주세요.",
       cause: error,
     });
+  }
+
+  // ── 관리자 이야기 ──
+  if (error instanceof AdminStoryNotFoundError) {
+    return new TRPCError({
+      code: "NOT_FOUND",
+      message: "이야기를 찾을 수 없습니다. 목록에서 다시 선택해 주세요.",
+      cause: error,
+    });
+  }
+
+  // 문구가 무엇을 고쳐야 하는지 담고 있다 — 저장 실패는 원인을 감출 이유가 없다
+  if (error instanceof DuplicateStorySlugError) {
+    return new TRPCError({ code: "CONFLICT", message: error.message, cause: error });
   }
 
   if (error instanceof UnknownBulkPurchaseTypeError) {

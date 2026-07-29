@@ -53,13 +53,15 @@ async function main() {
     const scheduledSlug = `check-scheduled-${SUFFIX}`;
     temporarySlugs.push(publishedSlug, draftSlug, scheduledSlug);
 
+    // 에디터가 만드는 HTML 그대로. 살균은 저장 서비스(saveAdminStory)가 하므로,
+    // 여기서는 이미 씻긴 형태를 넣어 조회 쪽만 본다
     const bodyContent = [
-      "첫 문단입니다. " + "가".repeat(400),
-      "> 인용문입니다.",
-      "## 소제목입니다",
-      "![캡션입니다](/uploads/article/check.jpg)",
-      "마지막 문단입니다.",
-    ].join("\n\n");
+      `<p>첫 문단입니다. ${"가".repeat(400)}</p>`,
+      "<blockquote>인용문입니다.</blockquote>",
+      "<h2>소제목입니다</h2>",
+      '<img src="/api/uploads/products/202607/abc123.jpg" alt="캡션입니다" />',
+      "<p>마지막 문단입니다.</p>",
+    ].join("");
 
     await db.insert(article).values([
       {
@@ -133,23 +135,20 @@ async function main() {
       "없는 분류를 넣으면 필터를 무시하고 전체를 보여준다 — 빈 화면보다 낫다",
     );
 
-    console.log("\n[3] 상세 — 블록 분해·읽는 시간");
+    console.log("\n[3] 상세 — 본문 HTML·읽는 시간");
     const detail = await getStoryDetail(db, publishedSlug);
     check(detail !== null, "공개글 상세 조회");
     if (detail) {
-      const kinds = detail.blocks.map((block) => block.blockKind);
       check(
-        kinds.includes("paragraph") &&
-          kinds.includes("quote") &&
-          kinds.includes("subheading") &&
-          kinds.includes("image"),
-        "본문 4종 블록이 모두 분해된다",
-        kinds,
+        detail.contentHtml.includes("<h2>") &&
+          detail.contentHtml.includes("<blockquote>") &&
+          detail.contentHtml.includes("<img"),
+        "저장한 서식(소제목·인용·이미지)이 그대로 온다",
+        detail.contentHtml.slice(0, 120),
       );
-      const imageBlock = detail.blocks.find((block) => block.blockKind === "image");
       check(
-        imageBlock?.blockKind === "image" && imageBlock.caption === "캡션입니다",
-        "이미지 캡션이 대체텍스트로 쓰인다",
+        !/<script|onerror=/i.test(detail.contentHtml),
+        "위험한 태그·속성은 저장 단계에서 이미 걸러졌다",
       );
       check(detail.readMinutes >= 1, `읽는 시간이 계산된다 (${detail.readMinutes}분)`);
       check(detail.categoryName === "작업장", "분류 코드가 한글명으로 바뀐다", detail.categoryName);

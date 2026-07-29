@@ -4,6 +4,7 @@
 // 목업의 HREFS(.dc.html 파일명)는 실제 라우트로 치환했고, id는 활성 판별 키로 그대로 유지한다.
 
 import {
+  BookOpen,
   ClipboardList,
   Headset,
   LayoutDashboard,
@@ -189,9 +190,15 @@ export const ADMIN_NAV_GROUPS: AdminNavGroup[] = [
           },
         ],
       },
-      // TODO(이야기 관리): 화면을 만든 뒤 여기에 넣는다.
-      // 메뉴만 먼저 달면 누르는 순간 404라, 없는 것보다 나쁘다
-      // { itemId: "story", label: "이야기 관리", icon: BookOpen, href: "/admin/stories", pageTitle: "이야기 관리" },
+      {
+        itemId: "story",
+        label: "이야기 관리",
+        icon: BookOpen,
+        children: [
+          { childId: "story-list", label: "이야기 목록", href: "/admin/stories", pageTitle: "이야기 관리" },
+          { childId: "story-new", label: "이야기 작성", href: "/admin/stories/new", pageTitle: "이야기 작성" },
+        ],
+      },
       {
         itemId: "display",
         label: "배너·진열",
