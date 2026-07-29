@@ -25,6 +25,12 @@ import {
   AdminBoardNotFoundError,
   AdminPostNotFoundError,
 } from "@/server/services/admin-board.service";
+import {
+  AdminBannerNotFoundError,
+  AdminDisplaySectionNotFoundError,
+  BannerAltRequiredError,
+  BannerPeriodInvalidError,
+} from "@/server/services/admin-display.service";
 import { AdminReviewNotFoundError } from "@/server/services/admin-review.service";
 import {
   AdminCategoryNotFoundError,
@@ -318,6 +324,23 @@ export function toOrderTRPCError(error: unknown): unknown {
       message: "게시판 설정이 없습니다. 관리자에게 시드 데이터 확인을 요청해 주세요.",
       cause: error,
     });
+  }
+
+  // ── 관리자 배너·진열 ──
+  if (
+    error instanceof AdminBannerNotFoundError ||
+    error instanceof AdminDisplaySectionNotFoundError
+  ) {
+    return new TRPCError({
+      code: "NOT_FOUND",
+      message: "대상을 찾을 수 없습니다. 화면을 새로고침해 주세요.",
+      cause: error,
+    });
+  }
+
+  // 접근성·기간 규칙 — 문구가 그대로 무엇을 고쳐야 하는지 알려준다
+  if (error instanceof BannerAltRequiredError || error instanceof BannerPeriodInvalidError) {
+    return new TRPCError({ code: "BAD_REQUEST", message: error.message, cause: error });
   }
 
   // ── 관리자 리뷰 ──

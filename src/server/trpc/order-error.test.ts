@@ -24,6 +24,12 @@ import {
   AdminBoardNotFoundError,
   AdminPostNotFoundError,
 } from "@/server/services/admin-board.service";
+import {
+  AdminBannerNotFoundError,
+  AdminDisplaySectionNotFoundError,
+  BannerAltRequiredError,
+  BannerPeriodInvalidError,
+} from "@/server/services/admin-display.service";
 import { AdminReviewNotFoundError } from "@/server/services/admin-review.service";
 import {
   AdminCategoryNotFoundError,
@@ -131,6 +137,10 @@ const DOMAIN_ERRORS: { name: string; error: Error }[] = [
   { name: "AdminReviewNotFoundError", error: new AdminReviewNotFoundError(1) },
   { name: "AdminPostNotFoundError", error: new AdminPostNotFoundError(1) },
   { name: "AdminBoardNotFoundError", error: new AdminBoardNotFoundError("qna") },
+  { name: "AdminBannerNotFoundError", error: new AdminBannerNotFoundError(1) },
+  { name: "AdminDisplaySectionNotFoundError", error: new AdminDisplaySectionNotFoundError(1) },
+  { name: "BannerAltRequiredError", error: new BannerAltRequiredError() },
+  { name: "BannerPeriodInvalidError", error: new BannerPeriodInvalidError() },
 ];
 
 describe("주문 오류 → tRPC 오류 매핑", () => {

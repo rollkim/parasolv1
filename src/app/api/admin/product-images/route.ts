@@ -4,10 +4,12 @@ import { db } from "@/db";
 import { readAdminSessionUserId } from "@/server/auth/admin-session";
 import { getAdminSessionProfile } from "@/server/services/admin-auth.service";
 import {
+  IMAGE_FOLDERS,
   ImageTooLargeError,
   MAX_IMAGE_BYTES,
   storeProductImage,
   UnsupportedImageTypeError,
+  type ImageFolder,
 } from "@/server/services/image-storage.service";
 
 /**
@@ -62,12 +64,23 @@ export async function POST(request: Request) {
     }
   }
 
+  // 폴더는 목록에 있는 값만 받는다 — 임의 문자열을 그대로 쓰면 경로 조작 입력이 된다
+  const requestedFolder = formData.get("folder");
+  const folder: ImageFolder = IMAGE_FOLDERS.includes(requestedFolder as ImageFolder)
+    ? (requestedFolder as ImageFolder)
+    : "products";
+
   const now = new Date();
   const storedPaths: string[] = [];
   try {
     for (const file of files) {
       storedPaths.push(
-        await storeProductImage({ bytes: await file.arrayBuffer(), mimeType: file.type, now }),
+        await storeProductImage({
+          bytes: await file.arrayBuffer(),
+          mimeType: file.type,
+          now,
+          folder,
+        }),
       );
     }
   } catch (error) {

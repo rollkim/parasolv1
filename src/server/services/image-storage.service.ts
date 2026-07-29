@@ -62,8 +62,18 @@ function getUploadRootDir(): string {
   return path.resolve(process.cwd(), "..", "parasol-uploads");
 }
 
-/** "products/202607/ab12cd34.jpg" 형태 — DB(product_image.path)에 이 상대경로만 저장한다 */
+/** "products/202607/ab12cd34.jpg" 형태 — DB(product_image.path 등)에 이 상대경로만 저장한다 */
 export type StoredImagePath = string;
+
+/**
+ * 업로드 용도별 최상위 폴더. 열린 문자열이 아니라 목록으로 고정한다 —
+ * 클라이언트가 폴더명을 정하게 두면 그 자체가 경로 조작 입력이 된다.
+ */
+export const IMAGE_FOLDERS = ["products", "banners"] as const;
+export type ImageFolder = (typeof IMAGE_FOLDERS)[number];
+
+/** DB·zod가 공유하는 저장 경로 형식 */
+export const STORED_IMAGE_PATH_PATTERN = /^(products|banners)\/\d{6}\/[a-f0-9]+\.(jpg|png|webp|avif)$/;
 
 /**
  * 저장 상대경로를 실제 파일 경로로 바꾼다.
@@ -101,6 +111,8 @@ export async function storeProductImage(input: {
   mimeType: string;
   /** 파일명이 시간순이 되도록 하는 접두 — 월 폴더 계산에도 쓴다 */
   now: Date;
+  /** 용도별 폴더. 목록에 없는 값은 들어올 수 없다(타입으로 막는다) */
+  folder?: ImageFolder;
 }): Promise<StoredImagePath> {
   const extension = ALLOWED_IMAGE_TYPES[input.mimeType];
   if (!extension) throw new UnsupportedImageTypeError(input.mimeType);
@@ -110,7 +122,7 @@ export async function storeProductImage(input: {
 
   const yearMonth = `${input.now.getFullYear()}${String(input.now.getMonth() + 1).padStart(2, "0")}`;
   const fileName = `${randomBytes(12).toString("hex")}.${extension}`;
-  const relativePath = `products/${yearMonth}/${fileName}`;
+  const relativePath = `${input.folder ?? "products"}/${yearMonth}/${fileName}`;
 
   const absolutePath = resolveStoredImageFile(relativePath);
   await mkdir(path.dirname(absolutePath), { recursive: true });

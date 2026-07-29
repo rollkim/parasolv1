@@ -5,6 +5,7 @@ import { adminCategoryRouter } from "./admin-category";
 import { adminClaimRouter } from "./admin-claim";
 import { adminCustomerRouter } from "./admin-customer";
 import { adminDashboardRouter } from "./admin-dashboard";
+import { adminDisplayRouter } from "./admin-display";
 import { adminOrderRouter } from "./admin-order";
 import { adminProductRouter } from "./admin-product";
 import { adminReviewRouter } from "./admin-review";
@@ -28,6 +29,7 @@ export const appRouter = router({
   adminClaim: adminClaimRouter,
   adminCustomer: adminCustomerRouter,
   adminDashboard: adminDashboardRouter,
+  adminDisplay: adminDisplayRouter,
   adminOrder: adminOrderRouter,
   adminProduct: adminProductRouter,
   adminReview: adminReviewRouter,
