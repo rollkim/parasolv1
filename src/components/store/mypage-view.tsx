@@ -8,7 +8,8 @@
 //  - 등급 뱃지·적립금/쿠폰/누적주문 스탯 3열: 적립금·쿠폰·주문이 미구현(2차 확정 숨김 대상 포함)이라
 //    프로필 카드는 아바타·이름·이메일만 남긴다. 이메일 마스킹도 안 한다(본인 화면 — 목업은 데모 값).
 //  - 주문 내역: 주문 도메인 미구현 — 목업 시드 카드 대신 빈 상태(목업에 빈 상태 규격이 없어 신규 설계).
-//  - 내 리뷰: 리뷰 작성·조회 미구현 — 빈 상태.
+//  - 내 리뷰: 목록은 이 섹션이, 작성 폼은 /mypage/reviews가 맡는다 — 별점·태그·사진이 들어가는
+//    폼을 섹션에 얹으면 다른 섹션 상태까지 이 화면이 떠안는다.
 //  - 배송지 추가/수정 폼: 목업은 토스트 데모뿐 — 오버레이 모음 폼 모달 규격(Dialog)로 신규 구성.
 //    우편번호 검색 API는 후속 배선이라 수동 입력 + 안내 문구. 삭제는 확인 모달 경유(목업 실측).
 //  - 기본 배송지 수정 시 '기본' 체크박스를 숨긴다: 해제를 허용하면 기본 배송지가 0개인 상태가 생긴다.
@@ -218,16 +219,91 @@ function OrdersSection() {
   )
 }
 
+/**
+ * 내 리뷰 — 쓸 상품과 쓴 리뷰를 함께 보여준다.
+ *
+ * 작성 폼은 이 섹션 안에서 열지 않고 /mypage/reviews로 보낸다: 별점·태그·사진·본문이
+ * 들어가는 폼이라 섹션 하나에 얹으면 다른 섹션 상태까지 이 화면이 떠안는다.
+ */
 function ReviewsSection() {
+  const trpc = useTRPC()
+  const reviewableQuery = useQuery(trpc.review.listReviewable.queryOptions())
+  const mineQuery = useQuery(trpc.review.listMine.queryOptions())
+
+  if (reviewableQuery.isPending || mineQuery.isPending) {
+    return (
+      <div className="flex min-h-32 items-center justify-center" aria-busy="true">
+        <Spinner />
+        <span className="sr-only">리뷰를 불러오는 중입니다</span>
+      </div>
+    )
+  }
+
+  const reviewableCount = reviewableQuery.data?.length ?? 0
+  const myReviews = mineQuery.data ?? []
+
+  if (reviewableCount === 0 && myReviews.length === 0) {
+    return (
+      <EmptyState
+        size="section"
+        stateTone="neutral"
+        headingLevel={3}
+        icon={<StarIcon aria-hidden="true" />}
+        title="작성한 리뷰가 없어요"
+        description="구매한 상품을 받으시면 여기에서 리뷰를 남기실 수 있어요."
+      />
+    )
+  }
+
   return (
-    <EmptyState
-      size="section"
-      stateTone="neutral"
-      headingLevel={3}
-      icon={<StarIcon aria-hidden="true" />}
-      title="작성한 리뷰가 없어요"
-      description="구매한 상품의 리뷰를 남기면 여기에 모여요."
-    />
+    <div className="flex flex-col gap-4">
+      {reviewableCount > 0 ? (
+        <div className="flex flex-wrap items-center gap-3 rounded-[var(--radius)] border border-primary bg-card p-4">
+          <p className="m-0 min-w-0 flex-1 text-sm">
+            리뷰를 기다리는 상품이 <b className="font-bold">{reviewableCount}개</b> 있어요.
+          </p>
+          <Button variant="primary" size="sm-44" asChild>
+            <Link href="/mypage/reviews">리뷰 쓰러 가기</Link>
+          </Button>
+        </div>
+      ) : null}
+
+      {myReviews.length === 0 ? (
+        <p className="m-0 text-[13px] text-muted-foreground">아직 작성한 리뷰가 없어요.</p>
+      ) : (
+        <ul className="m-0 flex list-none flex-col gap-2 p-0">
+          {myReviews.map((myReview) => (
+            <li
+              key={myReview.reviewId}
+              className="rounded-[var(--radius)] border border-border bg-card p-3.5"
+            >
+              <div className="flex flex-wrap items-center gap-2">
+                <span aria-hidden="true" className="text-sm text-primary">
+                  {"★".repeat(myReview.rating)}
+                </span>
+                <span className="text-[13px] font-bold">{myReview.rating}점</span>
+                <span className="min-w-0 flex-1 truncate text-[13px]">
+                  {myReview.productName}
+                </span>
+                {/* 숨김 처리된 리뷰도 본인에게는 보인다 — 사라지면 왜 없는지 알 수 없다 */}
+                {myReview.isHidden ? (
+                  <span className="rounded-[5px] border border-border px-1.5 py-0.5 text-[11px] font-bold text-muted-foreground">
+                    비공개 처리됨
+                  </span>
+                ) : null}
+              </div>
+              <p className="m-0 mt-2 whitespace-pre-wrap text-[13px] leading-[1.8] text-muted-foreground">
+                {myReview.content}
+              </p>
+            </li>
+          ))}
+        </ul>
+      )}
+
+      <Button variant="outline" size="sm-44" className="self-start" asChild>
+        <Link href="/mypage/reviews">리뷰 전체 관리</Link>
+      </Button>
+    </div>
   )
 }
 
