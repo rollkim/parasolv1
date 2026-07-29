@@ -21,10 +21,12 @@ import { calcExpiresAt } from "@/domain/point";
 
 import {
   PointBalanceShortageError,
+  PointExpiredShortageError,
   clawbackPoints,
   earnPoints,
   expirePointsForCustomer,
   getPointBalance,
+  getUsablePointBalance,
   restoreUsedPoints,
   sumRemainingLots,
   usePoints,
@@ -268,6 +270,83 @@ async function main() {
     check(
       secondRun.expiredAmount === 0,
       "배치를 다시 돌려도 두 번 소멸하지 않는다 — 재실행이 안전하다",
+    );
+
+    console.log("\n[9] ★만료분은 배치 전에도 쓸 수 없다 기대");
+    // 소멸 배치를 신뢰의 근거로 삼지 않는다 — 배치가 하루 멈춘 날 만료된 돈이 나가면 안 된다
+    const [expiredOnly] = await db
+      .insert(customer)
+      .values({
+        name: `만료검증${SUFFIX}`,
+        email: `expired-${SUFFIX}@example.com`,
+        isActive: true,
+      })
+      .returning({ id: customer.id });
+    createdCustomerIds.push(expiredOnly.id);
+
+    await db.transaction((tx) =>
+      earnPoints(tx, {
+        customerId: expiredOnly.id,
+        amount: 3000,
+        title: "이미 만료된 적립",
+        tagCode: "manual",
+        expiresAt: new Date(now.getTime() - 60 * 60 * 1000), // 한 시간 전 만료
+        dedupeKey: `check:${SUFFIX}:stale`,
+      }),
+    );
+    await db.transaction((tx) =>
+      earnPoints(tx, {
+        customerId: expiredOnly.id,
+        amount: 1000,
+        title: "살아있는 적립",
+        tagCode: "manual",
+        expiresAt,
+        dedupeKey: `check:${SUFFIX}:fresh`,
+      }),
+    );
+
+    check(
+      (await getPointBalance(db, expiredOnly.id)) === 4000,
+      "보유 잔액은 만료분을 포함한다 — 소멸 배치가 돌기 전이라 캐시에 남아 있다",
+    );
+    check(
+      (await getUsablePointBalance(db, expiredOnly.id)) === 1000,
+      "★쓸 수 있는 금액은 1000 — 만료분 3000은 빠진다",
+    );
+    check(
+      (await sumRemainingLots(db, expiredOnly.id)) === 4000,
+      "대사용 원장 합계는 만료분을 포함한다 — 캐시와 같은 기준이라야 대사가 성립한다",
+    );
+
+    let expiredUseBlocked = false;
+    try {
+      await db.transaction((tx) =>
+        usePoints(tx, {
+          customerId: expiredOnly.id,
+          amount: 2000,
+          title: "만료분 사용 시도",
+        }),
+      );
+    } catch (error) {
+      expiredUseBlocked = error instanceof PointExpiredShortageError;
+    }
+    check(
+      expiredUseBlocked,
+      "★만료된 적립금은 결제에 쓸 수 없다 — 배치가 늦어도 새지 않는다",
+    );
+    check(
+      (await getPointBalance(db, expiredOnly.id)) === 4000,
+      "막힌 시도는 잔액을 건드리지 않았다(트랜잭션 롤백)",
+    );
+
+    // 쓸 수 있는 만큼은 정상 사용된다 — 만료분 때문에 전부 막히면 안 된다
+    await db.transaction((tx) =>
+      usePoints(tx, { customerId: expiredOnly.id, amount: 1000, title: "살아있는 분 사용" }),
+    );
+    check(
+      (await getUsablePointBalance(db, expiredOnly.id)) === 0 &&
+        (await getPointBalance(db, expiredOnly.id)) === 3000,
+      "살아있는 1000은 정상 사용 — 만료분 3000은 캐시에 남아 배치를 기다린다",
     );
   } finally {
     if (createdCustomerIds.length > 0) {

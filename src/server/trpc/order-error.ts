@@ -76,6 +76,7 @@ import { StockShortageError } from "@/server/services/inventory.service";
 import { OrderAccessDeniedError } from "@/server/services/order-query.service";
 import { AddressLimitExceededError } from "@/server/services/customer.service";
 import { UnknownBulkPurchaseTypeError } from "@/server/services/bulk-inquiry.service";
+import { OrderConfirmNotAllowedError } from "@/server/services/order-confirm.service";
 import {
   AdminStoryNotFoundError,
   DuplicateStorySlugError,
@@ -88,6 +89,7 @@ import {
 } from "@/server/services/order.service";
 import {
   PointBalanceShortageError,
+  PointExpiredShortageError,
   PointLedgerDriftError,
 } from "@/server/services/point.service";
 import {
@@ -135,6 +137,11 @@ export function toOrderTRPCError(error: unknown): unknown {
     });
   }
 
+  // 만료분이 섞여 잔액은 보이는데 못 쓰는 경우 — 데이터 이상이 아니라 정상 상황이다
+  if (error instanceof PointExpiredShortageError) {
+    return new TRPCError({ code: "CONFLICT", message: error.message, cause: error });
+  }
+
   // 원장과 잔액이 어긋난 상태 — 고객이 고칠 수 없다. 쓰게 두면 차이가 커지므로 막고 알린다
   if (error instanceof PointLedgerDriftError) {
     return new TRPCError({
@@ -143,6 +150,11 @@ export function toOrderTRPCError(error: unknown): unknown {
         "적립금 처리 중 문제가 발생했습니다. 적립금 없이 주문하시거나 고객센터로 문의해 주세요.",
       cause: error,
     });
+  }
+
+  // 문구가 원인+다음 행동을 담는다(배송 완료 주문만 확정 가능)
+  if (error instanceof OrderConfirmNotAllowedError) {
+    return new TRPCError({ code: "CONFLICT", message: error.message, cause: error });
   }
 
   // ── 관리자 이야기 ──

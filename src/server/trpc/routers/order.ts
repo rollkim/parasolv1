@@ -11,6 +11,7 @@ import {
   lookupGuestOrder,
 } from "@/server/services/order-query.service";
 import { isDirectBuyToken } from "@/server/services/cart.service";
+import { confirmOrderByCustomer } from "@/server/services/order-confirm.service";
 import { createPendingOrder } from "@/server/services/order.service";
 import { confirmPayment } from "@/server/services/payment.service";
 
@@ -222,6 +223,23 @@ export const orderRouter = router({
   ),
 
   /** 회원 주문 상세 — 세션 소유자만. 본인 화면이라 마스킹하지 않는다 */
+  /**
+   * 구매확정 — **이 경로가 없으면 구매 적립이 한 번도 실행되지 않는다.**
+   * 전이표가 delivered→confirmed를 customer·system에만 허용하는데(운영자가 고객 대신
+   * 확정하면 클레임 기한을 임의로 끊는 셈이다) 그 둘을 부르는 코드가 없었다.
+   * 적립은 applyOrderTransition 안에 걸려 있어 도달만 하면 일어난다.
+   */
+  confirmPurchase: protectedProcedure
+    .input(z.object({ orderNo: z.string().trim().min(1).max(40) }))
+    .mutation(({ ctx, input }) =>
+      withOrderErrorMapping(() =>
+        confirmOrderByCustomer(ctx.db, {
+          orderNo: input.orderNo,
+          customerId: ctx.customerId,
+        }),
+      ),
+    ),
+
   getMyOrderDetail: protectedProcedure
     .input(z.object({ orderNo: orderNoSchema }))
     .query(({ ctx, input }) =>

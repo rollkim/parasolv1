@@ -197,8 +197,45 @@ async function main() {
       { expectedBase, shippingFee: orderAmounts.shippingFee },
     );
 
+    console.log("\n[3-0] ★확정 경로가 실제로 앱 안에 있는가");
+    // 이전에는 delivered→confirmed를 부르는 코드가 앱에 없어 적립이 한 번도 실행되지 않았다.
+    // 검증이 직접 전이시켜 통과했을 뿐이다 — 앱이 해야 할 일을 검증이 대신하면 안 된다.
+    const { confirmOrderByCustomer, runAutoConfirm } = await import("../order-confirm.service");
+
+    const secondOrder = await placeDeliveredOrder(variant.id, signedUp.customerId, 1, leftovers);
+    const beforeCustomerConfirm = await getPointBalance(db, signedUp.customerId);
+    const customerConfirmed = await confirmOrderByCustomer(db, {
+      orderNo: secondOrder.orderNo,
+      customerId: signedUp.customerId,
+    });
+    check(customerConfirmed.confirmed, "고객 확정 경로로 confirmed가 된다");
+    check(
+      (await getPointBalance(db, signedUp.customerId)) > beforeCustomerConfirm,
+      "★고객이 확정하면 적립이 실제로 일어난다 — 앱에 확정 경로가 생겼다",
+    );
+
+    // 자동확정 배치도 같은 초크포인트를 지나는지 — 배송완료 시각을 기한 밖으로 밀어 확인한다
+    const thirdOrder = await placeDeliveredOrder(variant.id, signedUp.customerId, 1, leftovers);
+    await db
+      .update(orders)
+      .set({ deliveredAt: new Date(Date.now() - 30 * 24 * 60 * 60 * 1000) })
+      .where(eq(orders.id, thirdOrder.orderId));
+    const beforeAutoConfirm = await getPointBalance(db, signedUp.customerId);
+    const autoReport = await runAutoConfirm(db);
+    check(
+      autoReport.confirmedOrderNos.includes(thirdOrder.orderNo),
+      "★자동확정 배치가 기한 지난 주문을 확정한다",
+      autoReport.failed,
+    );
+    check(
+      (await getPointBalance(db, signedUp.customerId)) > beforeAutoConfirm,
+      "★자동확정도 같은 초크포인트를 지나 적립을 일으킨다",
+    );
+
     console.log("\n[3] 재확정 — 중복 적립 차단 기대");
-    // 이미 confirmed라 전이는 changed:false로 끝나지만, 적립 경로를 직접 한 번 더 두드린다
+    // 이미 confirmed라 전이는 changed:false로 끝나지만, 적립 경로를 직접 한 번 더 두드린다.
+    // 직전 잔액을 여기서 다시 읽는다 — [3-0]에서 주문 2건을 더 확정했으므로 위 변수는 낡았다
+    const balanceBeforeDuplicate = await getPointBalance(db, signedUp.customerId);
     const { earnPurchasePoints } = await import("../point-earn.service");
     const duplicateEarn = await db.transaction((tx) =>
       earnPurchasePoints(tx, order.orderId),
@@ -209,7 +246,7 @@ async function main() {
       duplicateEarn,
     );
     check(
-      (await getPointBalance(db, signedUp.customerId)) === balanceAfterConfirm,
+      (await getPointBalance(db, signedUp.customerId)) === balanceBeforeDuplicate,
       "잔액이 늘지 않았다",
     );
 
@@ -220,6 +257,9 @@ async function main() {
       .where(eq(orderItem.orderId, order.orderId))
       .limit(1);
 
+    // 직전 잔액을 여기서 읽는다 — 앞 단계에서 확정이 늘어나면 고정 변수는 낡는다.
+    // 증분을 보는 검증은 "직전 값 + 기대 증분"으로 짜야 앞 단계 변경에 깨지지 않는다
+    const balanceBeforeReview = await getPointBalance(db, signedUp.customerId);
     const created = await createReview(db, {
       customerId: signedUp.customerId,
       orderItemId: reviewTarget.orderItemId,
@@ -232,9 +272,9 @@ async function main() {
     const expectedReviewEarn = policy.reviewBonusPoint + policy.photoReviewBonusPoint;
     const balanceAfterReview = await getPointBalance(db, signedUp.customerId);
     check(
-      balanceAfterReview === balanceAfterConfirm + expectedReviewEarn,
+      balanceAfterReview === balanceBeforeReview + expectedReviewEarn,
       `포토리뷰 적립 ${expectedReviewEarn}원 (기본 ${policy.reviewBonusPoint} + 사진 ${policy.photoReviewBonusPoint})`,
-      balanceAfterReview,
+      { balanceBeforeReview, balanceAfterReview },
     );
 
     console.log("\n[5] 리뷰 재작성 — 중복 적립 차단 기대");

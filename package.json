@@ -12,6 +12,7 @@
     "db:seed:dev": "tsx src/db/seed/seed-dev.ts",
     "test": "vitest run",
     "ops:reconcile": "tsx --conditions=react-server src/server/services/_ops/reconcile-payments.ts",
+    "ops:daily": "tsx --conditions=react-server src/server/services/_ops/auto-confirm-orders.ts",
     "ops:sweep-files": "tsx --conditions=react-server src/server/services/_ops/sweep-files.ts",
     "check:order2": "tsx --conditions=react-server src/server/services/_integration/order-phase2.check.ts",
     "check:order3": "tsx --conditions=react-server src/server/services/_integration/order-phase3.check.ts",

@@ -15,7 +15,11 @@
 
 import Link from "next/link"
 
-import { useQuery } from "@tanstack/react-query"
+import * as React from "react"
+
+import { useRouter } from "next/navigation"
+
+import { useMutation, useQuery } from "@tanstack/react-query"
 
 import { ImagePlaceholder } from "@/components/store/image-placeholder"
 import { Button } from "@/components/ui/button"
@@ -42,7 +46,10 @@ export function OrderDetailView({ orderNo }: { orderNo: string }) {
   const trpc = useTRPC()
   const { showToast } = useToast()
 
+  const router = useRouter()
   const orderQuery = useQuery(trpc.order.getMyOrderDetail.queryOptions({ orderNo }))
+  const confirmMutation = useMutation(trpc.order.confirmPurchase.mutationOptions())
+  const [isConfirming, setIsConfirming] = React.useState(false)
   const orderView = orderQuery.data
 
   if (orderQuery.isPending) {
@@ -270,6 +277,61 @@ export function OrderDetailView({ orderNo }: { orderNo: string }) {
       <aside className="self-start lg:sticky lg:top-4">
         <div className="rounded-[var(--radius)] border border-border bg-card p-5">
           <h2 className="m-0 font-heading text-base font-extrabold">주문 관리</h2>
+
+          {/* 구매확정 — 배송완료 주문만. 확정하면 구매 적립이 일어난다(자동확정 배치도 같은 경로).
+              확정은 클레임 기한을 스스로 끊는 셈이라 되돌릴 수 없어 확인을 받는다 */}
+          {orderView.orderStatus === "delivered" ? (
+            <div className="mt-3 flex flex-col gap-2">
+              {isConfirming ? (
+                <div
+                  role="alertdialog"
+                  aria-label="구매확정 확인"
+                  className="rounded-[var(--radius)] border border-primary bg-secondary p-3"
+                >
+                  <p className="m-0 text-[13px] leading-relaxed">
+                    구매확정하면 적립금이 지급되고, <b>교환·반품을 신청할 수 없게</b> 됩니다.
+                    진행할까요?
+                  </p>
+                  <div className="mt-2.5 flex gap-2">
+                    <Button
+                      variant="ghost"
+                      size="sm-44"
+                      onClick={() => setIsConfirming(false)}
+                    >
+                      취소
+                    </Button>
+                    <Button
+                      variant="primary"
+                      size="sm-44"
+                      disabled={confirmMutation.isPending}
+                      onClick={() =>
+                        confirmMutation.mutate(
+                          { orderNo: orderView.orderNo },
+                          {
+                            onSuccess: () => {
+                              showToast("구매확정했어요. 적립금이 지급됩니다.", {
+                                toastVariant: "info",
+                              })
+                              setIsConfirming(false)
+                              router.refresh()
+                            },
+                            onError: (confirmError) =>
+                              showToast(confirmError.message, { toastVariant: "error" }),
+                          },
+                        )
+                      }
+                    >
+                      {confirmMutation.isPending ? "처리 중…" : "구매확정"}
+                    </Button>
+                  </div>
+                </div>
+              ) : (
+                <Button variant="primary" size="sm-46" onClick={() => setIsConfirming(true)}>
+                  구매확정
+                </Button>
+              )}
+            </div>
+          ) : null}
 
           {orderView.availableClaimTypes.length > 0 ? (
             <div className="mt-3 flex flex-col gap-2">

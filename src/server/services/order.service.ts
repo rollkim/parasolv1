@@ -24,7 +24,7 @@ import { checkPointUse } from "@/domain/point";
 import { getCartWithItems, type CartLine } from "./cart.service";
 import { rememberOrderAddress } from "./customer.service";
 import type { DatabaseClient, TransactionClient } from "./db-client";
-import { getPointBalance, usePoints } from "./point.service";
+import { getUsablePointBalance, usePoints } from "./point.service";
 import { loadPointPolicy } from "./point-policy.service";
 import { loadShippingPolicy } from "./shipping-policy.service";
 import { getRequiredTermsDocumentIds } from "./terms.service";
@@ -267,7 +267,9 @@ async function createPendingOrderInTransaction(
     let pointToUse = 0;
     if (requestedPoint > 0 && input.customerId !== null) {
       const pointPolicy = await loadPointPolicy(tx);
-      const balance = await getPointBalance(tx, input.customerId);
+      // 캐시 잔액이 아니라 **쓸 수 있는 금액**으로 판정한다 — 캐시에는 만료분이 섞여 있어
+      // 그걸로 통과시키면 아래 usePoints에서 뒤늦게 막힌다(고객은 이유를 알 수 없다)
+      const balance = await getUsablePointBalance(tx, input.customerId);
       const useCheck = checkPointUse(
         requestedPoint,
         balance,

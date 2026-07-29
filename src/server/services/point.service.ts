@@ -1,6 +1,6 @@
 import "server-only";
 
-import { and, asc, eq, gt, isNotNull, lte, sql } from "drizzle-orm";
+import { and, asc, eq, gt, inArray, isNotNull, isNull, lte, or, sql } from "drizzle-orm";
 
 import { customer, pointTransaction } from "@/db/schema";
 import { planFifoDeduction, type PointLot } from "@/domain/point";
@@ -26,6 +26,21 @@ export class PointBalanceShortageError extends Error {
   constructor() {
     super("적립금 잔액이 부족합니다. 사용 금액을 다시 확인해 주세요.");
     this.name = "PointBalanceShortageError";
+  }
+}
+
+/**
+ * 잔액에는 남아 있지만 기한이 지나 쓸 수 없는 경우.
+ *
+ * 소멸 배치가 아직 안 돌아 캐시에 만료분이 남은 상태다 — 데이터 이상이 아니라 정상 상황이다.
+ * 드리프트와 구분하는 이유: 같은 오류로 묶으면 운영자가 없는 버그를 쫓게 된다.
+ */
+export class PointExpiredShortageError extends Error {
+  constructor() {
+    super(
+      "사용할 수 있는 적립금이 부족합니다. 유효기간이 지난 적립금은 사용할 수 없어요. 잔액을 다시 확인해 주세요.",
+    );
+    this.name = "PointExpiredShortageError";
   }
 }
 
@@ -58,17 +73,34 @@ export type PointEarnResult =
   | { earned: false; reason: "duplicate" | "zero_amount" };
 
 /**
- * 쓸 수 있는 적립분 — **잔여가 남은 행이면 종류를 가리지 않는다.**
+ * 잔여가 남은 적립분 — **종류를 가리지 않는다.**
  *
  * 적립(earn)만 세면 반품 복원분(cancel, remaining_amount 있음)이 잔액에는 잡히는데
- * 결제에는 안 잡혀서, 고객은 잔액이 보이는데 쓸 수 없고 원장과 캐시가 갈라진다.
+ * 결제에는 안 잡혀서, 고객은 잔액이 보이는데 쓸 수 없다.
  * '적립분인가'는 type이 아니라 remaining_amount가 정한다 — type은 왜 생겼는지(화면 표시)를 담을 뿐이다.
- * FIFO 차감과 잔여 합계가 같은 조건을 보게 여기 한 곳에만 둔다.
+ *
+ * 이것이 **잔액 캐시(customer.point_balance)와 맞아야 하는 합계**다(만료분 포함).
+ * 소멸 배치가 만료분을 0으로 만들면 자연히 캐시와 함께 줄어든다.
  */
-function spendableLotCondition(customerId: number) {
+function remainingLotCondition(customerId: number) {
   return and(
     eq(pointTransaction.customerId, customerId),
     gt(pointTransaction.remainingAmount, 0),
+  );
+}
+
+/**
+ * **지금 결제에 쓸 수 있는** 적립분 — 위 조건에 "기한이 안 지났다"를 더한다.
+ *
+ * 소멸 배치를 신뢰의 근거로 삼지 않는다. 배치가 하루 멈추면 만료된 돈이 그대로 나가기 때문이다.
+ * 쓰는 순간 기한을 보면 배치가 늦어도 절대 새지 않는다 — 배치는 원장을 정리하는 일이고,
+ * 쓸 수 있는지 판정하는 일은 여기다.
+ * expires_at이 비어 있으면 무기한이라 항상 쓸 수 있다.
+ */
+function spendableLotCondition(customerId: number) {
+  return and(
+    remainingLotCondition(customerId),
+    or(isNull(pointTransaction.expiresAt), gt(pointTransaction.expiresAt, sql`now()`)),
   );
 }
 
@@ -179,13 +211,25 @@ export async function usePoints(
     remainingAmount: row.remainingAmount ?? 0,
   }));
 
-  // 잔액은 통과했는데 적립분이 모자라면 캐시와 원장이 어긋난 것 — 트랜잭션째 되돌린다
-  let deductions;
-  try {
-    deductions = planFifoDeduction(lots, input.amount);
-  } catch (error) {
-    throw new PointLedgerDriftError(input.customerId, error);
+  // 잔액(만료분 포함)은 통과했는데 쓸 수 있는 적립분이 모자란 경우가 둘이다:
+  //  ① 모자란 만큼이 만료분 → 정상 상황이다. 소멸 배치가 아직 안 돌아 캐시에 남아 있을 뿐이니
+  //     "잔액 부족"으로 알린다. 이걸 데이터 이상으로 처리하면 운영자가 없는 버그를 쫓는다.
+  //  ② 만료분을 세어도 모자람 → 캐시와 원장이 정말 어긋났다.
+  const spendableTotal = lots.reduce((sum, lot) => sum + lot.remainingAmount, 0);
+  if (spendableTotal < input.amount) {
+    const [remainingRow] = await tx
+      .select({
+        total: sql<number>`coalesce(sum(${pointTransaction.remainingAmount}), 0)::int`,
+      })
+      .from(pointTransaction)
+      .where(remainingLotCondition(input.customerId));
+    const remainingTotal = Number(remainingRow?.total ?? 0);
+    // 트랜잭션이 롤백되므로 위에서 깎은 잔액도 함께 되돌아간다
+    if (remainingTotal >= input.amount) throw new PointExpiredShortageError();
+    throw new PointLedgerDriftError(input.customerId);
   }
+
+  const deductions = planFifoDeduction(lots, input.amount);
 
   for (const deduction of deductions) {
     await tx
@@ -395,7 +439,13 @@ export async function expirePointsForCustomer(
   return { expiredAmount, balanceAfter };
 }
 
-/** 잔액 조회 — 화면·검증용. 원장 합계가 아니라 캐시를 읽는다(둘은 같아야 한다) */
+/**
+ * 보유 잔액(캐시) — **만료분을 포함한다.**
+ *
+ * 소멸 배치가 돌기 전까지 만료분이 여기 남아 있다. 화면에 "보유 적립금"으로 쓸 수는 있지만
+ * **결제에 쓸 수 있는 금액은 아니다** — 그건 getUsablePointBalance다.
+ * 원장 잔여 합계(sumRemainingLots)와 항상 같아야 한다(대사 기준).
+ */
 export async function getPointBalance(
   client: QueryClient,
   customerId: number,
@@ -407,7 +457,33 @@ export async function getPointBalance(
   return row?.pointBalance ?? 0;
 }
 
-/** 원장 잔여 합계 — 잔액 캐시와 맞는지 대사할 때 쓴다(검증·운영) */
+/**
+ * **지금 결제에 쓸 수 있는 금액** — 기한이 안 지난 적립분만 합한다.
+ *
+ * 체크아웃 검증·화면 안내는 반드시 이 값을 써야 한다. 캐시 잔액으로 안내하면
+ * "5,000원 있다고 나오는데 쓰려니 안 된다"가 된다(만료분이 섞여 있어서).
+ * 캐시가 아니라 매번 합하는 이유: 만료는 시각이 지나면 저절로 일어나는 일이라
+ * 캐시로 둘 수 없다 — 어떤 캐시도 '방금 만료된 것'을 모른다.
+ */
+export async function getUsablePointBalance(
+  client: QueryClient,
+  customerId: number,
+): Promise<number> {
+  const [row] = await client
+    .select({
+      total: sql<number>`coalesce(sum(${pointTransaction.remainingAmount}), 0)::int`,
+    })
+    .from(pointTransaction)
+    .where(spendableLotCondition(customerId));
+  return Number(row?.total ?? 0);
+}
+
+/**
+ * 원장 잔여 합계 — 잔액 캐시와 맞는지 대사할 때 쓴다(검증·운영).
+ *
+ * **만료분을 포함한다.** 캐시도 만료분을 포함하므로 같은 기준이어야 대사가 성립한다 —
+ * 여기서 만료분을 빼면 소멸 배치가 돌기 전까지 항상 불일치로 보인다.
+ */
 export async function sumRemainingLots(
   client: QueryClient,
   customerId: number,
@@ -415,6 +491,6 @@ export async function sumRemainingLots(
   const [row] = await client
     .select({ total: sql<number>`coalesce(sum(${pointTransaction.remainingAmount}), 0)::int` })
     .from(pointTransaction)
-    .where(spendableLotCondition(customerId));
+    .where(remainingLotCondition(customerId));
   return row?.total ?? 0;
 }
