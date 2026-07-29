@@ -656,10 +656,19 @@ export const article = pgTable("article", {
   content: text("content").notNull(),
   coverImagePath: text("cover_image_path"),
   makerId: bigint("maker_id", { mode: "number" }).references(() => maker.id, { onDelete: "set null" }),
+  categoryCode: text("category_code"),           // common_code(article_category): workshop/people/ingredient/recipe
+  // 이 이야기의 제품 — 이야기에서 구매로 가는 동선. 상품이 지워져도 이야기는 남는다
+  productId: bigint("product_id", { mode: "number" }).references(() => product.id, { onDelete: "set null" }),
+  authorName: text("author_name"),
   isFeatured: boolean("is_featured").notNull().default(false),
   publishedAt: timestamp("published_at", { withTimezone: true }),
   ...audit,
-}, (t) => [uniqueIndex("article_slug_uq").on(t.slug)]);
+}, (t) => [
+  uniqueIndex("article_slug_uq").on(t.slug),
+  index("article_product_idx").on(t.productId),
+  // 코드값 한글 입력 차단 — 규약을 DB가 강제한다(RULE-11)
+  check("article_category_code_ascii_ck", sql`${t.categoryCode} IS NULL OR ${t.categoryCode} ~ '^[a-z0-9_]+$'`),
+]);
 
 // =============================================================
 // 게시판 · 리뷰 · 문의

@@ -12,6 +12,7 @@ import { asc, count, eq, inArray } from "drizzle-orm";
 
 import { db } from "@/db";
 import {
+  article,
   banner,
   board,
   category,
@@ -334,6 +335,139 @@ async function seedSampleBoardPosts() {
   );
 }
 
+/**
+ * 이야기 샘플 — 핸드오프 'PaRaSOL 이야기.dc.html'의 데모 6건.
+ *
+ * 본문은 article.content 한 칸에 경량 규약으로 담는다(`## 소제목` · `> 인용` · `![캡션](경로)`).
+ * productSlug는 상품 시드가 만든 slug — 이야기에서 구매로 가는 동선이라 실제 상품에 걸어둔다.
+ */
+const SAMPLE_ARTICLES: {
+  slug: string;
+  title: string;
+  summary: string;
+  categoryCode: string;
+  productSlug: string;
+  isFeatured: boolean;
+  publishedAt: string;
+  content: string;
+}[] = [
+  {
+    slug: "morning-oven-6am",
+    title: "매일 아침 6시, 오븐이 데워지는 시간",
+    summary: "하루를 여는 첫 번째 반죽. 작업장의 이른 아침 풍경을 담았습니다.",
+    categoryCode: "workshop",
+    productSlug: "oat-cookie-set",
+    isFeatured: true,
+    publishedAt: "2026-07-18",
+    content: [
+      "해가 완전히 뜨기 전, 작업장의 불이 하나둘 켜집니다. 가장 먼저 하는 일은 오븐을 데우는 것. 온도가 올라오는 20분 동안 재료를 계량하고, 어제 저녁 준비해 둔 반죽을 냉장고에서 꺼냅니다.",
+      "> 서두르면 반죽이 먼저 알아요. 그래서 우리는 서두르지 않습니다.",
+      "오트밀과 통밀가루의 비율은 계절에 따라 조금씩 달라집니다. 습도가 높은 여름에는 물의 양을 살짝 줄이고, 반죽의 되기를 손끝으로 확인합니다. 계량기가 알려주지 않는 것을 손이 기억합니다.",
+      "## 같은 맛을 지킨다는 것",
+      "매일 같은 맛을 낸다는 건 생각보다 어려운 일입니다. 표준 레시피를 지키되, 그날의 재료 상태에 맞춰 미세하게 조정하는 균형 감각이 필요합니다. 이 감각은 하루아침에 생기지 않습니다.",
+      "그래서 우리는 한 사람이 한 공정에 충분히 익숙해질 때까지 기다립니다. 익숙함이 정확함이 되고, 정확함이 신뢰가 됩니다.",
+    ].join("\n\n"),
+  },
+  {
+    slug: "twelve-years-of-packing",
+    title: "12년째 포장을 맡고 있는 손",
+    summary: "상자를 여미는 마지막 손길에 담긴 자부심에 대하여.",
+    categoryCode: "people",
+    productSlug: "jujube-chip-set",
+    isFeatured: false,
+    publishedAt: "2026-07-05",
+    content: [
+      "모든 제품은 사람의 손을 거쳐 상자에 담깁니다. 리본의 매듭 하나에도 나름의 규칙이 있습니다.",
+      "> 받는 사람이 상자를 여는 순간을 상상하며 묶어요.",
+      "12년 동안 같은 자리에서 포장을 맡아온 손끝에는 흔들림이 없습니다.",
+    ].join("\n\n"),
+  },
+  {
+    slug: "why-domestic-jujube",
+    title: "국내산 대추를 고집하는 이유",
+    summary: "조금 더 비싸도 산지를 바꾸지 않는 까닭.",
+    categoryCode: "ingredient",
+    productSlug: "jujube-chip-set",
+    isFeatured: false,
+    publishedAt: "2026-06-22",
+    content: [
+      "대추는 산지에 따라 단맛과 향이 확연히 다릅니다. 우리는 매년 같은 농가와 계약합니다.",
+      "가격이 오르는 해에도 산지를 바꾸지 않는 이유는 단순합니다. 맛이 달라지기 때문입니다.",
+    ].join("\n\n"),
+  },
+  {
+    slug: "three-ways-oat-cookie",
+    title: "집에서 즐기는 오트 쿠키 3가지 방법",
+    summary: "그대로도 좋지만, 조금 더 특별하게.",
+    categoryCode: "recipe",
+    productSlug: "oat-cookie-set",
+    isFeatured: false,
+    publishedAt: "2026-06-10",
+    content: [
+      "오트 쿠키는 그대로 먹어도 맛있지만, 조금만 더하면 근사한 디저트가 됩니다.",
+      "## 1. 우유에 30초",
+      "차가운 우유에 살짝 적셔 먹으면 색다른 식감을 즐길 수 있습니다.",
+    ].join("\n\n"),
+  },
+  {
+    slug: "beyond-the-package",
+    title: "포장지에 담기지 않는 것들",
+    summary: "보이지 않는 곳의 위생과 정성.",
+    categoryCode: "workshop",
+    productSlug: "handdrip-blend-beans",
+    isFeatured: false,
+    publishedAt: "2026-05-28",
+    content: [
+      "제품에 드러나지 않지만 가장 중요한 것은 위생입니다.",
+      "> 보이지 않아도, 먹는 사람은 결국 알게 됩니다.",
+    ].join("\n\n"),
+  },
+  {
+    slug: "first-day-at-work",
+    title: "첫 출근 날의 떨림을 기억하며",
+    summary: "일이 자립이 되는 순간에 대하여.",
+    categoryCode: "people",
+    productSlug: "cranberry-granola",
+    isFeatured: false,
+    publishedAt: "2026-05-14",
+    content:
+      "누구에게나 첫 출근은 떨립니다. 이곳에서의 첫날은 조금 더 특별한 의미를 갖습니다.",
+  },
+];
+
+const ARTICLE_AUTHOR_NAME = "PaRaSOL 에디터";
+
+/** 이야기도 별개 가드 — 상품이 이미 있어도 이야기는 따로 들어가야 한다 */
+async function seedSampleArticles() {
+  const [{ articleCount }] = await db.select({ articleCount: count() }).from(article);
+  if (articleCount > 0) {
+    console.log("  이미 이야기가 있습니다 — 이야기 시드 건너뜀");
+    return;
+  }
+
+  const productRows = await db
+    .select({ id: product.id, slug: product.slug })
+    .from(product)
+    .where(inArray(product.slug, SAMPLE_ARTICLES.map((row) => row.productSlug)));
+  const productIdBySlug = new Map(productRows.map((row) => [row.slug, row.id]));
+
+  await db.insert(article).values(
+    SAMPLE_ARTICLES.map((articleSeed) => ({
+      slug: articleSeed.slug,
+      title: articleSeed.title,
+      summary: articleSeed.summary,
+      content: articleSeed.content,
+      categoryCode: articleSeed.categoryCode,
+      // 상품 시드 전에 돌면 연결이 비는데, 그래도 이야기는 읽힌다(제품 카드만 안 나온다)
+      productId: productIdBySlug.get(articleSeed.productSlug) ?? null,
+      authorName: ARTICLE_AUTHOR_NAME,
+      isFeatured: articleSeed.isFeatured,
+      publishedAt: new Date(`${articleSeed.publishedAt}T09:00:00+09:00`),
+    })),
+  );
+  console.log(`  이야기 ${SAMPLE_ARTICLES.length}건`);
+}
+
 async function runDevSeed() {
   console.log("\nPaRaSOL 개발용 샘플 상품 시드 실행\n");
 
@@ -344,7 +478,10 @@ async function runDevSeed() {
   // 가드: 이 스크립트는 빈 상품 테이블 전용 — 멱등 병합이 아니라 통째로 넣거나 말거나다
   const [{ productCount }] = await db.select({ productCount: count() }).from(product);
   if (productCount > 0) {
-    console.log("  이미 상품이 있습니다 — 상품 시드 건너뜀\n\n완료.\n");
+    console.log("  이미 상품이 있습니다 — 상품 시드 건너뜀");
+    // 이야기는 상품 뒤에 넣는다 — 'productSlug → productId'를 걸려면 상품이 먼저 있어야 한다
+    await seedSampleArticles();
+    console.log("\n완료.\n");
     return;
   }
 
@@ -523,6 +660,9 @@ async function runDevSeed() {
       `  상품 ${PRODUCTS.length}종 · variant ${variantTotal}개 · 추가상품 ${addonTotal}개 · 큐레이션 매핑 ${CURATION_SLUGS.length}건`,
     );
   });
+
+  // 상품 트랜잭션 밖 — 이야기는 상품 id를 참조하므로 커밋된 뒤에 넣는다
+  await seedSampleArticles();
 
   console.log("\n완료.\n");
 }

@@ -46,6 +46,12 @@ export const COMMON_CODES: CommonCodeSeed[] = [
   { groupCode: "faq_category", code: "member_benefit", name: "회원·혜택" },
   { groupCode: "faq_category", code: "product", name: "상품" },
 
+  // ── 이야기 분류 (핸드오프 'PaRaSOL 이야기.dc.html'의 필터 칩)
+  { groupCode: "article_category", code: "workshop", name: "작업장" },
+  { groupCode: "article_category", code: "people", name: "사람" },
+  { groupCode: "article_category", code: "ingredient", name: "재료" },
+  { groupCode: "article_category", code: "recipe", name: "레시피" },
+
   // ── 공지 분류
   { groupCode: "notice_category", code: "general", name: "일반" },
   { groupCode: "notice_category", code: "delivery", name: "배송" },

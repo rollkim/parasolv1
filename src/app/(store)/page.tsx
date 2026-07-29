@@ -159,7 +159,6 @@ export default async function StoreHomePage() {
               결과물을 정직하게 전합니다 — 좋은 재료, 좋은 맛으로요.
             </p>
             <div>
-              {/* TODO(라우트 미구현): 브랜드 스토리(/story) 페이지는 아직 없다 */}
               <Button asChild variant="outline" size="sm-46">
                 <Link href="/story">이야기 더 보기 →</Link>
               </Button>
