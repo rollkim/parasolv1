@@ -21,12 +21,24 @@ import { Label } from "@/components/ui/label"
 import { Spinner } from "@/components/ui/spinner"
 import { Textarea } from "@/components/ui/textarea"
 import { useToast } from "@/components/ui/toast"
-import { useTRPC } from "@/trpc/client"
+import { useRouter } from "next/navigation"
 
-type SettingSection = "site" | "policy" | "shipping" | "analytics"
+import { useTRPC } from "@/trpc/client"
+import type { ThemePreset } from "@/server/services/theme.service"
+
+/** globals.css가 정의한 순서 — 서버 상수를 그대로 못 쓴다(server-only) */
+const THEME_PRESET_ORDER = ["sol", "coral", "grape"] as const
+const THEME_PRESET_LABEL: Record<ThemePreset, string> = {
+  sol: "솔 그린",
+  coral: "감귤 코랄",
+  grape: "자두 그레이프",
+}
+
+type SettingSection = "site" | "theme" | "policy" | "shipping" | "analytics"
 
 const SETTING_SECTIONS: { section: SettingSection; label: string }[] = [
   { section: "site", label: "사이트·사업자 정보" },
+  { section: "theme", label: "테마 색상" },
   { section: "policy", label: "정책 문구" },
   { section: "shipping", label: "배송비 정책" },
   { section: "analytics", label: "측정 ID" },
@@ -78,6 +90,7 @@ export function AdminSettingView() {
         {activeSection === "site" ? (
           <BusinessInfoForm key="site" initial={settings.businessInfo} />
         ) : null}
+        {activeSection === "theme" ? <ThemeForm key="theme" initial={settings.theme} /> : null}
         {activeSection === "policy" ? (
           <PolicyTextForm key="policy" initial={settings.policyText} />
         ) : null}
@@ -420,6 +433,93 @@ function AnalyticsForm({
             onChange={(event) => setForm({ ...form, naverWcsId: event.target.value })}
           />
         </div>
+
+        <Button
+          type="submit"
+          variant="primary"
+          size="admin-40"
+          className="self-start"
+          disabled={saveMutation.isPending}
+        >
+          {saveMutation.isPending ? "저장 중…" : "저장"}
+        </Button>
+      </form>
+    </section>
+  )
+}
+
+/**
+ * 테마 색상 — 프리셋 이름만 고른다.
+ *
+ * 색상값을 직접 고르게 하지 않는 이유(RULE-11): 색을 자유롭게 넣으면 대비·명도 조합이 깨져
+ * 접근성이 무너지고, 새 컴포넌트가 나올 때마다 색 목록을 늘려야 한다.
+ * 프리셋은 globals.css에서 대비까지 맞춰 정의돼 있다.
+ */
+function ThemeForm({
+  initial,
+}: {
+  initial: { storefront: ThemePreset; admin: ThemePreset }
+}) {
+  const trpc = useTRPC()
+  const router = useRouter()
+  const saveMutation = useMutation(trpc.adminSetting.saveTheme.mutationOptions())
+  const handlers = useSettingSave("테마 색상")
+  const [form, setForm] = React.useState(initial)
+
+  return (
+    <section className="rounded-[var(--radius)] border border-border bg-card p-4">
+      <h2 className="m-0 font-heading text-[15px] font-extrabold">테마 색상</h2>
+      <p className="m-0 mt-1 text-[12px] text-muted-foreground">
+        스토어 화면과 관리자 화면의 색을 각각 고릅니다. 관리자는 오래 보는 업무 화면이라
+        브랜드 색과 다르게 두셔도 됩니다.
+      </p>
+
+      <form
+        className="mt-3 flex flex-col gap-4"
+        onSubmit={(event) => {
+          event.preventDefault()
+          if (saveMutation.isPending) return
+          saveMutation.mutate(form, {
+            ...handlers,
+            onSuccess: () => {
+              handlers.onSuccess?.()
+              // 레이아웃이 서버에서 data-theme을 그리므로 새로고침해야 색이 바뀐다
+              router.refresh()
+            },
+          })
+        }}
+      >
+        {(
+          [
+            { field: "storefront" as const, label: "스토어 화면" },
+            { field: "admin" as const, label: "관리자 화면" },
+          ]
+        ).map((target) => (
+          <fieldset key={target.field} className="m-0 border-0 p-0">
+            <legend className="mb-1.5 text-[13px] font-bold">{target.label}</legend>
+            <div className="flex flex-wrap gap-2">
+              {THEME_PRESET_ORDER.map((preset) => (
+                <Button
+                  key={preset}
+                  type="button"
+                  variant="toggle"
+                  size="admin-40"
+                  aria-pressed={form[target.field] === preset}
+                  onClick={() => setForm({ ...form, [target.field]: preset })}
+                >
+                  {/* 색 견본 + 이름 — 이름만 있으면 어떤 색인지 모르고,
+                      견본만 있으면 색을 구분 못 하는 이용자가 고를 수 없다(KWCAG) */}
+                  <span
+                    aria-hidden="true"
+                    data-theme={preset}
+                    className="mr-1.5 inline-block size-3.5 rounded-full border border-border bg-primary align-middle"
+                  />
+                  {THEME_PRESET_LABEL[preset]}
+                </Button>
+              ))}
+            </div>
+          </fieldset>
+        ))}
 
         <Button
           type="submit"

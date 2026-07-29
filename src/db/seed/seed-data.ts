@@ -325,6 +325,11 @@ export const SITE_SETTINGS: { key: string; value: unknown }[] = [
     value: { returnFeeMultiplier: 1, exchangeFeeMultiplier: 2, cancelFeeMultiplier: 0 },
   },
   {
+    // 색 프리셋 — globals.css의 [data-theme]. 색상값이 아니라 이름만 저장한다(RULE-11)
+    key: "theme",
+    value: { storefront: "sol", admin: "sol" },
+  },
+  {
     // [2차] 적립금 정책 — earnRate도 0.1% 단위 정수(10 = 1.0%)
     // useUnitPoint·minUsePoint는 "얼마부터 얼마 단위로 쓰나" — 화면 안내와 서버 검증이 같은 값을 본다
     key: "point_policy",

@@ -6,6 +6,7 @@ import { siteSetting } from "@/db/schema";
 
 import type { DatabaseClient } from "./db-client";
 import { serializeActor, type TransitionActor } from "./order-status.service";
+import { loadThemeSetting, type ThemeSetting } from "./theme.service";
 import {
   FALLBACK_BUSINESS_INFO,
   getSiteSetting,
@@ -50,6 +51,8 @@ export type AdminSettingBundle = {
   shippingPolicy: ShippingPolicySetting;
   policyText: PolicyTextSetting;
   analytics: AnalyticsSetting;
+  /** 색 프리셋 — 스토어·관리자 각각 */
+  theme: ThemeSetting;
   /** 화면이 "왜 여기 없는지" 답할 수 있게 */
   serverManagedKeys: { label: string; reason: string }[];
 };
@@ -97,14 +100,26 @@ export async function getAdminSettings(database: DatabaseClient): Promise<AdminS
     await getSiteSetting(database, "policy_text"),
     await getSiteSetting(database, "analytics"),
   ];
+  // 테마는 값 검증(프리셋 목록)이 필요해 전용 로더를 쓴다 — mergeSetting은 형태만 맞춘다
+  const theme = await loadThemeSetting(database);
 
   return {
     businessInfo: mergeSetting(businessRaw, FALLBACK_BUSINESS_INFO),
     shippingPolicy: mergeSetting(shippingRaw, DEFAULT_SHIPPING_POLICY),
     policyText: mergeSetting(policyRaw, DEFAULT_POLICY_TEXT),
     analytics: mergeSetting(analyticsRaw, DEFAULT_ANALYTICS),
+    theme,
     serverManagedKeys: SERVER_MANAGED_KEYS,
   };
+}
+
+/** 테마 저장 — 프리셋 이름만 저장한다(색상값 저장 금지, RULE-11) */
+export async function saveAdminTheme(
+  database: DatabaseClient,
+  input: { theme: ThemeSetting; actor: TransitionActor },
+): Promise<{ saved: true }> {
+  await upsertSetting(database, "theme", input.theme, serializeActor(input.actor));
+  return { saved: true };
 }
 
 /** 한 키를 통째로 덮어쓴다(부분 갱신이 아니라 화면이 보낸 전체가 진실) */

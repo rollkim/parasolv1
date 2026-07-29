@@ -6,7 +6,9 @@ import {
   saveAdminBusinessInfo,
   saveAdminPolicyText,
   saveAdminShippingPolicy,
+  saveAdminTheme,
 } from "@/server/services/admin-setting.service";
+import { THEME_PRESETS } from "@/server/services/theme.service";
 
 import { adminProcedure, router } from "../init";
 import { withOrderErrorMapping } from "../order-error";
@@ -101,6 +103,23 @@ export const adminSettingRouter = router({
       withOrderErrorMapping(() =>
         saveAdminAnalytics(ctx.db, {
           analytics: input,
+          actor: { role: "admin", id: ctx.adminUserId },
+        }),
+      ),
+    ),
+
+  /** 색 프리셋 — globals.css가 정의한 이름만 받는다(색상값은 저장하지 않는다) */
+  saveTheme: adminProcedure
+    .input(
+      z.object({
+        storefront: z.enum(THEME_PRESETS),
+        admin: z.enum(THEME_PRESETS),
+      }),
+    )
+    .mutation(({ ctx, input }) =>
+      withOrderErrorMapping(() =>
+        saveAdminTheme(ctx.db, {
+          theme: input,
           actor: { role: "admin", id: ctx.adminUserId },
         }),
       ),

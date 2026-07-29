@@ -5,6 +5,7 @@ import { db } from "@/db";
 import { readAdminSessionUserId } from "@/server/auth/admin-session";
 import { getAdminSessionProfile } from "@/server/services/admin-auth.service";
 import { getBusinessInfo } from "@/server/services/site-setting.service";
+import { loadThemeSetting } from "@/server/services/theme.service";
 
 /**
  * 관리자 공통 레이아웃.
@@ -31,9 +32,10 @@ export default async function AdminLayout({
     return <ToastProvider>{children}</ToastProvider>;
   }
 
-  const [businessInfo, adminProfile] = await Promise.all([
+  const [businessInfo, adminProfile, themeSetting] = await Promise.all([
     getBusinessInfo(db),
     getAdminSessionProfile(db, adminUserId),
+    loadThemeSetting(db),
   ]);
 
   // 세션은 유효하지만 계정이 비활성됐다면 로그인 화면으로 되돌린다(셸을 붙이지 않는다)
@@ -43,6 +45,8 @@ export default async function AdminLayout({
 
   return (
     <ToastProvider>
+      {/* 관리자 색 프리셋 — 스토어와 따로 정한다(오래 보는 업무 화면이라 브랜드 색이 강하면 눈이 피로하다) */}
+      <div data-theme={themeSetting.admin} className="contents">
       <AdminShell
         siteName={businessInfo.brandName}
         pageTitle={<AdminPageTitle fallbackTitle="관리자" />}
@@ -51,6 +55,7 @@ export default async function AdminLayout({
       >
         {children}
       </AdminShell>
+      </div>
     </ToastProvider>
   );
 }

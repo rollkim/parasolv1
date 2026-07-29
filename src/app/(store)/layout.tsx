@@ -14,6 +14,7 @@ import { getCartItemCount } from "@/server/services/cart.service";
 import { getStoreNavCategories } from "@/server/services/category.service";
 import { getCustomerSessionProfile } from "@/server/services/customer.service";
 import { getBusinessInfo } from "@/server/services/site-setting.service";
+import { loadThemeSetting } from "@/server/services/theme.service";
 import { CART_COOKIE_NAME } from "@/server/trpc/context";
 
 /**
@@ -45,7 +46,7 @@ export default async function StoreLayout({
   // 탈퇴·비활성 계정(쿠키는 유효)을 비로그인으로 취급한다(auth.sessionInfo와 동일 기준).
   const sessionCustomerId = await readSessionCustomerId();
 
-  const [businessInfo, navCategories, cartItemCount, sessionProfile] =
+  const [businessInfo, navCategories, cartItemCount, sessionProfile, themeSetting] =
     await Promise.all([
       getBusinessInfo(db),
       getStoreNavCategories(db),
@@ -53,6 +54,7 @@ export default async function StoreLayout({
       sessionCustomerId !== null
         ? getCustomerSessionProfile(db, sessionCustomerId)
         : null,
+      loadThemeSetting(db),
     ]);
 
   // 로그아웃은 링크가 아니라 동작이라 utilLinks가 아닌 트레일링 슬롯(LogoutButton)으로 배선한다
@@ -69,7 +71,10 @@ export default async function StoreLayout({
 
   return (
     <ToastProvider>
-      <div className="flex min-h-full flex-col">
+      {/* 색 프리셋을 여기 한 번만 건다 — globals.css의 [data-theme]이 토큰을 갈아끼운다.
+          컴포넌트가 각자 색을 고르지 않으므로(RULE-11) 이 한 줄이 전 화면을 바꾼다.
+          관리자와 따로 정한다: 관리자는 오래 보는 업무 화면이라 브랜드 색이 강하면 눈이 피로하다 */}
+      <div data-theme={themeSetting.storefront} className="flex min-h-full flex-col">
         <StoreHeader
           siteName={businessInfo.brandName}
           categories={navCategories}
