@@ -536,11 +536,17 @@ export const pointTransaction = pgTable("point_transaction", {
   tagCode: text("tag_code"),                    // purchase/review/event/manual/expire — common_code(point_tag)
   orderId: bigint("order_id", { mode: "number" }).references(() => orders.id, { onDelete: "set null" }),
   expiresAt: timestamp("expires_at", { withTimezone: true }), // 소멸 예정일
+  // 중복 적립 차단 — "order:123:purchase" / "review:45" / "signup:7" 형태.
+  // 배치 재실행·동시 요청으로 같은 사유의 적립이 두 번 들어가는 것을 DB가 막는다.
+  // 조회 후 삽입으로 막으면 동시 요청 둘이 나란히 통과한다(재고를 조건부 UPDATE로 깎는 것과 같은 이유).
+  // 사용·소멸처럼 반복될 수 있는 건 null — 부분 유니크 인덱스가 무시한다.
+  dedupeKey: text("dedupe_key"),
   createdBy: text("created_by"),                // 수동 지급 시 관리자
   ...createdOnly,
 }, (t) => [
   index("point_customer_idx").on(t.customerId, t.createdAt),
   index("point_expires_idx").on(t.expiresAt),
+  uniqueIndex("point_dedupe_uq").on(t.dedupeKey).where(sql`${t.dedupeKey} IS NOT NULL`),
 ]);
 
 // =============================================================
