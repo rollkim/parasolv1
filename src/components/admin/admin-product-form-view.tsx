@@ -21,6 +21,7 @@ import type { inferRouterOutputs } from "@trpc/server"
 
 import type { AppRouter } from "@/server/trpc/routers/_app"
 
+import { ImageDropUploader } from "@/components/admin/image-drop-uploader"
 import { Button } from "@/components/ui/button"
 import { Checkbox } from "@/components/ui/checkbox"
 import { Input } from "@/components/ui/input"
@@ -160,7 +161,6 @@ function ProductFormFields({
   const [addons, setAddons] = React.useState<AddonRow[]>(initialForm.addons)
   const [images, setImages] = React.useState<ImageRow[]>(initialForm.images)
   const [bulkStock, setBulkStock] = React.useState("")
-  const [isUploading, setIsUploading] = React.useState(false)
 
   const combinations = React.useMemo(
     () => (useOptions ? buildCombinations(optionGroups) : []),
@@ -188,33 +188,6 @@ function ProductFormFields({
       ...previous,
       [key]: { ...variantOf(optionLabels), ...patch, optionLabels },
     }))
-  }
-
-  async function uploadImages(fileList: FileList | null, imageKind: "thumbnail" | "detail") {
-    if (!fileList || fileList.length === 0 || isUploading) return
-    setIsUploading(true)
-    try {
-      const formData = new FormData()
-      for (const file of Array.from(fileList)) formData.append("files", file)
-      const response = await fetch("/api/admin/product-images", {
-        method: "POST",
-        body: formData,
-      })
-      const payload = (await response.json()) as { storedPaths?: string[]; message?: string }
-      if (!response.ok) {
-        showToast(payload.message ?? "이미지를 올리지 못했습니다.", { toastVariant: "error" })
-        return
-      }
-      setImages((previous) => [
-        ...previous,
-        // alt는 비워 둔다 — 저장 시 필수라 관리자가 반드시 채우게 된다(접근성)
-        ...(payload.storedPaths ?? []).map((path) => ({ imageKind, path, alt: "" })),
-      ])
-    } catch {
-      showToast("이미지를 올리지 못했습니다. 잠시 후 다시 시도해 주세요.", { toastVariant: "error" })
-    } finally {
-      setIsUploading(false)
-    }
   }
 
   /* 고른 카테고리만 대표 후보다. 체크를 풀면 대표 지정이 유령으로 남으므로 여기서 걸러낸다 */
@@ -819,7 +792,7 @@ function ProductFormFields({
           const kindImages = imageKind === "thumbnail" ? thumbnailImages : detailImages
           return (
             <div key={imageKind} className="mt-3">
-              <h3 className="m-0 text-[13px] font-bold">
+              <h3 className="m-0 mb-2 text-[13px] font-bold">
                 {imageKind === "thumbnail" ? "대표 갤러리" : "상세 이미지"}
                 {imageKind === "thumbnail" ? (
                   <span className="ml-1.5 font-normal text-muted-foreground">
@@ -828,75 +801,29 @@ function ProductFormFields({
                 ) : null}
               </h3>
 
-              <ul className="m-0 mt-2 flex list-none flex-col gap-2 p-0">
-                {kindImages.map((image) => (
-                  <li key={image.path} className="flex flex-wrap items-center gap-2">
-                    {/* 업로드 확인용 미리보기 — next/image는 원격 로더 설정이 필요해 img를 쓴다 */}
-                    {/* eslint-disable-next-line @next/next/no-img-element */}
-                    <img
-                      src={`/api/uploads/${image.path}`}
-                      alt=""
-                      width={56}
-                      height={56}
-                      className="size-14 shrink-0 rounded-[calc(var(--radius)-6px)] border border-border object-cover"
-                    />
-                    <Input
-                      size="admin"
-                      className="min-w-[200px] flex-1"
-                      aria-label="이미지 대체 텍스트"
-                      placeholder="대체 텍스트 (필수)"
-                      required
-                      value={image.alt}
-                      onChange={(event) =>
-                        setImages((previous) =>
-                          previous.map((entry) =>
-                            entry.path === image.path
-                              ? { ...entry, alt: event.target.value }
-                              : entry,
-                          ),
-                        )
-                      }
-                    />
-                    <Button
-                      type="button"
-                      variant="ghost"
-                      size="admin-38"
-                      onClick={() =>
-                        setImages((previous) =>
-                          previous.filter((entry) => entry.path !== image.path),
-                        )
-                      }
-                    >
-                      삭제
-                    </Button>
-                  </li>
-                ))}
-              </ul>
-
-              <div className="mt-2">
-                <Label htmlFor={`upload-${imageKind}`} className="sr-only">
-                  {imageKind === "thumbnail" ? "대표" : "상세"} 이미지 올리기
-                </Label>
-                <input
-                  id={`upload-${imageKind}`}
-                  type="file"
-                  accept="image/jpeg,image/png,image/webp,image/avif"
-                  multiple
-                  disabled={isUploading}
-                  className="text-[13px] file:mr-2 file:min-h-9 file:rounded-[calc(var(--radius)-4px)] file:border file:border-border file:bg-card file:px-3 file:text-[13px] file:font-bold"
-                  onChange={(event) => {
-                    void uploadImages(event.target.files, imageKind)
-                    event.target.value = ""
-                  }}
-                />
-              </div>
+              {/* 종류별로 자기 이미지만 다루고, 다른 종류는 건드리지 않고 그대로 둔다 */}
+              <ImageDropUploader
+                images={kindImages.map((image) => ({ path: image.path, alt: image.alt }))}
+                onChange={(nextImages) =>
+                  setImages((previous) => [
+                    ...previous.filter((entry) => entry.imageKind !== imageKind),
+                    ...nextImages.map((entry) => ({ ...entry, imageKind })),
+                  ])
+                }
+                purpose="product"
+                uploadEndpoint="/api/admin/product-images"
+                label={
+                  imageKind === "thumbnail"
+                    ? "대표 갤러리 이미지 올리기"
+                    : "상세 이미지 올리기"
+                }
+              />
             </div>
           )
         })}
 
         <p className="m-0 mt-3 text-[12px] text-muted-foreground">
-          JPG · PNG · WebP · AVIF · 한 장 5MB까지. 대체 텍스트는 화면을 못 보는 이용자에게 상품을
-          설명하는 유일한 수단이라 필수입니다.
+          대체 텍스트는 화면을 못 보는 이용자에게 상품을 설명하는 유일한 수단이라 필수입니다.
         </p>
       </section>
 

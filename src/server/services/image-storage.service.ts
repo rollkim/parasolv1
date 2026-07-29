@@ -23,8 +23,12 @@ const ALLOWED_IMAGE_TYPES: Record<string, string> = {
   "image/avif": "avif",
 };
 
-/** 원본 사진 한 장 기준. 넘으면 업로드 단계에서 거른다 */
-export const MAX_IMAGE_BYTES = 5 * 1024 * 1024;
+/**
+ * 한 장 상한. 화면이 올리기 전에 canvas로 줄이므로(lib/image-resize) 실제로는 수백 KB가 온다.
+ * 이 값은 화면을 거치지 않고 API를 직접 두드리는 경우의 방어선이다 —
+ * 원본 20MB까지 받아준다는 안내와 같은 숫자로 맞춘다.
+ */
+export const MAX_IMAGE_BYTES = 20 * 1024 * 1024;
 
 export class UnsupportedImageTypeError extends Error {
   constructor(readonly mimeType: string) {
@@ -35,7 +39,7 @@ export class UnsupportedImageTypeError extends Error {
 
 export class ImageTooLargeError extends Error {
   constructor(readonly byteSize: number) {
-    super("이미지 한 장은 5MB까지 올릴 수 있습니다. 크기를 줄여 다시 시도해 주세요.");
+    super("이미지 한 장은 20MB까지 올릴 수 있습니다. 크기를 줄여 다시 시도해 주세요.");
     this.name = "ImageTooLargeError";
   }
 }

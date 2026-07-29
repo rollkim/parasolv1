@@ -63,7 +63,7 @@ export async function POST(request: Request) {
   for (const file of files) {
     if (file.size > MAX_IMAGE_BYTES) {
       return NextResponse.json(
-        { message: "사진 한 장은 5MB까지 올릴 수 있습니다." },
+        { message: "사진 한 장은 20MB까지 올릴 수 있습니다." },
         { status: 400 },
       );
     }
