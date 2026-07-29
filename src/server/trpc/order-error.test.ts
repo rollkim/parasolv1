@@ -31,6 +31,7 @@ import {
   BannerPeriodInvalidError,
 } from "@/server/services/admin-display.service";
 import { AdminReviewNotFoundError } from "@/server/services/admin-review.service";
+import { ShippingPolicyInvalidError } from "@/server/services/admin-setting.service";
 import {
   AdminCategoryNotFoundError,
   CategoryDepthExceededError,
@@ -141,6 +142,10 @@ const DOMAIN_ERRORS: { name: string; error: Error }[] = [
   { name: "AdminDisplaySectionNotFoundError", error: new AdminDisplaySectionNotFoundError(1) },
   { name: "BannerAltRequiredError", error: new BannerAltRequiredError() },
   { name: "BannerPeriodInvalidError", error: new BannerPeriodInvalidError() },
+  {
+    name: "ShippingPolicyInvalidError",
+    error: new ShippingPolicyInvalidError("배송비와 무료배송 기준은 0원 이상이어야 합니다."),
+  },
 ];
 
 describe("주문 오류 → tRPC 오류 매핑", () => {

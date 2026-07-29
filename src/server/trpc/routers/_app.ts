@@ -9,6 +9,7 @@ import { adminDisplayRouter } from "./admin-display";
 import { adminOrderRouter } from "./admin-order";
 import { adminProductRouter } from "./admin-product";
 import { adminReviewRouter } from "./admin-review";
+import { adminSettingRouter } from "./admin-setting";
 import { authRouter } from "./auth";
 import { cartRouter } from "./cart";
 import { claimRouter } from "./claim";
@@ -33,6 +34,7 @@ export const appRouter = router({
   adminOrder: adminOrderRouter,
   adminProduct: adminProductRouter,
   adminReview: adminReviewRouter,
+  adminSetting: adminSettingRouter,
   auth: authRouter,
   cart: cartRouter,
   claim: claimRouter,

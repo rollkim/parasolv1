@@ -29,6 +29,7 @@
     "check:admin-review": "tsx --conditions=react-server src/server/services/_integration/admin-review.check.ts",
     "check:admin-board": "tsx --conditions=react-server src/server/services/_integration/admin-board.check.ts",
     "check:admin-display": "tsx --conditions=react-server src/server/services/_integration/admin-display.check.ts",
+    "check:admin-setting": "tsx --conditions=react-server src/server/services/_integration/admin-setting.check.ts",
     "check:admin-auth": "tsx --conditions=react-server src/server/services/_integration/admin-auth.check.ts"
   },
   "dependencies": {

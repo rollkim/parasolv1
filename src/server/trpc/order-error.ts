@@ -32,6 +32,7 @@ import {
   BannerPeriodInvalidError,
 } from "@/server/services/admin-display.service";
 import { AdminReviewNotFoundError } from "@/server/services/admin-review.service";
+import { ShippingPolicyInvalidError } from "@/server/services/admin-setting.service";
 import {
   AdminCategoryNotFoundError,
   CategoryDepthExceededError,
@@ -340,6 +341,12 @@ export function toOrderTRPCError(error: unknown): unknown {
 
   // 접근성·기간 규칙 — 문구가 그대로 무엇을 고쳐야 하는지 알려준다
   if (error instanceof BannerAltRequiredError || error instanceof BannerPeriodInvalidError) {
+    return new TRPCError({ code: "BAD_REQUEST", message: error.message, cause: error });
+  }
+
+  // ── 관리자 설정 ──
+  // 주문 금액이 이 값에서 나오므로 문구가 무엇을 고쳐야 하는지 그대로 알려준다
+  if (error instanceof ShippingPolicyInvalidError) {
     return new TRPCError({ code: "BAD_REQUEST", message: error.message, cause: error });
   }
 
