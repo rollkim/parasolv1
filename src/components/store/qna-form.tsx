@@ -1,12 +1,14 @@
 "use client"
 
 // 핸드오프 규격: PaRaSOL 1대1문의.dc.html 문의 작성 폼 — 유형 칩 단일 선택(min-height 40px) ·
-// 제목 인풋 46px · 내용 textarea 150px · 비밀글 커스텀 체크 22px("비밀글로 문의 — 작성자와
-// 관리자만 볼 수 있어요", 기본 false) · 액션 우측 정렬(취소 / 문의 등록 48px, 상단 border 구분) ·
+// 제목 인풋 46px · 내용 textarea 150px · 액션 우측 정렬(취소 / 문의 등록 48px, 상단 border 구분) ·
 // 성공 = 토스트 "문의가 등록되었어요"
-// [탭 순서] 4 유형 → 5 제목 → 6 내용 → 7 비밀글 → 9 등록 (첨부 제외 — 아래 사유)
+// [탭 순서] 4 유형 → 5 제목 → 6 내용 → 7 등록 (첨부 제외 — 아래 사유)
 //
 // 목업과 의도적으로 다르게 간 부분(사유):
+//  - **비밀글 체크 없음**: 1:1 문의는 공개 목록이 없다(본인만 본다 — 회원은 세션, 비회원은
+//    문의 비밀번호). 가릴 대상이 없는 선택지는 안내가 아니라 혼란이라 빼고 서버가 항상
+//    비공개로 저장한다. 공개 목록이 있는 상품 문의에는 그대로 남겨 뒀다.
 //  - '내 문의 내역' 탭 없음: 문의 내역 화면은 미구현(후속 배선) — 취소·성공 동선은 고객센터(/support)로 보낸다.
 //  - 파일 첨부 없음: support.qna.create가 첨부를 받지 않는다(1차 범위 제외 — 백엔드와 일치).
 //  - 문의 상품 카드 없음: 목업도 데모 고정 표시(상품 선택 UI 부재) — 상품 상세의 문의 탭 배선 때 도입.
@@ -24,7 +26,6 @@ import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Textarea } from "@/components/ui/textarea"
 import { useToast } from "@/components/ui/toast"
-import { cn } from "@/lib/utils"
 import { useTRPC } from "@/trpc/client"
 // 타입 전용 임포트 — 컴파일 시 지워져 server-only 경계를 넘지 않는다(store-footer 선례)
 import type { CommonCodeOption } from "@/server/services/common-code.service"
@@ -44,35 +45,6 @@ const QNA_FIELD_ORDER: QnaFieldKey[] = [
   "title",
   "content",
 ]
-
-/** 표시용 체크박스 — 목업 [data-check] 실측 22px. cart-view·auth-view와 동일 규격의
- *  세 번째 재선언 — ui 승격 후보이나 두 파일 수정은 배정 밖이라 보류(리뷰에 보고). */
-function SecretCheckMark({ checked }: { checked: boolean }) {
-  return (
-    <span
-      aria-hidden="true"
-      className={cn(
-        "flex size-[22px] shrink-0 items-center justify-center rounded-[6px] border-[1.5px]",
-        checked ? "border-primary bg-primary" : "border-border bg-card"
-      )}
-    >
-      {checked && (
-        <svg
-          width={14}
-          height={14}
-          viewBox="0 0 24 24"
-          fill="none"
-          stroke="currentColor"
-          strokeWidth={3}
-          className="text-primary-foreground"
-          aria-hidden="true"
-        >
-          <path d="m5 12.5 4.5 4.5L19 7" strokeLinecap="round" strokeLinejoin="round" />
-        </svg>
-      )}
-    </span>
-  )
-}
 
 type QnaFormProps = {
   /** common_code(qna_type) 활성 목록 — 서버 페이지가 조회해 주입한다(코드 하드코딩 금지) */
@@ -97,7 +69,6 @@ export function QnaForm({ qnaTypeOptions, memberName }: QnaFormProps) {
   const [guestPasswordValue, setGuestPasswordValue] = React.useState("")
   const [titleValue, setTitleValue] = React.useState("")
   const [contentValue, setContentValue] = React.useState("")
-  const [isSecret, setIsSecret] = React.useState(false)
   const [fieldErrors, setFieldErrors] = React.useState<
     Partial<Record<QnaFieldKey, string>>
   >({})
@@ -181,7 +152,6 @@ export function QnaForm({ qnaTypeOptions, memberName }: QnaFormProps) {
         categoryCode: selectedTypeCode,
         title: titleValue.trim(),
         content: contentValue.trim(),
-        isSecret,
         // 회원이면 guest 필드를 아예 보내지 않는다 — 서버도 세션 우선으로 버리지만 표면을 좁힌다
         ...(isGuest
           ? {
@@ -217,7 +187,6 @@ export function QnaForm({ qnaTypeOptions, memberName }: QnaFormProps) {
     setGuestPasswordValue("")
     setTitleValue("")
     setContentValue("")
-    setIsSecret(false)
     setFieldErrors({})
     setIsSubmitted(false)
   }
@@ -459,21 +428,13 @@ export function QnaForm({ qnaTypeOptions, memberName }: QnaFormProps) {
         )}
       </div>
 
-      <button
-        type="button"
-        role="checkbox"
-        aria-checked={isSecret}
-        onClick={() => setIsSecret((previousSecret) => !previousSecret)}
-        className="flex min-h-11 w-fit cursor-pointer items-center gap-2.5 px-1 text-left"
-      >
-        <SecretCheckMark checked={isSecret} />
-        <span className="text-sm font-semibold text-foreground">
-          비밀글로 문의
-        </span>
-        <span className="text-[13px] text-muted-foreground">
-          — 작성자와 관리자만 볼 수 있어요
-        </span>
-      </button>
+      {/* 비밀글 체크 없음 — 1:1 문의는 애초에 공개 목록이 없다.
+          고를 수 있게 두면 "공개로 하면 남들이 보나?"를 묻게 되는데, 볼 수 있는 화면이 없다.
+          가릴 대상이 없는 선택지는 안내가 아니라 혼란이다. 항상 비공개로 저장한다. */}
+      <p className="m-0 rounded-[var(--radius)] bg-muted px-3.5 py-3 text-[13px] text-muted-foreground">
+        문의 내용은 {isGuest ? "문의 확인 비밀번호를 입력해야" : "로그인한 본인만"} 확인할 수
+        있어요. 다른 고객에게는 보이지 않습니다.
+      </p>
 
       <div className="flex justify-end gap-2 border-t border-border pt-[18px]">
         {/* 목업의 취소는 '내 문의 내역' 탭 이동 — 내역 화면 미구현이라 고객센터로 보낸다 */}

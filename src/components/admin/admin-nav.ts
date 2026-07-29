@@ -5,6 +5,7 @@
 
 import {
   ClipboardList,
+  Headset,
   LayoutDashboard,
   LayoutTemplate,
   MessageSquareText,
@@ -142,6 +143,8 @@ export const ADMIN_NAV_GROUPS: AdminNavGroup[] = [
         badgeMeaning: "미답변 리뷰",
       },
       {
+        // 게시판 = 운영자가 **쓰는** 글. 문의는 고객이 쓰고 운영자가 답한다 —
+        // 하는 일이 반대라 한 메뉴에 묶으면 "답변 대기"를 공지 옆에서 찾게 된다
         itemId: "board",
         label: "게시판 관리",
         icon: MessageSquareText,
@@ -158,20 +161,37 @@ export const ADMIN_NAV_GROUPS: AdminNavGroup[] = [
             href: "/admin/boards/faq",
             pageTitle: "FAQ",
           },
+        ],
+      },
+      {
+        itemId: "inquiry",
+        label: "문의 관리",
+        icon: Headset,
+        badgeMeaning: "미답변 문의",
+        children: [
           {
-            childId: "qna",
+            childId: "qna-product",
+            label: "상품 문의",
+            href: "/admin/inquiries/product",
+            pageTitle: "상품 문의",
+          },
+          {
+            childId: "qna-direct",
             label: "1:1 문의",
-            href: "/admin/boards/qna",
+            href: "/admin/inquiries/direct",
             pageTitle: "1:1 문의",
           },
           {
             childId: "bulk",
             label: "단체구매 문의",
-            href: "/admin/boards/bulk",
+            href: "/admin/inquiries/bulk",
             pageTitle: "단체구매 문의",
           },
         ],
       },
+      // TODO(이야기 관리): 화면을 만든 뒤 여기에 넣는다.
+      // 메뉴만 먼저 달면 누르는 순간 404라, 없는 것보다 나쁘다
+      // { itemId: "story", label: "이야기 관리", icon: BookOpen, href: "/admin/stories", pageTitle: "이야기 관리" },
       {
         itemId: "display",
         label: "배너·진열",

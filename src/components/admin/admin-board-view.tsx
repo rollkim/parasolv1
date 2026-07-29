@@ -27,13 +27,25 @@ import { useToast } from "@/components/ui/toast"
 import { cn } from "@/lib/utils"
 import { useTRPC } from "@/trpc/client"
 
-export type BoardTab = "notice" | "faq" | "qna" | "bulk"
+/**
+ * 게시판 = 운영자가 **쓰는** 글(공지·FAQ).
+ * 고객이 쓰고 운영자가 답하는 문의는 /admin/inquiries로 갈랐다 — 하는 일이 반대라
+ * 한 화면에 묶으면 "답변 대기"를 공지 옆에서 찾게 된다.
+ */
+export type BoardTab = "notice" | "faq"
 
 const BOARD_TABS: { tab: BoardTab; label: string }[] = [
   { tab: "notice", label: "공지사항" },
   { tab: "faq", label: "FAQ" },
-  { tab: "qna", label: "1:1 문의" },
-  { tab: "bulk", label: "단체구매 문의" },
+]
+
+/** 문의 종류 — 상품 문의는 어느 상품인지, 1:1은 유형이 핵심이라 화면을 나눈다 */
+export type InquiryKind = "product" | "direct" | "bulk"
+
+const INQUIRY_TABS: { kind: InquiryKind; label: string }[] = [
+  { kind: "product", label: "상품 문의" },
+  { kind: "direct", label: "1:1 문의" },
+  { kind: "bulk", label: "단체구매 문의" },
 ]
 
 function formatDate(value: Date): string {
@@ -47,9 +59,6 @@ function formatDate(value: Date): string {
  * 새로고침·뒤로가기가 같은 탭으로 돌아온다.
  */
 export function AdminBoardView({ activeTab }: { activeTab: BoardTab }) {
-  const trpc = useTRPC()
-  const waitingQuery = useQuery(trpc.adminBoard.waitingQnaCount.queryOptions())
-
   return (
     <div className="flex flex-col gap-4">
       <nav aria-label="게시판 선택" className="flex flex-wrap gap-2">
@@ -62,9 +71,37 @@ export function AdminBoardView({ activeTab }: { activeTab: BoardTab }) {
             aria-pressed={activeTab === tabItem.tab}
             asChild
           >
-            <Link href={`/admin/boards/${tabItem.tab}`}>
+            <Link href={`/admin/boards/${tabItem.tab}`}>{tabItem.label}</Link>
+          </Button>
+        ))}
+      </nav>
+
+      {activeTab === "notice" ? <NoticePanel /> : null}
+      {activeTab === "faq" ? <FaqPanel /> : null}
+    </div>
+  )
+}
+
+/** 문의 관리(CS) — 상품 문의 · 1:1 문의 · 단체구매 문의 */
+export function AdminInquiryView({ activeKind }: { activeKind: InquiryKind }) {
+  const trpc = useTRPC()
+  const waitingQuery = useQuery(trpc.adminBoard.waitingQnaCount.queryOptions())
+
+  return (
+    <div className="flex flex-col gap-4">
+      <nav aria-label="문의 종류 선택" className="flex flex-wrap gap-2">
+        {INQUIRY_TABS.map((tabItem) => (
+          <Button
+            key={tabItem.kind}
+            variant="toggle"
+            size="admin-40"
+            aria-current={activeKind === tabItem.kind ? "page" : undefined}
+            aria-pressed={activeKind === tabItem.kind}
+            asChild
+          >
+            <Link href={`/admin/inquiries/${tabItem.kind}`}>
               {tabItem.label}
-              {tabItem.tab === "qna" && (waitingQuery.data ?? 0) > 0 ? (
+              {tabItem.kind === "direct" && (waitingQuery.data ?? 0) > 0 ? (
                 <span className="ml-1.5 text-[12px] font-bold text-destructive">
                   {waitingQuery.data}
                 </span>
@@ -74,10 +111,11 @@ export function AdminBoardView({ activeTab }: { activeTab: BoardTab }) {
         ))}
       </nav>
 
-      {activeTab === "notice" ? <NoticePanel /> : null}
-      {activeTab === "faq" ? <FaqPanel /> : null}
-      {activeTab === "qna" ? <QnaPanel /> : null}
-      {activeTab === "bulk" ? <BulkInquiryPanel /> : null}
+      {/* key로 종류를 묶어 새로 마운트한다 — 이전 종류의 페이지·검색어·열린 문의가 남으면
+          빈 목록이 나온다. useEffect로 상태를 되돌리면 한 번 잘못 그린 뒤에 고치는 셈이다 */}
+      {activeKind === "product" ? <QnaPanel key="product" inquiryKind="product" /> : null}
+      {activeKind === "direct" ? <QnaPanel key="direct" inquiryKind="direct" /> : null}
+      {activeKind === "bulk" ? <BulkInquiryPanel /> : null}
     </div>
   )
 }
@@ -531,7 +569,7 @@ function FaqPanel() {
 // 1:1 문의
 // =============================================================
 
-function QnaPanel() {
+function QnaPanel({ inquiryKind }: { inquiryKind: "product" | "direct" }) {
   const trpc = useTRPC()
   const queryClient = useQueryClient()
   const { showToast } = useToast()
@@ -545,7 +583,12 @@ function QnaPanel() {
   const [editingCommentId, setEditingCommentId] = React.useState<number | null>(null)
 
   const listQuery = useQuery(
-    trpc.adminBoard.listQnas.queryOptions({ tab, keyword: appliedKeyword || undefined, page }),
+    trpc.adminBoard.listQnas.queryOptions({
+      tab,
+      inquiryKind,
+      keyword: appliedKeyword || undefined,
+      page,
+    }),
   )
   const detailQuery = useQuery({
     ...trpc.adminBoard.getQna.queryOptions({ postId: openPostId ?? 0 }),
@@ -829,12 +872,19 @@ function QnaPanel() {
                 >
                   {qnaCard.isAnswered ? "답변 완료" : "미답변"}
                 </span>
-                {qnaCard.categoryName ? (
+                {/* 1:1 문의는 유형이 갈래다. 상품 문의는 유형이 늘 '상품'이라 표시할 값이 없다 */}
+                {inquiryKind === "direct" && qnaCard.categoryName ? (
                   <span className="shrink-0 text-[12px] text-muted-foreground">
                     {qnaCard.categoryName}
                   </span>
                 ) : null}
                 <span className="min-w-0 flex-1 text-sm font-semibold">
+                  {/* 어느 상품에 대한 문의인지 모르면 답을 쓸 수 없다 — 제목보다 먼저 온다 */}
+                  {qnaCard.inquiryProduct ? (
+                    <span className="mr-1.5 text-[12px] font-bold text-primary">
+                      [{qnaCard.inquiryProduct.name}]
+                    </span>
+                  ) : null}
                   {qnaCard.title}
                   {qnaCard.isSecret ? (
                     <span className="ml-1.5 text-[11px] font-normal text-muted-foreground">

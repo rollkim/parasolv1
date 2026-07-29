@@ -44,7 +44,8 @@ const qnaCreateInputSchema = z.object({
     .trim()
     .min(1, "문의 내용을 입력해 주세요.")
     .max(5000, "문의 내용은 5,000자 이하로 입력해 주세요."),
-  isSecret: z.boolean(),
+  // isSecret은 여기 없다 — 상품 문의만 갖는다(1:1 문의는 공개 목록이 없어 뜻이 없다).
+  // 공통 스키마에 두면 1:1 폼이 안 보내는 값을 검증에서 요구하게 된다.
   // 비회원 전용 3종 — "비회원이면 필수"는 세션(ctx)을 아는 뮤테이션 본문에서 판정한다.
   // zod는 요청 본문만 볼 수 있어 로그인 여부에 따른 조건부 필수를 표현할 수 없다.
   guestName: z
@@ -56,6 +57,16 @@ const qnaCreateInputSchema = z.object({
   guestPhone: guestPhoneSchema.optional(),
   guestPassword: guestPasswordSchema.optional(),
 });
+
+/**
+ * 1:1 문의는 **항상 비공개**다 — 화면이 보낸 값을 쓰지 않는다.
+ *
+ * 상품 문의와 달리 1:1 문의에는 공개 목록이 없다(본인만 본다: 회원은 세션, 비회원은 문의 비밀번호).
+ * 그래서 "비밀글로 할까요?"는 가릴 대상이 없는 질문이라 화면에서 뺐다.
+ * 값을 서버가 못박는 이유: 나중에 누군가 문의 목록 화면을 만들어도 공개 문의가 섞여 새지 않는다.
+ * 기본을 비공개로 두면 실수의 방향이 안전한 쪽이 된다.
+ */
+const ALWAYS_PRIVATE = true;
 
 export const supportRouter = router({
   qna: router({
@@ -75,7 +86,7 @@ export const supportRouter = router({
             categoryCode: input.categoryCode,
             title: input.title,
             content: input.content,
-            isSecret: input.isSecret,
+            isSecret: ALWAYS_PRIVATE,
           });
         }
 
@@ -92,7 +103,7 @@ export const supportRouter = router({
           categoryCode: input.categoryCode,
           title: input.title,
           content: input.content,
-          isSecret: input.isSecret,
+          isSecret: ALWAYS_PRIVATE,
         });
       }),
   }),
@@ -116,7 +127,13 @@ export const supportRouter = router({
       ),
 
     create: publicProcedure
-      .input(qnaCreateInputSchema.extend({ productId: z.number().int().positive() }))
+      .input(
+        qnaCreateInputSchema.extend({
+          productId: z.number().int().positive(),
+          // 상품 문의는 상품 상세에 공개 목록이 있어 비밀글 선택이 실제로 뜻을 갖는다
+          isSecret: z.boolean(),
+        }),
+      )
       .mutation(async ({ ctx, input }) => {
         assertQnaAllowed(ctx.clientIp);
 

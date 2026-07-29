@@ -1,8 +1,8 @@
 import "server-only";
 
-import { and, asc, count, desc, eq, ilike, or, sql } from "drizzle-orm";
+import { and, asc, count, desc, eq, ilike, isNotNull, isNull, or, sql } from "drizzle-orm";
 
-import { board, bulkInquiry, comment, commonCode, customer, post } from "@/db/schema";
+import { board, bulkInquiry, comment, commonCode, customer, post, product } from "@/db/schema";
 import { formatPhone } from "@/domain/phone";
 
 import type { DatabaseClient, TransactionClient } from "./db-client";
@@ -246,6 +246,14 @@ export async function saveAdminFaq(
 
 export type AdminQnaTab = "all" | "waiting" | "answered";
 
+/**
+ * 문의 종류 — 같은 게시판(qna)에 살지만 답변하는 맥락이 다르다.
+ *  - product: 상품 상세에서 온 문의. **어느 상품인지 모르면 답을 쓸 수 없다.**
+ *  - direct: 고객센터 1:1 문의. 유형(배송·환불 등)으로 갈래를 잡는다.
+ * product_id 유무가 그대로 구분 기준이다 — 별도 플래그를 두면 둘이 어긋날 수 있다.
+ */
+export type AdminInquiryKind = "all" | "product" | "direct";
+
 export type AdminQnaCard = {
   postId: number;
   title: string;
@@ -255,6 +263,8 @@ export type AdminQnaCard = {
   isSecret: boolean;
   isAnswered: boolean;
   createdAt: Date;
+  /** 상품 문의면 그 상품 — 1:1 문의는 null */
+  inquiryProduct: { productId: number; name: string; slug: string } | null;
 };
 
 export type AdminQnaListResult = {
@@ -263,14 +273,22 @@ export type AdminQnaListResult = {
   page: number;
   pageSize: number;
   tabCounts: Record<AdminQnaTab, number>;
+  /** 종류별 건수 — 종류를 바꾸기 전에 몇 건인지 보인다 */
+  kindCounts: Record<AdminInquiryKind, number>;
 };
 
 export async function listAdminQnas(
   database: DatabaseClient,
-  input: { tab?: AdminQnaTab; keyword?: string; page?: number } = {},
+  input: {
+    tab?: AdminQnaTab;
+    inquiryKind?: AdminInquiryKind;
+    keyword?: string;
+    page?: number;
+  } = {},
 ): Promise<AdminQnaListResult> {
   const boardId = await getBoardId(database, "qna");
   const tab = input.tab ?? "all";
+  const inquiryKind = input.inquiryKind ?? "all";
   const page = Math.max(1, input.page ?? 1);
   const keyword = input.keyword?.trim();
 
@@ -281,6 +299,14 @@ export async function listAdminQnas(
         ? eq(post.isAnswered, true)
         : undefined;
 
+  // 상품 문의인지 아닌지는 product_id 유무가 정한다 — 별도 플래그를 두면 둘이 어긋난다
+  const kindFilter =
+    inquiryKind === "product"
+      ? isNotNull(post.productId)
+      : inquiryKind === "direct"
+        ? isNull(post.productId)
+        : undefined;
+
   const keywordFilter = keyword
     ? or(
         ilike(post.title, `%${keyword}%`),
@@ -289,7 +315,7 @@ export async function listAdminQnas(
       )
     : undefined;
 
-  const listFilter = and(eq(post.boardId, boardId), tabFilter, keywordFilter);
+  const listFilter = and(eq(post.boardId, boardId), tabFilter, kindFilter, keywordFilter);
 
   const [totalRow] = await database.select({ total: count() }).from(post).where(listFilter);
 
@@ -304,9 +330,14 @@ export async function listAdminQnas(
       isSecret: post.isSecret,
       isAnswered: post.isAnswered,
       createdAt: post.createdAt,
+      productId: post.productId,
+      productName: product.name,
+      productSlug: product.slug,
     })
     .from(post)
     .leftJoin(customer, eq(post.customerId, customer.id))
+    // 상품이 지워져도 문의는 남는다(product_id는 set null) — 그때는 상품 칸만 빈다
+    .leftJoin(product, eq(post.productId, product.id))
     .leftJoin(
       commonCode,
       and(eq(commonCode.groupCode, "qna_type"), eq(commonCode.code, post.categoryCode)),
@@ -317,6 +348,8 @@ export async function listAdminQnas(
     .limit(ADMIN_BOARD_PAGE_SIZE)
     .offset((page - 1) * ADMIN_BOARD_PAGE_SIZE);
 
+  // 탭 건수는 **선택한 종류 안에서** 센다 — 상품 문의를 보는데 미답변 수가 전체 기준이면
+  // "미답변 3"을 눌렀는데 1건만 나오는 일이 생긴다
   const [tabCountRow] = await database
     .select({
       all: count(),
@@ -324,7 +357,16 @@ export async function listAdminQnas(
       answered: sql<number>`count(*) filter (where ${post.isAnswered})::int`,
     })
     .from(post)
-    .where(eq(post.boardId, boardId));
+    .where(and(eq(post.boardId, boardId), kindFilter));
+
+  const [kindCountRow] = await database
+    .select({
+      all: count(),
+      product: sql<number>`count(*) filter (where ${post.productId} is not null)::int`,
+      direct: sql<number>`count(*) filter (where ${post.productId} is null)::int`,
+    })
+    .from(post)
+    .where(and(eq(post.boardId, boardId), tabFilter));
 
   return {
     cards: rows.map((row) => ({
@@ -336,6 +378,10 @@ export async function listAdminQnas(
       isSecret: row.isSecret,
       isAnswered: row.isAnswered,
       createdAt: row.createdAt,
+      inquiryProduct:
+        row.productId !== null && row.productName !== null && row.productSlug !== null
+          ? { productId: row.productId, name: row.productName, slug: row.productSlug }
+          : null,
     })),
     totalCount: totalRow?.total ?? 0,
     page,
@@ -344,6 +390,11 @@ export async function listAdminQnas(
       all: tabCountRow?.all ?? 0,
       waiting: Number(tabCountRow?.waiting ?? 0),
       answered: Number(tabCountRow?.answered ?? 0),
+    },
+    kindCounts: {
+      all: kindCountRow?.all ?? 0,
+      product: Number(kindCountRow?.product ?? 0),
+      direct: Number(kindCountRow?.direct ?? 0),
     },
   };
 }

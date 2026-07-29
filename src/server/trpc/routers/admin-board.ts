@@ -78,6 +78,8 @@ export const adminBoardRouter = router({
     .input(
       z.object({
         tab: z.enum(["all", "waiting", "answered"]).optional(),
+        // 상품 문의 / 1:1 문의 — product_id 유무로 갈린다
+        inquiryKind: z.enum(["all", "product", "direct"]).optional(),
         keyword: z.string().trim().max(100).optional(),
         page: z.number().int().min(1).optional(),
       }),
