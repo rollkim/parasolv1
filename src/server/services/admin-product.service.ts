@@ -1,6 +1,6 @@
 import "server-only";
 
-import { and, asc, count, desc, eq, ilike, inArray, isNull, notInArray, or, sql } from "drizzle-orm";
+import { and, asc, count, desc, eq, gte, ilike, inArray, isNull, lte, notInArray, or, sql } from "drizzle-orm";
 
 import {
   category,
@@ -59,7 +59,8 @@ export type AdminProductListResult = {
   tabCounts: Record<AdminProductTab, number>;
 };
 
-const ADMIN_PRODUCT_PAGE_SIZE = 20;
+// 20개는 한 화면을 넘겨 스크롤이 길어진다 — 15개면 대부분의 화면에서 목록 전체가 보인다
+const ADMIN_PRODUCT_PAGE_SIZE = 15;
 
 const PRODUCT_STATUS_LABELS: Record<"draft" | "active" | "hidden", string> = {
   draft: "작성중",
@@ -83,6 +84,10 @@ export async function listAdminProducts(
     keyword?: string;
     sort?: AdminProductSort;
     page?: number;
+    /** 등록일 시작 — 그날 00:00부터 */
+    registeredFrom?: Date;
+    /** 등록일 끝 — 그날 23:59:59까지(라우터가 하루 끝으로 맞춰 보낸다) */
+    registeredTo?: Date;
   } = {},
 ): Promise<AdminProductListResult> {
   const tab = input.tab ?? "all";
@@ -119,12 +124,33 @@ export async function listAdminProducts(
     ? or(ilike(product.name, `%${keyword}%`), ilike(product.slug, `%${keyword}%`))
     : undefined;
 
+  // 카테고리 필터는 **하위까지 포함**한다 — 대분류를 골랐는데 그 분류에 직접 걸린 상품만
+  // 나오면 "선물세트에 상품이 없다"로 보인다(실제로는 중분류에 달려 있다)
   const categoryFilter = input.categoryId
-    ? sql`exists (select 1 from ${productCategory} pc where pc.product_id = ${product.id} and pc.category_id = ${input.categoryId})`
+    ? sql`exists (
+        select 1 from ${productCategory} pc
+         where pc.product_id = ${product.id}
+           and (pc.category_id = ${input.categoryId}
+                or pc.category_id in (select id from ${category} where parent_id = ${input.categoryId}))
+      )`
     : undefined;
 
+  const registeredFilter =
+    input.registeredFrom || input.registeredTo
+      ? and(
+          input.registeredFrom ? gte(product.createdAt, input.registeredFrom) : undefined,
+          input.registeredTo ? lte(product.createdAt, input.registeredTo) : undefined,
+        )
+      : undefined;
+
   // 삭제된 상품은 목록에 없다 — soft delete는 주문·리뷰 이력 보존용이지 진열용이 아니다
-  const listFilter = and(isNull(product.deletedAt), tabFilter, keywordFilter, categoryFilter);
+  const listFilter = and(
+    isNull(product.deletedAt),
+    tabFilter,
+    keywordFilter,
+    categoryFilter,
+    registeredFilter,
+  );
 
   const orderByClause =
     sort === "sales"

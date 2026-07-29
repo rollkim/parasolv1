@@ -15,6 +15,7 @@ import Link from "next/link"
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 
+import { AdminPagination } from "@/components/admin/admin-pagination"
 import { Button } from "@/components/ui/button"
 import { Checkbox } from "@/components/ui/checkbox"
 import { EmptyState } from "@/components/ui/empty-state"
@@ -54,6 +55,18 @@ export function AdminProductListView() {
   const [appliedKeyword, setAppliedKeyword] = React.useState("")
   const [page, setPage] = React.useState(1)
   const [selectedIds, setSelectedIds] = React.useState<number[]>([])
+  /* 조회조건 — 입력 중인 값이 아니라 '적용된' 값으로 조회한다.
+     날짜를 고르는 도중에 매번 조회하면 중간 상태(시작만 있는 범위)로 목록이 흔들린다 */
+  const [categoryFilterId, setCategoryFilterId] = React.useState<number | null>(null)
+  const [registeredFrom, setRegisteredFrom] = React.useState("")
+  const [registeredTo, setRegisteredTo] = React.useState("")
+  const [appliedFilters, setAppliedFilters] = React.useState<{
+    categoryId: number | null
+    from: string
+    to: string
+  }>({ categoryId: null, from: "", to: "" })
+
+  const categoryOptionsQuery = useQuery(trpc.adminCategory.tree.queryOptions())
 
   const listQuery = useQuery(
     trpc.adminProduct.list.queryOptions({
@@ -61,8 +74,24 @@ export function AdminProductListView() {
       sort,
       keyword: appliedKeyword || undefined,
       page,
+      categoryId: appliedFilters.categoryId ?? undefined,
+      registeredFrom: appliedFilters.from || undefined,
+      registeredTo: appliedFilters.to || undefined,
     }),
   )
+
+  function applyFilters() {
+    setAppliedFilters({ categoryId: categoryFilterId, from: registeredFrom, to: registeredTo })
+    setPage(1) // 조건이 바뀌면 결과가 통째로 달라진다 — 3쪽에 머물면 빈 화면이 나온다
+  }
+
+  function resetFilters() {
+    setCategoryFilterId(null)
+    setRegisteredFrom("")
+    setRegisteredTo("")
+    setAppliedFilters({ categoryId: null, from: "", to: "" })
+    setPage(1)
+  }
   const changeStatusMutation = useMutation(trpc.adminProduct.changeStatus.mutationOptions())
   const removeMutation = useMutation(trpc.adminProduct.remove.mutationOptions())
 
@@ -172,6 +201,62 @@ export function AdminProductListView() {
             ))}
           </select>
         </label>
+      </div>
+
+      {/* 조회조건 — 카테고리·등록일. 적용 버튼을 눌러야 반영된다(날짜를 고르는 도중에
+          매번 조회하면 시작만 있는 중간 상태로 목록이 흔들린다) */}
+      <div className="flex flex-wrap items-end gap-2 rounded-[var(--radius)] border border-border bg-card p-3">
+        <label className="flex flex-col gap-1 text-[12px]">
+          <span className="font-semibold">카테고리</span>
+          <select
+            className="h-10 min-w-[180px] rounded-[calc(var(--radius)-4px)] border border-input bg-card px-2.5 text-[13px]"
+            value={categoryFilterId ?? ""}
+            onChange={(event) =>
+              setCategoryFilterId(event.target.value ? Number(event.target.value) : null)
+            }
+          >
+            <option value="">전체</option>
+            {categoryOptionsQuery.data?.map((rootCategory) => (
+              <optgroup key={rootCategory.categoryId} label={rootCategory.name}>
+                {/* 대분류 자체도 고를 수 있다 — 고르면 하위까지 포함해 조회된다 */}
+                <option value={rootCategory.categoryId}>{rootCategory.name} 전체</option>
+                {rootCategory.children.map((childCategory) => (
+                  <option key={childCategory.categoryId} value={childCategory.categoryId}>
+                    {childCategory.name}
+                  </option>
+                ))}
+              </optgroup>
+            ))}
+          </select>
+        </label>
+
+        <label className="flex flex-col gap-1 text-[12px]">
+          <span className="font-semibold">등록일 시작</span>
+          <Input
+            size="admin"
+            type="date"
+            value={registeredFrom}
+            max={registeredTo || undefined}
+            onChange={(event) => setRegisteredFrom(event.target.value)}
+          />
+        </label>
+        <label className="flex flex-col gap-1 text-[12px]">
+          <span className="font-semibold">등록일 끝</span>
+          <Input
+            size="admin"
+            type="date"
+            value={registeredTo}
+            min={registeredFrom || undefined}
+            onChange={(event) => setRegisteredTo(event.target.value)}
+          />
+        </label>
+
+        <Button type="button" variant="neutral-solid" size="admin-40" onClick={applyFilters}>
+          조회
+        </Button>
+        <Button type="button" variant="outline" size="admin-40" onClick={resetFilters}>
+          초기화
+        </Button>
       </div>
 
       {/* 일괄 처리 — 선택이 있을 때만 나온다 */}
@@ -310,31 +395,17 @@ export function AdminProductListView() {
             ))}
           </ul>
 
-          {lastPage > 1 ? (
-            <nav aria-label="페이지 이동" className="flex justify-center gap-2">
-              <Button
-                type="button"
-                variant="outline"
-                size="admin-38"
-                disabled={page <= 1}
-                onClick={() => setPage((previous) => Math.max(1, previous - 1))}
-              >
-                이전
-              </Button>
-              <span className="flex items-center px-2 text-[13px] text-muted-foreground">
-                {page} / {lastPage}
-              </span>
-              <Button
-                type="button"
-                variant="outline"
-                size="admin-38"
-                disabled={page >= lastPage}
-                onClick={() => setPage((previous) => Math.min(lastPage, previous + 1))}
-              >
-                다음
-              </Button>
-            </nav>
-          ) : null}
+          {/* 1페이지뿐이어도 보인다 — 사라지면 목록이 끝인지 페이징이 없는 화면인지 모른다 */}
+          <AdminPagination
+            label="상품 목록"
+            page={listResult?.page ?? 1}
+            pageSize={listResult?.pageSize ?? 15}
+            totalCount={listResult?.totalCount ?? 0}
+            onPageChange={(nextPage) => {
+              setPage(Math.min(Math.max(1, nextPage), lastPage))
+              setSelectedIds([])
+            }}
+          />
         </>
       )}
     </div>

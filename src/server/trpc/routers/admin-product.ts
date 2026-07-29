@@ -100,9 +100,24 @@ export const adminProductRouter = router({
         keyword: z.string().trim().max(100).optional(),
         sort: z.enum(["recent", "sales", "lowstock", "priceHigh"]).optional(),
         page: z.number().int().min(1).optional(),
+        // 날짜 입력(YYYY-MM-DD)을 그대로 받는다 — Date로 받으면 브라우저 시간대에 따라
+        // 하루가 밀린다. 서버에서 그날의 처음·끝으로 넓혀 붙인다
+        registeredFrom: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
+        registeredTo: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
       }),
     )
-    .query(({ ctx, input }) => listAdminProducts(ctx.db, input)),
+    .query(({ ctx, input }) =>
+      listAdminProducts(ctx.db, {
+        ...input,
+        registeredFrom: input.registeredFrom
+          ? new Date(`${input.registeredFrom}T00:00:00`)
+          : undefined,
+        // 끝날은 그날 23:59:59까지 — 날짜만 비교하면 그날 등록분이 통째로 빠진다
+        registeredTo: input.registeredTo
+          ? new Date(`${input.registeredTo}T23:59:59.999`)
+          : undefined,
+      }),
+    ),
 
   /** 등록·수정 공용 폼 — productId가 없으면 빈 양식 */
   form: adminProcedure
