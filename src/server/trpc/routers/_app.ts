@@ -15,6 +15,7 @@ import { cartRouter } from "./cart";
 import { claimRouter } from "./claim";
 import { mypageRouter } from "./mypage";
 import { orderRouter } from "./order";
+import { reviewRouter } from "./review";
 import { siteSettingRouter } from "./site-setting";
 import { supportRouter } from "./support";
 import { wishlistRouter } from "./wishlist";
@@ -40,6 +41,7 @@ export const appRouter = router({
   claim: claimRouter,
   mypage: mypageRouter,
   order: orderRouter,
+  review: reviewRouter,
   siteSetting: siteSettingRouter,
   support: supportRouter,
   wishlist: wishlistRouter,

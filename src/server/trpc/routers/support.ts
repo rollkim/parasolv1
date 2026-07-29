@@ -1,9 +1,12 @@
 import { TRPCError } from "@trpc/server";
-import { headers } from "next/headers";
 import { z } from "zod";
 
 import { assertQnaAllowed } from "@/server/security/rate-limit";
-import { createQnaPost } from "@/server/services/board.service";
+import {
+  createProductQna,
+  createQnaPost,
+  getProductQnas,
+} from "@/server/services/board.service";
 
 import { publicProcedure, router } from "../init";
 
@@ -60,10 +63,10 @@ export const supportRouter = router({
     create: publicProcedure
       .input(qnaCreateInputSchema)
       .mutation(async ({ ctx, input }) => {
-        // 문의 스팸 억제 — IP 기준 시간당 한도
-        const forwardedFor = (await headers()).get("x-forwarded-for");
-        const clientIp = forwardedFor ? forwardedFor.split(",")[0].trim() : null;
-        assertQnaAllowed(clientIp);
+        // 문의 스팸 억제 — IP 기준 시간당 한도.
+        // IP는 컨텍스트에서 온다: next/headers를 라우터가 직접 부르면 HTTP 밖 호출자
+        // (검증 스크립트·배치)에서 "headers was called outside a request scope"로 깨진다.
+        assertQnaAllowed(ctx.clientIp);
 
         if (ctx.customerId !== null) {
           // 회원 문의 — 클라이언트가 보낸 guest 필드는 신뢰하지 않고 버린다
@@ -83,6 +86,59 @@ export const supportRouter = router({
           });
         }
         return createQnaPost(ctx.db, {
+          guestName: input.guestName,
+          guestPhone: input.guestPhone,
+          guestPassword: input.guestPassword,
+          categoryCode: input.categoryCode,
+          title: input.title,
+          content: input.content,
+          isSecret: input.isSecret,
+        });
+      }),
+  }),
+
+  /** 상품 문의 — 1:1 문의와 같은 게시판이지만 상품에 묶인다 */
+  productQna: router({
+    list: publicProcedure
+      .input(
+        z.object({
+          productId: z.number().int().positive(),
+          page: z.number().int().min(1).optional(),
+        }),
+      )
+      .query(({ ctx, input }) =>
+        getProductQnas(ctx.db, {
+          productId: input.productId,
+          // 비밀글 본문은 작성자에게만 — 화면에서 가리면 응답을 열어보는 순간 새어나간다
+          viewerCustomerId: ctx.customerId,
+          page: input.page,
+        }),
+      ),
+
+    create: publicProcedure
+      .input(qnaCreateInputSchema.extend({ productId: z.number().int().positive() }))
+      .mutation(async ({ ctx, input }) => {
+        assertQnaAllowed(ctx.clientIp);
+
+        if (ctx.customerId !== null) {
+          return createProductQna(ctx.db, {
+            productId: input.productId,
+            customerId: ctx.customerId,
+            categoryCode: input.categoryCode,
+            title: input.title,
+            content: input.content,
+            isSecret: input.isSecret,
+          });
+        }
+
+        if (!input.guestName || !input.guestPhone || !input.guestPassword) {
+          throw new TRPCError({
+            code: "BAD_REQUEST",
+            message: "비회원 문의는 이름·휴대폰 번호·비밀번호를 모두 입력해 주세요.",
+          });
+        }
+        return createProductQna(ctx.db, {
+          productId: input.productId,
           guestName: input.guestName,
           guestPhone: input.guestPhone,
           guestPassword: input.guestPassword,

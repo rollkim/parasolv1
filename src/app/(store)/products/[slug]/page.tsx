@@ -6,6 +6,7 @@ import { cache } from "react";
 import { ProductDetailTabs } from "@/components/store/product-detail-tabs";
 import { ProductPurchasePanel } from "@/components/store/product-purchase-panel";
 import { db } from "@/db";
+import { readSessionCustomerId } from "@/server/auth/session";
 import { getProductDetail } from "@/server/services/product.service";
 
 /**
@@ -67,6 +68,9 @@ export default async function ProductDetailPage({
           productSummary={productDetail.summary}
           descriptionText={productDetail.descriptionText}
           detailImages={productDetail.detailImages}
+          productId={productDetail.productId}
+          // 비회원 문의는 이름·연락처·비밀번호가 더 필요하다 — 로그인 여부는 서버가 판단한다
+          isMember={(await readSessionCustomerId()) !== null}
         />
       </ProductPurchasePanel>
     </div>

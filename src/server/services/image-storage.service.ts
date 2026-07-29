@@ -69,11 +69,12 @@ export type StoredImagePath = string;
  * 업로드 용도별 최상위 폴더. 열린 문자열이 아니라 목록으로 고정한다 —
  * 클라이언트가 폴더명을 정하게 두면 그 자체가 경로 조작 입력이 된다.
  */
-export const IMAGE_FOLDERS = ["products", "banners"] as const;
+export const IMAGE_FOLDERS = ["products", "banners", "reviews"] as const;
 export type ImageFolder = (typeof IMAGE_FOLDERS)[number];
 
 /** DB·zod가 공유하는 저장 경로 형식 */
-export const STORED_IMAGE_PATH_PATTERN = /^(products|banners)\/\d{6}\/[a-f0-9]+\.(jpg|png|webp|avif)$/;
+export const STORED_IMAGE_PATH_PATTERN =
+  /^(products|banners|reviews)\/\d{6}\/[a-f0-9]+\.(jpg|png|webp|avif)$/;
 
 /**
  * 저장 상대경로를 실제 파일 경로로 바꾼다.

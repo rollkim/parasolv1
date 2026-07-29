@@ -4,7 +4,9 @@ import { and, count, desc, eq, ilike, inArray, isNull, or, sql } from "drizzle-o
 
 import { customer, product, review, reviewReport } from "@/db/schema";
 
-import type { DatabaseClient, TransactionClient } from "./db-client";
+import type { DatabaseClient } from "./db-client";
+// 별점 캐시 계산은 스토어 작성 경로와 **같은 함수**를 쓴다 — 두 벌이면 반드시 어긋난다
+import { recomputeProductRating } from "./review.service";
 
 /**
  * 관리자 리뷰 관리 — 목록·답글·숨김·신고 처리.
@@ -174,22 +176,6 @@ export class AdminReviewNotFoundError extends Error {
     super(`리뷰를 찾을 수 없습니다: id=${reviewId}`);
     this.name = "AdminReviewNotFoundError";
   }
-}
-
-/**
- * 상품의 별점 캐시를 **다시 세서** 맞춘다(보이는 리뷰만).
- *
- * 증감으로 관리하면 한 번 어긋난 값이 영영 어긋난 채로 남는다. 리뷰 수가 상품당
- * 수백 건 규모라 매번 세도 비싸지 않고, 무엇보다 이 함수를 부르면 반드시 맞는다.
- */
-async function recomputeProductRating(tx: TransactionClient, productId: number): Promise<void> {
-  await tx
-    .update(product)
-    .set({
-      reviewCount: sql`(select count(*) from ${review} r where r.product_id = ${productId} and not r.is_hidden)`,
-      ratingSum: sql`(select coalesce(sum(r.rating), 0) from ${review} r where r.product_id = ${productId} and not r.is_hidden)`,
-    })
-    .where(eq(product.id, productId));
 }
 
 /** 관리자 답글 — 리뷰 아래에 그대로 노출된다 */

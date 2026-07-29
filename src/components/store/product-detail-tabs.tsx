@@ -13,8 +13,9 @@
 //  - 목업에는 tabpanel role·화살표 키 이동이 없다(미발견) — Radix Tabs가 보강한다.
 
 import * as React from "react"
-import { MessageCircleQuestionIcon, StarIcon } from "lucide-react"
 
+import { ProductQnaPanel } from "@/components/store/product-qna-panel"
+import { ProductReviewPanel } from "@/components/store/product-review-panel"
 import { EmptyState } from "@/components/ui/empty-state"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { cn } from "@/lib/utils"
@@ -34,12 +35,18 @@ export type ProductDetailTabsProps = {
   descriptionText: string | null
   /** 세로로 이어붙는 상세 이미지 스택 (관리자 '상세 이미지' 등록 반영) */
   detailImages: { path: string; alt: string }[]
+  /** 리뷰·문의 패널이 조회할 대상 */
+  productId: number
+  /** 비회원 문의 입력칸을 띄울지 — 로그인 상태는 서버가 알려준다 */
+  isMember: boolean
 }
 
 export function ProductDetailTabs({
   productSummary,
   descriptionText,
   detailImages,
+  productId,
+  isMember,
 }: ProductDetailTabsProps) {
   const [activeTabValue, setActiveTabValue] = React.useState("description")
 
@@ -113,31 +120,20 @@ export function ProductDetailTabs({
           )}
         </TabsContent>
 
-        {/* ── 리뷰 — TODO(4주차): 요약 카드·리뷰 목록·리뷰 작성 진입으로 교체 ── */}
+        {/* ── 리뷰 ── */}
         <TabsContent
           value="reviews"
           className="mx-auto w-full max-w-[720px] py-7"
         >
-          <EmptyState
-            size="inline"
-            stateTone="brand"
-            icon={<StarIcon strokeWidth={1.5} />}
-            title="리뷰 준비 중"
-            description="리뷰 작성과 조회는 준비 중이에요. 오픈되면 구매 후기를 이곳에서 확인하실 수 있어요."
-          />
+          <ProductReviewPanel productId={productId} />
         </TabsContent>
 
-        {/* ── 문의 — TODO(4주차): 문의 목록·상태 배지·문의 작성 진입으로 교체 ── */}
+        {/* ── 문의 ── */}
         <TabsContent
           value="inquiries"
           className="mx-auto w-full max-w-[720px] py-7"
         >
-          <EmptyState
-            size="inline"
-            icon={<MessageCircleQuestionIcon strokeWidth={1.5} />}
-            title="상품 문의 준비 중"
-            description="상품 문의 작성과 답변 확인은 준비 중이에요. 그동안 급한 문의는 고객센터를 이용해 주세요."
-          />
+          <ProductQnaPanel productId={productId} isMember={isMember} />
         </TabsContent>
 
         {/* ── 배송안내 — 목업 문구 정적 렌더(문구·금액은 site_setting 연동 예정) ── */}

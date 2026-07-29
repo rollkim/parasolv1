@@ -169,3 +169,15 @@ export function assertGuestLookupAllowed(clientIp: string | null): void {
   const state = recordAttempt(`guest_lookup:ip:${clientIp}`, GUEST_LOOKUP_BY_IP);
   if (!state.allowed) throwTooMany(state.retryAfterSeconds);
 }
+
+/**
+ * 리뷰 사진 업로드 게이트 — 회원 기준.
+ * 로그인만 확인하면 한 계정이 디스크를 채울 수 있다. IP가 아니라 회원 id로 세는 이유는
+ * 업로드가 로그인 뒤에만 가능하고, 같은 IP를 여럿이 쓰는 환경(사무실·모바일)을 막지 않기 위해서다.
+ */
+const REVIEW_UPLOAD_BY_CUSTOMER: RateLimitRule = { limit: 30, windowMs: 60 * 60 * 1000 };
+
+export function assertReviewUploadAllowed(customerId: number): void {
+  const state = recordAttempt(`review_upload:customer:${customerId}`, REVIEW_UPLOAD_BY_CUSTOMER);
+  if (!state.allowed) throwTooMany(state.retryAfterSeconds);
+}

@@ -34,6 +34,11 @@ import {
 import { AdminReviewNotFoundError } from "@/server/services/admin-review.service";
 import { ShippingPolicyInvalidError } from "@/server/services/admin-setting.service";
 import {
+  ReviewAlreadyWrittenError,
+  ReviewNotDeliveredError,
+  ReviewNotPurchasedError,
+} from "@/server/services/review.service";
+import {
   AdminCategoryNotFoundError,
   CategoryDepthExceededError,
   CategoryHasChildrenError,
@@ -348,6 +353,17 @@ export function toOrderTRPCError(error: unknown): unknown {
   // 주문 금액이 이 값에서 나오므로 문구가 무엇을 고쳐야 하는지 그대로 알려준다
   if (error instanceof ShippingPolicyInvalidError) {
     return new TRPCError({ code: "BAD_REQUEST", message: error.message, cause: error });
+  }
+
+  // ── 리뷰 작성(스토어) ──
+  // 미구매·미배송·중복은 전부 "쓸 수 없다"이고 문구가 이유를 담는다.
+  // 남의 주문 항목 id를 넣어도 미구매로 끝난다 — 존재 여부를 알려주지 않는다
+  if (error instanceof ReviewNotPurchasedError || error instanceof ReviewNotDeliveredError) {
+    return new TRPCError({ code: "FORBIDDEN", message: error.message, cause: error });
+  }
+
+  if (error instanceof ReviewAlreadyWrittenError) {
+    return new TRPCError({ code: "CONFLICT", message: error.message, cause: error });
   }
 
   // ── 관리자 리뷰 ──

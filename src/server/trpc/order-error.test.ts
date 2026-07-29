@@ -33,6 +33,11 @@ import {
 import { AdminReviewNotFoundError } from "@/server/services/admin-review.service";
 import { ShippingPolicyInvalidError } from "@/server/services/admin-setting.service";
 import {
+  ReviewAlreadyWrittenError,
+  ReviewNotDeliveredError,
+  ReviewNotPurchasedError,
+} from "@/server/services/review.service";
+import {
   AdminCategoryNotFoundError,
   CategoryDepthExceededError,
   CategoryHasChildrenError,
@@ -146,6 +151,9 @@ const DOMAIN_ERRORS: { name: string; error: Error }[] = [
     name: "ShippingPolicyInvalidError",
     error: new ShippingPolicyInvalidError("배송비와 무료배송 기준은 0원 이상이어야 합니다."),
   },
+  { name: "ReviewNotPurchasedError", error: new ReviewNotPurchasedError() },
+  { name: "ReviewNotDeliveredError", error: new ReviewNotDeliveredError() },
+  { name: "ReviewAlreadyWrittenError", error: new ReviewAlreadyWrittenError() },
 ];
 
 describe("주문 오류 → tRPC 오류 매핑", () => {

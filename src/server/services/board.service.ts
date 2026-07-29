@@ -2,10 +2,11 @@ import "server-only";
 
 import { TRPCError } from "@trpc/server";
 import bcrypt from "bcryptjs";
-import { and, asc, count, desc, eq, sql } from "drizzle-orm";
+import { and, asc, count, desc, eq, inArray, sql } from "drizzle-orm";
 
 import type { db as Database } from "@/db";
-import { board, commonCode, post } from "@/db/schema";
+import { board, comment, commonCode, customer, post } from "@/db/schema";
+import { maskOrdererName } from "@/domain/order";
 
 /**
  * 게시판 도메인 서비스 — 공지사항·FAQ 조회와 1:1 문의 등록.
@@ -304,4 +305,107 @@ export async function createQnaPost(
     .returning({ qnaPostId: post.id, createdAt: post.createdAt });
 
   return createdPost;
+}
+
+// =============================================================
+// 상품 문의 — 상품 상세 탭에서 묻고 답한다
+// =============================================================
+
+export type ProductQnaCard = {
+  qnaPostId: number;
+  title: string;
+  /** 비밀글이면 본문을 내리지 않는다 — 목록에서 새어나가면 비밀글이 아니다 */
+  content: string | null;
+  isSecret: boolean;
+  isAnswered: boolean;
+  authorName: string;
+  answer: { content: string; createdAt: Date } | null;
+  createdAt: Date;
+};
+
+/**
+ * 상품 문의 목록.
+ *
+ * **비밀글은 본문과 답변을 아예 내려보내지 않는다.** 화면에서 가리는 방식은 응답을 열어보면
+ * 그대로 보여 비밀글이 아니게 된다. 작성자 본인에게만 내용을 준다.
+ */
+export async function getProductQnas(
+  database: DatabaseClient,
+  input: { productId: number; viewerCustomerId: number | null; page?: number },
+): Promise<{ cards: ProductQnaCard[]; totalCount: number; page: number; pageSize: number }> {
+  const page = Math.max(1, input.page ?? 1);
+  const pageSize = 10;
+  const qnaBoardId = await getBoardIdBySlug(database, "qna");
+  const listFilter = and(eq(post.boardId, qnaBoardId), eq(post.productId, input.productId));
+
+  const [totalRow] = await database.select({ total: count() }).from(post).where(listFilter);
+
+  const rows = await database
+    .select({
+      qnaPostId: post.id,
+      title: post.title,
+      content: post.content,
+      isSecret: post.isSecret,
+      isAnswered: post.isAnswered,
+      customerId: post.customerId,
+      memberName: customer.name,
+      guestName: post.guestName,
+      createdAt: post.createdAt,
+    })
+    .from(post)
+    .leftJoin(customer, eq(post.customerId, customer.id))
+    .where(listFilter)
+    .orderBy(desc(post.id))
+    .limit(pageSize)
+    .offset((page - 1) * pageSize);
+
+  const postIds = rows.map((row) => row.qnaPostId);
+  const answerRows =
+    postIds.length === 0
+      ? []
+      : await database
+          .select({
+            postId: comment.postId,
+            content: comment.content,
+            createdAt: comment.createdAt,
+          })
+          .from(comment)
+          .where(and(inArray(comment.postId, postIds), eq(comment.authorType, "admin")))
+          .orderBy(asc(comment.id));
+
+  return {
+    cards: rows.map((row) => {
+      const isOwner = input.viewerCustomerId !== null && row.customerId === input.viewerCustomerId;
+      const canRead = !row.isSecret || isOwner;
+      const answer = answerRows.find((answerRow) => answerRow.postId === row.qnaPostId);
+      const authorName = row.memberName ?? row.guestName ?? "비회원";
+      return {
+        qnaPostId: row.qnaPostId,
+        title: canRead ? row.title : "비밀글입니다",
+        content: canRead ? row.content : null,
+        isSecret: row.isSecret,
+        isAnswered: row.isAnswered,
+        // 이름도 마스킹한다 — 문의 목록은 누구나 본다
+        authorName: maskOrdererName(authorName),
+        answer: canRead && answer ? { content: answer.content, createdAt: answer.createdAt } : null,
+        createdAt: row.createdAt,
+      };
+    }),
+    totalCount: totalRow?.total ?? 0,
+    page,
+    pageSize,
+  };
+}
+
+/** 상품 문의 등록 — 1:1 문의와 같은 테이블이지만 productId가 붙는다 */
+export async function createProductQna(
+  database: DatabaseClient,
+  input: CreateQnaPostInput & { productId: number },
+): Promise<CreatedQnaPost> {
+  const created = await createQnaPost(database, input);
+  await database
+    .update(post)
+    .set({ productId: input.productId })
+    .where(eq(post.id, created.qnaPostId));
+  return created;
 }
