@@ -7,6 +7,8 @@ import { siteSetting } from "@/db/schema";
 import type { DatabaseClient } from "./db-client";
 import { serializeActor, type TransitionActor } from "./order-status.service";
 import { loadThemeSetting, type ThemeSetting } from "./theme.service";
+import { loadPointPolicy } from "./point-policy.service";
+import type { PointPolicy } from "@/domain/point";
 import {
   FALLBACK_BUSINESS_INFO,
   getSiteSetting,
@@ -53,6 +55,8 @@ export type AdminSettingBundle = {
   analytics: AnalyticsSetting;
   /** 색 프리셋 — 스토어·관리자 각각 */
   theme: ThemeSetting;
+  /** 적립금 정책 — 적립률·소멸일·사용 규칙·보너스 */
+  pointPolicy: PointPolicy;
   /** 화면이 "왜 여기 없는지" 답할 수 있게 */
   serverManagedKeys: { label: string; reason: string }[];
 };
@@ -102,6 +106,7 @@ export async function getAdminSettings(database: DatabaseClient): Promise<AdminS
   ];
   // 테마는 값 검증(프리셋 목록)이 필요해 전용 로더를 쓴다 — mergeSetting은 형태만 맞춘다
   const theme = await loadThemeSetting(database);
+  const pointPolicy = await loadPointPolicy(database);
 
   return {
     businessInfo: mergeSetting(businessRaw, FALLBACK_BUSINESS_INFO),
@@ -109,8 +114,54 @@ export async function getAdminSettings(database: DatabaseClient): Promise<AdminS
     policyText: mergeSetting(policyRaw, DEFAULT_POLICY_TEXT),
     analytics: mergeSetting(analyticsRaw, DEFAULT_ANALYTICS),
     theme,
+    pointPolicy,
     serverManagedKeys: SERVER_MANAGED_KEYS,
   };
+}
+
+/**
+ * 적립금 정책 저장.
+ *
+ * **적립률을 잘못 넣으면 돈이 잘못 뿌려진다** — 되돌릴 수 없으므로 저장 전에 거른다.
+ * 저장 키는 earnRate(0.1% 단위 정수)로 유지한다 — 도메인은 earnRatePerMille로 읽지만
+ * 저장 형태를 바꾸면 이미 저장된 값이 통째로 어긋난다.
+ */
+export async function saveAdminPointPolicy(
+  database: DatabaseClient,
+  input: { pointPolicy: PointPolicy; actor: TransitionActor },
+): Promise<{ saved: true }> {
+  const policy = input.pointPolicy;
+  if (policy.earnRatePerMille > 200) {
+    // 20%를 넘는 적립률은 실수일 가능성이 압도적이다(0.1% 단위를 %로 착각한 경우)
+    throw new ShippingPolicyInvalidError(
+      "적립률이 20%를 넘습니다. 0.1% 단위로 입력해 주세요(10 = 1%).",
+    );
+  }
+  if (policy.useUnitPoint < 1) {
+    throw new ShippingPolicyInvalidError("사용 단위는 1원 이상이어야 합니다.");
+  }
+  if (policy.minUsePoint > 0 && policy.minUsePoint % policy.useUnitPoint !== 0) {
+    // 최소액이 단위의 배수가 아니면 "1,001원부터 10원 단위" 같은 모순이 생겨 아무도 쓸 수 없다
+    throw new ShippingPolicyInvalidError(
+      "최소 사용 금액은 사용 단위의 배수여야 합니다.",
+    );
+  }
+
+  await upsertSetting(
+    database,
+    "point_policy",
+    {
+      earnRate: policy.earnRatePerMille,
+      expiryDays: policy.expiryDays,
+      useUnitPoint: policy.useUnitPoint,
+      minUsePoint: policy.minUsePoint,
+      signupBonusPoint: policy.signupBonusPoint,
+      reviewBonusPoint: policy.reviewBonusPoint,
+      photoReviewBonusPoint: policy.photoReviewBonusPoint,
+    },
+    serializeActor(input.actor),
+  );
+  return { saved: true };
 }
 
 /** 테마 저장 — 프리셋 이름만 저장한다(색상값 저장 금지, RULE-11) */

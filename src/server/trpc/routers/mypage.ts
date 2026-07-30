@@ -10,6 +10,11 @@ import {
   updateMyProfile,
 } from "@/server/services/customer.service";
 
+import {
+  getPointHistory,
+  getPointSummary,
+} from "@/server/services/point-history.service";
+
 import { withOrderErrorMapping } from "../order-error";
 import { protectedProcedure, router } from "../init";
 
@@ -104,6 +109,18 @@ export const mypageRouter = router({
     .input(z.object({ addressId: z.number().int().positive() }))
     .mutation(({ ctx, input }) =>
       deleteAddress(ctx.db, { customerId: ctx.customerId, ...input }),
+    ),
+
+  /** 적립금 요약 — 보유·사용가능·30일 내 소멸 예정 */
+  pointSummary: protectedProcedure.query(({ ctx }) =>
+    getPointSummary(ctx.db, ctx.customerId),
+  ),
+
+  /** 적립금 내역 — 잔액만 보여주면 "왜 줄었는지"를 운영자에게 물어야 한다 */
+  pointHistory: protectedProcedure
+    .input(z.object({ page: z.number().int().min(1).optional() }).optional())
+    .query(({ ctx, input }) =>
+      getPointHistory(ctx.db, { customerId: ctx.customerId, page: input?.page }),
     ),
 
   setDefaultAddress: protectedProcedure

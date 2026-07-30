@@ -6,6 +6,7 @@ import {
   saveAdminBusinessInfo,
   saveAdminPolicyText,
   saveAdminShippingPolicy,
+  saveAdminPointPolicy,
   saveAdminTheme,
 } from "@/server/services/admin-setting.service";
 import { THEME_PRESETS } from "@/server/services/theme.service";
@@ -103,6 +104,31 @@ export const adminSettingRouter = router({
       withOrderErrorMapping(() =>
         saveAdminAnalytics(ctx.db, {
           analytics: input,
+          actor: { role: "admin", id: ctx.adminUserId },
+        }),
+      ),
+    ),
+
+  /**
+   * 적립금 정책 — **돈이 걸린 값**이라 서비스가 상한·정합성을 다시 본다.
+   * 적립률은 0.1% 단위 정수(10 = 1%)다.
+   */
+  savePointPolicy: adminProcedure
+    .input(
+      z.object({
+        earnRatePerMille: z.number().int().min(0).max(1000),
+        expiryDays: z.number().int().min(1).max(3650),
+        useUnitPoint: z.number().int().min(1).max(10_000),
+        minUsePoint: z.number().int().min(0).max(1_000_000),
+        signupBonusPoint: z.number().int().min(0).max(1_000_000),
+        reviewBonusPoint: z.number().int().min(0).max(1_000_000),
+        photoReviewBonusPoint: z.number().int().min(0).max(1_000_000),
+      }),
+    )
+    .mutation(({ ctx, input }) =>
+      withOrderErrorMapping(() =>
+        saveAdminPointPolicy(ctx.db, {
+          pointPolicy: input,
           actor: { role: "admin", id: ctx.adminUserId },
         }),
       ),

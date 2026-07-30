@@ -6,6 +6,8 @@ import type { ShippingPolicy } from "@/domain/cart";
 
 import type { CartView } from "./cart.service";
 import { getCartWithItems } from "./cart.service";
+import { getPointBalance, getUsablePointBalance } from "./point.service";
+import { loadPointPolicy } from "./point-policy.service";
 import { loadShippingPolicy } from "./shipping-policy.service";
 import {
   listMyAddresses,
@@ -40,6 +42,18 @@ export type CheckoutView = {
   addresses: CustomerAddress[];
   /** 동의 대상 약관 — isRequired가 필수 여부의 진실원(화면이 정하지 않는다) */
   terms: TermsDocumentSummary[];
+  /**
+   * 적립금 — 회원만. **usableBalance가 결제에 쓸 수 있는 금액**이다(만료분 제외).
+   * balance(보유)는 안내용 — 소멸 배치가 돌기 전 만료분이 섞여 있어 이 값으로 검증하면
+   * "있다고 나오는데 안 된다"가 된다.
+   * 사용 규칙(최소액·단위)도 함께 내린다 — 화면이 숫자를 따로 적으면 정책을 바꿀 때 갈라진다.
+   */
+  point: {
+    balance: number;
+    usableBalance: number;
+    minUsePoint: number;
+    useUnitPoint: number;
+  } | null;
   /**
    * 배송 정책 — 화면이 **도서·산간 추가비를 같은 도메인 함수로** 계산하기 위해 필요하다.
    * 주소는 화면에서 정해지므로 카트 요약(주소를 모르는 값)만으로는 결제액을 그릴 수 없다.
@@ -132,6 +146,8 @@ export async function getCheckoutView(
       cart,
       ordererPrefill: toOrdererPrefill(null),
       addresses: [],
+      // 비회원은 적립금을 쓸 수 없다 — 잔액이 귀속될 회원이 없다
+      point: null,
       terms,
       shippingPolicy,
       tossClientKey: process.env.NEXT_PUBLIC_TOSS_CLIENT_KEY ?? null,
@@ -143,12 +159,23 @@ export async function getCheckoutView(
 
   const profile = await getMyProfile(database, input.customerId);
   const addresses = await listMyAddresses(database, input.customerId);
+  const pointPolicy = await loadPointPolicy(database);
+  const [pointBalance, usablePointBalance] = [
+    await getPointBalance(database, input.customerId),
+    await getUsablePointBalance(database, input.customerId),
+  ];
 
   return {
     isMember: true,
     cart,
     ordererPrefill: toOrdererPrefill(profile),
     addresses,
+    point: {
+      balance: pointBalance,
+      usableBalance: usablePointBalance,
+      minUsePoint: pointPolicy.minUsePoint,
+      useUnitPoint: pointPolicy.useUnitPoint,
+    },
     terms,
     shippingPolicy,
     tossClientKey: process.env.NEXT_PUBLIC_TOSS_CLIENT_KEY ?? null,
