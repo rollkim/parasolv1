@@ -14,6 +14,7 @@ import { buildClaimStockTargets } from "./claim-process.service";
 import type { DatabaseClient, TransactionClient } from "./db-client";
 import { restoreStock } from "./inventory.service";
 import type { PaymentGateway } from "../payments/payment-gateway";
+import { settleClaimPoints } from "./claim-point.service";
 import { applyOrderTransition, serializeActor, type TransitionActor } from "./order-status.service";
 
 /**
@@ -301,6 +302,8 @@ async function finalizeClaimRefund(
 
   // 전체 취소만 주문을 종결시킨다. 부분 반품은 주문 상태를 건드리지 않는다(클레임은 별도 축)
   if (args.claimType === "cancel") {
+    // 사용 적립금 전액 복원은 이 전이 안에서 일어난다(restoreOrderPoints) — 취소는 전량이므로
+    // 비례 배분이 필요 없고, 초크포인트에 두면 다른 취소 경로도 같이 덮인다
     await applyOrderTransition(tx, {
       orderId: args.orderId,
       toStatus: "cancelled",
@@ -309,6 +312,14 @@ async function finalizeClaimRefund(
     });
     return { orderCancelled: true };
   }
+
+  // 반품은 주문 상태를 안 바꾸므로 초크포인트를 지나지 않는다 — 여기서 직접 정산한다.
+  // 같은 트랜잭션이라 환불이 롤백되면 적립금도 함께 되돌아간다
+  await settleClaimPoints(tx, {
+    claimId: args.claimId,
+    claimNo: args.claimNo,
+    orderId: args.orderId,
+  });
 
   return { orderCancelled: false };
 }
