@@ -18,7 +18,7 @@ export default async function MyReviewsPage() {
     sessionCustomerId !== null
       ? await getCustomerSessionProfile(db, sessionCustomerId)
       : null;
-  if (!sessionProfile) redirect("/login");
+  if (!sessionProfile) redirect("/login?next=/mypage/reviews");
 
   return (
     <div className="mx-auto w-full max-w-[880px] px-4 pt-4 pb-14 md:px-10">

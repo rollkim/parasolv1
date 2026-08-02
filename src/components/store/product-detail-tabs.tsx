@@ -17,6 +17,8 @@ import * as React from "react"
 import { ProductQnaPanel } from "@/components/store/product-qna-panel"
 import { ProductReviewPanel } from "@/components/store/product-review-panel"
 import { EmptyState } from "@/components/ui/empty-state"
+import type { StorePolicyNotice } from "@/server/services/policy-notice.service"
+
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { cn } from "@/lib/utils"
 
@@ -34,6 +36,8 @@ export type ProductDetailTabsProps = {
    * 옛 데이터(평문)도 그대로 그려진다 — 태그가 없으니 글자로 보인다.
    */
   descriptionText: string | null
+  /** 배송·교환/반품 안내 — 서버가 site_setting에서 조립한다(화면에 금액을 적지 않는다) */
+  policyNotice: StorePolicyNotice
   /** 세로로 이어붙는 상세 이미지 스택 (관리자 '상세 이미지' 등록 반영) */
   detailImages: { path: string; alt: string }[]
   /** 리뷰·문의 패널이 조회할 대상 */
@@ -45,6 +49,7 @@ export type ProductDetailTabsProps = {
 export function ProductDetailTabs({
   productSummary,
   descriptionText,
+  policyNotice,
   detailImages,
   productId,
   isMember,
@@ -143,23 +148,25 @@ export function ProductDetailTabs({
           <ProductQnaPanel productId={productId} isMember={isMember} />
         </TabsContent>
 
-        {/* ── 배송안내 — 목업 문구 정적 렌더(문구·금액은 site_setting 연동 예정) ── */}
+        {/* ── 배송안내 — 문구·금액 전부 서버(site_setting)에서 온다.
+            목업은 "3,000원 (3만원 이상 무료)"를 화면에 적어 뒀는데, 그러면 관리자가 배송비를
+            바꿔도 안내만 옛날 값으로 남는다 — 고객은 안내를 믿고 주문하는데 결제 금액이 다르다 ── */}
         <TabsContent
           value="shipping"
           className="mx-auto w-full max-w-[720px] py-7"
         >
           <div className="text-sm leading-[1.9]">
             <h2 className="mb-1.5 text-sm font-extrabold">배송 안내</h2>
-            <p className="mb-4 text-muted-foreground">
-              택배 배송 · 기본 배송비 3,000원 (3만원 이상 구매 시 무료) · 평일
-              14시 이전 결제 건은 당일 출고되며, 주문 후 평균 1~3일 내 수령하실
-              수 있습니다.
+            <p className="mb-4 whitespace-pre-wrap text-muted-foreground">
+              {policyNotice.shippingNotice}
             </p>
             <h2 className="mb-1.5 text-sm font-extrabold">교환·반품 안내</h2>
-            <p className="text-muted-foreground">
-              식품 특성상 단순 변심에 의한 교환·반품은 제한됩니다. 상품
-              하자·오배송의 경우 수령 후 7일 이내 고객센터로 연락 주시면 신속히
-              처리해 드립니다.
+            <p className="mb-4 whitespace-pre-wrap text-muted-foreground">
+              {policyNotice.returnNotice}
+            </p>
+            <h2 className="mb-1.5 text-sm font-extrabold">교환·반품이 제한되는 경우</h2>
+            <p className="whitespace-pre-wrap text-muted-foreground">
+              {policyNotice.exchangeNotice}
             </p>
           </div>
         </TabsContent>

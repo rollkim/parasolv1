@@ -11,7 +11,7 @@
 //  - 내 리뷰: 목록은 이 섹션이, 작성 폼은 /mypage/reviews가 맡는다 — 별점·태그·사진이 들어가는
 //    폼을 섹션에 얹으면 다른 섹션 상태까지 이 화면이 떠안는다.
 //  - 배송지 추가/수정 폼: 목업은 토스트 데모뿐 — 오버레이 모음 폼 모달 규격(Dialog)로 신규 구성.
-//    우편번호 검색 API는 후속 배선이라 수동 입력 + 안내 문구. 삭제는 확인 모달 경유(목업 실측).
+//    우편번호는 다음 주소검색 레이어로 채운다(체크아웃과 같은 방식). 삭제는 확인 모달 경유(목업 실측).
 //  - 기본 배송지 수정 시 '기본' 체크박스를 숨긴다: 해제를 허용하면 기본 배송지가 0개인 상태가 생긴다.
 //  - aside 로그아웃 버튼 없음: 공통 셸(헤더 유틸/드로어)이 이미 제공해 중복 배선하지 않는다.
 //  - 칩 38px·카드 버튼 38px → 44px 상향(KWCAG 터치 타겟). 섹션 전환 시 섹션 제목으로 포커스 이동(접근성 보완).
@@ -40,6 +40,7 @@ import { Skeleton, SkeletonGroup } from "@/components/ui/skeleton"
 import { Spinner } from "@/components/ui/spinner"
 import { useToast } from "@/components/ui/toast"
 import { ImagePlaceholder } from "@/components/store/image-placeholder"
+import { openDaumPostcode } from "@/lib/daum-postcode"
 import { formatKrw } from "@/lib/format"
 import { MAX_SAVED_ADDRESSES } from "@/domain/address"
 import { cn } from "@/lib/utils"
@@ -490,12 +491,44 @@ function AddressFormDialog({
   const [addr2Value, setAddr2Value] = React.useState(editingAddress?.addr2 ?? "")
   const [labelValue, setLabelValue] = React.useState(editingAddress?.label ?? "")
   const [isDefaultChecked, setIsDefaultChecked] = React.useState(false)
+  const postcodeLayerRef = React.useRef<HTMLDivElement>(null)
+  const addr2InputRef = React.useRef<HTMLInputElement>(null)
   const [fieldErrors, setFieldErrors] = React.useState<
     Partial<Record<AddressFieldKey, string>>
   >({})
 
   // 현재 기본 배송지를 수정할 때는 체크박스를 숨긴다 — 해제를 허용하면 기본이 0개가 된다
   const showDefaultCheckbox = !(isEditMode && editingAddress.isDefault)
+
+  /** 다음 우편번호 레이어 — 고르면 우편번호·기본주소가 채워지고 상세주소로 포커스가 간다(체크아웃 선례) */
+  async function openPostcodeSearch() {
+    const container = postcodeLayerRef.current
+    if (!container) return
+    try {
+      await openDaumPostcode({
+        container,
+        onSelect: (addressFields) => {
+          setZipcodeValue(addressFields.zipcode)
+          setAddr1Value(addressFields.addr1)
+          setFieldErrors((previousErrors) => {
+            const nextErrors = { ...previousErrors }
+            delete nextErrors.zipcode
+            delete nextErrors.addr1
+            return nextErrors
+          })
+          // 주소를 고르면 남은 건 동·호수뿐이다 — 거기로 바로 보낸다
+          window.setTimeout(() => addr2InputRef.current?.focus(), 0)
+        },
+      })
+    } catch (postcodeError) {
+      showToast(
+        postcodeError instanceof Error
+          ? postcodeError.message
+          : "주소 검색을 불러오지 못했습니다.",
+        { toastVariant: "error" },
+      )
+    }
+  }
 
   const handleFieldChange = (fieldKey: AddressFieldKey, fieldValue: string) => {
     const setterByField: Record<AddressFieldKey, (nextValue: string) => void> = {
@@ -664,24 +697,30 @@ function AddressFormDialog({
             fieldLabel="우편번호"
             required
             errorMessage={fieldErrors.zipcode}
-            hintMessage="주소 검색은 준비 중이에요. 우편번호와 주소를 직접 입력해 주세요."
+            hintMessage="주소 검색으로 채우면 오타 없이 정확합니다."
           >
-            <Input
-              id="addr-zipcode"
-              size="modal"
-              type="text"
-              inputMode="numeric"
-              autoComplete="postal-code"
-              placeholder="숫자 5자리"
-              value={zipcodeValue}
-              onChange={(changeEvent) =>
-                handleFieldChange("zipcode", changeEvent.target.value)
-              }
-              aria-invalid={fieldErrors.zipcode ? true : undefined}
-              aria-describedby={
-                fieldErrors.zipcode ? "addr-zipcode-error" : "addr-zipcode-hint"
-              }
-            />
+            <div className="flex gap-2">
+              <Input
+                id="addr-zipcode"
+                size="modal"
+                type="text"
+                inputMode="numeric"
+                autoComplete="postal-code"
+                readOnly
+                placeholder="주소 검색"
+                className="max-w-[140px]"
+                value={zipcodeValue}
+                aria-invalid={fieldErrors.zipcode ? true : undefined}
+                aria-describedby={
+                  fieldErrors.zipcode ? "addr-zipcode-error" : "addr-zipcode-hint"
+                }
+              />
+              <Button type="button" variant="outline" size="sm-44" onClick={openPostcodeSearch}>
+                주소 검색
+              </Button>
+            </div>
+            {/* 검색 레이어가 이 안에 뜬다 — 새 창이 아니라서 팝업 차단·탭 이탈이 없다(체크아웃 선례) */}
+            <div ref={postcodeLayerRef} className="empty:hidden" />
           </FormFieldRow>
 
           <FormFieldRow
@@ -712,6 +751,7 @@ function AddressFormDialog({
           >
             <Input
               id="addr-addr2"
+              ref={addr2InputRef}
               size="modal"
               type="text"
               autoComplete="address-line2"

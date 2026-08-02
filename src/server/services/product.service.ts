@@ -36,6 +36,12 @@ export type ProductCard = {
   compareAtPrice: number | null;
   /** 품절 = 활성 variant 재고 합이 0 — 상태가 아니라 파생값(정합성 검토 B-2) */
   soldOut: boolean;
+  /**
+   * 옵션이 하나뿐이라 **카드에서 바로 담을 수 있는** variant. 여러 개면 null이다.
+   * null이면 카드의 담기 버튼이 상세로 보낸다 — 옵션을 고르지 않고 담으면
+   * 고객이 원하지 않은 옵션이 장바구니에 들어간다.
+   */
+  singleVariantId: number | null;
   thumbnailPath: string | null;
   thumbnailAlt: string | null;
   reviewCount: number;
@@ -103,6 +109,7 @@ async function loadCardParts(database: typeof Database, productIds: number[]) {
 
   const variantRows = await database
     .select({
+      variantId: productVariant.id,
       productId: productVariant.productId,
       price: productVariant.price,
       compareAtPrice: productVariant.compareAtPrice,
@@ -119,7 +126,14 @@ async function loadCardParts(database: typeof Database, productIds: number[]) {
 
   const variantByProduct = new Map<
     number,
-    { minPrice: number; compareAtPrice: number | null; totalStock: number }
+    {
+      minPrice: number;
+      compareAtPrice: number | null;
+      totalStock: number;
+      /** 첫 variant. variantCount가 1일 때만 카드가 쓴다 */
+      firstVariantId: number;
+      variantCount: number;
+    }
   >();
   for (const row of variantRows) {
     const acc = variantByProduct.get(row.productId);
@@ -128,9 +142,12 @@ async function loadCardParts(database: typeof Database, productIds: number[]) {
         minPrice: row.price,
         compareAtPrice: row.compareAtPrice,
         totalStock: row.stock,
+        firstVariantId: row.variantId,
+        variantCount: 1,
       });
     } else {
       acc.totalStock += row.stock;
+      acc.variantCount += 1;
       if (row.price < acc.minPrice) {
         acc.minPrice = row.price;
         acc.compareAtPrice = row.compareAtPrice;
@@ -198,6 +215,9 @@ async function toCards(
       sellingPrice: variantAgg?.minPrice ?? row.minPrice,
       compareAtPrice: variantAgg?.compareAtPrice ?? null,
       soldOut: (variantAgg?.totalStock ?? 0) <= 0,
+      // 옵션이 여러 개면 카드에서 담지 않는다 — 고르지 않은 옵션이 담기면 되돌리는 건 고객 몫이 된다
+      singleVariantId:
+        variantAgg && variantAgg.variantCount === 1 ? variantAgg.firstVariantId : null,
       thumbnailPath: thumbnail?.path ?? null,
       thumbnailAlt: thumbnail?.alt ?? null,
       reviewCount: row.reviewCount,

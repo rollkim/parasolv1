@@ -29,7 +29,7 @@ import * as React from "react"
 
 import { useMutation } from "@tanstack/react-query"
 import { EyeIcon, EyeOffIcon } from "lucide-react"
-import { useRouter } from "next/navigation"
+import { useRouter, useSearchParams } from "next/navigation"
 
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -111,9 +111,26 @@ const SOCIAL_LOGIN_PROVIDERS = [
   },
 ] as const
 
+/**
+ * 로그인·가입 후 돌아갈 곳. 체크아웃이 /login?next=/checkout으로 보내는데
+ * 이걸 무시하면 담아 둔 장바구니를 두고 홈으로 튕긴다.
+ *
+ * **외부 URL은 받지 않는다** — 슬래시 하나로 시작하는 내부 경로만 허용한다.
+ * 그러지 않으면 ?next=https://evil.example 로 우리 로그인 화면을 미끼 삼는
+ * 오픈 리다이렉트가 된다("//evil.example"도 브라우저에는 외부 주소다).
+ */
+function useNextPath(): string {
+  const searchParams = useSearchParams()
+  const requestedPath = searchParams.get("next")
+  if (!requestedPath) return "/"
+  if (!requestedPath.startsWith("/") || requestedPath.startsWith("//")) return "/"
+  return requestedPath
+}
+
 function LoginPanel() {
   const trpc = useTRPC()
   const router = useRouter()
+  const nextPath = useNextPath()
   const { showToast } = useToast()
 
   const loginMutation = useMutation(trpc.auth.login.mutationOptions())
@@ -150,9 +167,9 @@ function LoginPanel() {
       {
         onSuccess: (sessionProfile) => {
           showToast(`${sessionProfile.name}님, 환영해요!`)
-          // push가 먼저 처리되고 refresh가 새 라우트("/") 기준으로 서버 트리를 다시 그린다 —
+          // push가 먼저 처리되고 refresh가 새 라우트 기준으로 서버 트리를 다시 그린다 —
           // 순서를 바꾸면 /login의 리다이렉트를 한 번 더 타게 된다
-          router.push("/")
+          router.push(nextPath)
           router.refresh()
         },
         onError: (loginError) => {
@@ -451,6 +468,7 @@ function SignupStepIndicator({ currentStepIndex }: { currentStepIndex: number })
 function SignupWizard({ siteName }: { siteName: string }) {
   const trpc = useTRPC()
   const router = useRouter()
+  const nextPath = useNextPath()
   const { showToast } = useToast()
 
   const signupMutation = useMutation(trpc.auth.signup.mutationOptions())
@@ -582,9 +600,9 @@ function SignupWizard({ siteName }: { siteName: string }) {
   }
 
   const handleStartShoppingClick = () => {
-    // push가 먼저 처리되고 refresh가 새 라우트("/") 기준으로 서버 트리를 다시 그린다 —
+    // push가 먼저 처리되고 refresh가 새 라우트 기준으로 서버 트리를 다시 그린다 —
     // 이 시점에서야 헤더가 로그인 상태(마이페이지·로그아웃)로 바뀐다(파일 상단 사유 참조)
-    router.push("/")
+    router.push(nextPath)
     router.refresh()
   }
 

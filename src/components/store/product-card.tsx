@@ -5,7 +5,7 @@
 // README L64: 카드 hover(그림자·이동)는 인덱스·이야기 카드 전용 — 상품 카드에는 카드 단위 hover 없음.
 //
 // 목업과 의도적으로 다르게 간 부분(사유):
-//  - "use client"인 이유: 장바구니·재입고가 스텁(클릭 시 안내 토스트)이라 이벤트 핸들러가 필요하다.
+//  - "use client"인 이유: 담기 뮤테이션·토스트를 카드가 직접 다룬다.
 //    직렬화 가능한 ProductCard 데이터만 받으므로 서버 페이지(메인·목록)가 그대로 임포트해 쓴다.
 //  - 목업에는 카드→상세 링크가 없으나(전 카드 공통) 상품명에 /products/[slug] 스트레치드 링크를 추가 —
 //    after 오버레이(z-1)가 카드 전체를 덮고, 하트(z-2)·CTA(z-2)만 그 위에서 클릭을 가로챈다.
@@ -14,12 +14,16 @@
 //  - 뱃지·CTA 라운드는 목업 리터럴(7px·radius-3px) 대신 디자인 시스템 프리셋(Badge tag=rounded-sm, Button rounded-md)으로 수렴.
 
 import Link from "next/link"
+import { useRouter } from "next/navigation"
+
+import { useMutation, useQueryClient } from "@tanstack/react-query"
 
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { useToast } from "@/components/ui/toast"
 import { discountRate } from "@/domain/product"
 import { formatKrw } from "@/lib/format"
+import { useTRPC } from "@/trpc/client"
 import type { ProductCard } from "@/server/services/product.service"
 
 import { ImagePlaceholder } from "./image-placeholder"
@@ -33,6 +37,10 @@ export type StoreProductCardProps = {
 
 export function StoreProductCard({ productCard, rankNumber }: StoreProductCardProps) {
   const { showToast } = useToast()
+  const trpc = useTRPC()
+  const router = useRouter()
+  const queryClient = useQueryClient()
+  const addItemMutation = useMutation(trpc.cart.addItem.mutationOptions())
   const {
     productId,
     slug,
@@ -42,17 +50,61 @@ export function StoreProductCard({ productCard, rankNumber }: StoreProductCardPr
     sellingPrice,
     compareAtPrice,
     soldOut,
+    singleVariantId,
     thumbnailPath,
     thumbnailAlt,
   } = productCard
 
   const discountPercent = discountRate(sellingPrice, compareAtPrice)
 
-  // TODO(3주차): 장바구니 담기·재입고 알림 실배선으로 교체 — 지금은 안내 토스트만
-  const handleAddCartClick = () =>
-    showToast(`장바구니 기능은 3주차에 열려요 · ${name}`, { toastVariant: "info" })
-  const handleRestockNotifyClick = () =>
-    showToast(`재입고 알림은 3주차에 열려요 · ${name}`, { toastVariant: "info" })
+  /**
+   * 카드에서 담기 — **옵션이 하나뿐일 때만** 실제로 담는다.
+   * 여러 개면 상세로 보낸다: 고르지 않은 옵션이 담기면 되돌리는 건 고객 몫이 된다.
+   */
+  function handleAddCartClick() {
+    if (addItemMutation.isPending) return
+    if (singleVariantId === null) {
+      router.push(`/products/${slug}?from=card`)
+      return
+    }
+    addItemMutation.mutate(
+      { variantId: singleVariantId, quantity: 1 },
+      {
+        onSuccess: (addResult) => {
+          // 카트 화면 캐시 + 헤더 뱃지(서버 렌더 레이아웃)를 함께 갱신한다 — 상세 패널과 같은 처리
+          void queryClient.invalidateQueries(trpc.cart.pathFilter())
+          router.refresh()
+
+          if (addResult.mergedIntoExisting) {
+            // 조용히 수량만 늘리면 지금 몇 개가 됐는지 알 수 없다.
+            // 상세와 달리 카드는 확인 모달을 띄우지 않는다 — 목록에서 담기는 연속 동작이라 흐름을 끊으면 안 된다
+            showToast(`이미 담겨 있어 ${addResult.appliedQuantity}개가 됐어요 · ${name}`, {
+              toastVariant: "info",
+            })
+            return
+          }
+          if (addResult.stockLimited) {
+            showToast(
+              `재고가 ${addResult.availableStock}개 남아 ${addResult.appliedQuantity}개로 담았어요.`,
+              { toastVariant: "info" },
+            )
+            return
+          }
+          showToast(`장바구니에 담았어요 · ${name}`)
+        },
+        onError: (addError) => showToast(addError.message, { toastVariant: "error" }),
+      },
+    )
+  }
+
+  // 재입고 알림은 알림 채널(알림톡·메일)이 붙어야 의미가 있다 — 채널이 없는 상태에서
+  // 신청만 받으면 "신청했는데 연락이 없다"가 된다. 지금은 문의로 안내하고 상세로 보낸다.
+  function handleRestockNotifyClick() {
+    showToast("재입고 알림은 준비 중이에요. 상품 문의로 남겨 주시면 알려드릴게요.", {
+      toastVariant: "info",
+    })
+    router.push(`/products/${slug}#qna`)
+  }
 
   return (
     <article className="relative flex flex-col overflow-hidden rounded-lg border border-border bg-card">
@@ -161,9 +213,14 @@ export function StoreProductCard({ productCard, rankNumber }: StoreProductCardPr
             variant="soft"
             size="sm-44"
             onClick={handleAddCartClick}
+            aria-disabled={addItemMutation.isPending}
             className="relative z-[2] mt-1 w-full"
           >
-            장바구니 담기
+            {addItemMutation.isPending
+              ? "담는 중…"
+              : singleVariantId === null
+                ? "옵션 선택"
+                : "장바구니 담기"}
           </Button>
         )}
       </div>

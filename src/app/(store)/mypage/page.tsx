@@ -24,7 +24,7 @@ export default async function MypagePage() {
     sessionCustomerId !== null
       ? await getCustomerSessionProfile(db, sessionCustomerId)
       : null;
-  if (!sessionProfile) redirect("/login");
+  if (!sessionProfile) redirect("/login?next=/mypage");
 
   return (
     <div className="mx-auto w-full max-w-[1280px] px-4 pt-4 pb-14 md:px-10">

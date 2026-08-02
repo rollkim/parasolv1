@@ -7,6 +7,7 @@ import { ProductDetailTabs } from "@/components/store/product-detail-tabs";
 import { ProductPurchasePanel } from "@/components/store/product-purchase-panel";
 import { db } from "@/db";
 import { readSessionCustomerId } from "@/server/auth/session";
+import { loadStorePolicyNotice } from "@/server/services/policy-notice.service";
 import { getProductDetail } from "@/server/services/product.service";
 
 /**
@@ -39,6 +40,9 @@ export default async function ProductDetailPage({
   const { slug } = await params;
   const productDetail = await getProductDetailOncePerRequest(db, slug);
   if (!productDetail) notFound();
+
+  // 배송·교환 안내 문구 — 화면이 금액을 적지 않도록 서버에서 조립해 넘긴다(RULE-11)
+  const policyNotice = await loadStorePolicyNotice(db);
 
   return (
     // 목업 #pmstore: width min(1280px,100%) · main[data-r=pad] 좌우 16px→40px(≥768)
@@ -85,6 +89,7 @@ export default async function ProductDetailPage({
         <ProductDetailTabs
           productSummary={productDetail.summary}
           descriptionText={productDetail.descriptionText}
+          policyNotice={policyNotice}
           detailImages={productDetail.detailImages}
           productId={productDetail.productId}
           // 비회원 문의는 이름·연락처·비밀번호가 더 필요하다 — 로그인 여부는 서버가 판단한다
