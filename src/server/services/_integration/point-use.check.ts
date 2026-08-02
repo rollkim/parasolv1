@@ -5,7 +5,7 @@
  * 핵심 검증: **적립금을 쓴 만큼 청구액이 줄고, 원장·잔액·주문·결제 네 곳의 숫자가 모두 맞는다.**
  * 하나라도 어긋나면 고객이 덜 내거나 더 내고, 그 차이는 정산에서야 발견된다.
  *
- * 시나리오: [1]사용 없는 주문 [2]사용 주문의 금액 4곳 일치 [3]정책 위반 거절
+ * 시나리오: [0]★앱 안에 입구가 있는가(주문서·마이페이지) [1]사용 없는 주문 [2]사용 주문의 금액 4곳 일치 [3]정책 위반 거절
  *           [4]잔액 초과 거절 [5]비회원 차단 [6]주문 취소 시 복원 [7]위변조 시도
  */
 
@@ -27,6 +27,8 @@ import {
 } from "@/db/schema";
 import { calcExpiresAt } from "@/domain/point";
 
+import { getCheckoutView } from "../checkout-view.service";
+import { getPointHistory, getPointSummary } from "../point-history.service";
 import { applyOrderTransition } from "../order-status.service";
 import {
   GuestPointUseError,
@@ -139,6 +141,54 @@ async function main() {
       }),
     );
     check((await getPointBalance(db, buyer.id)) === 5000, "사전 적립 5000");
+
+    /* 감사 교훈: 서비스가 맞는데 **화면에 연결이 안 되어** 아무도 못 쓰는 경우를 검증이 놓쳤다.
+       이 절은 로직이 아니라 '앱 안에 입구가 있는가'를 본다 — 없으면 아래 [2]가 통과해도 무의미하다 */
+    console.log("\n[0] ★적립금 입구가 실제로 앱 안에 있는가");
+    const memberCartToken = `USE-VIEW-${randomUUID()}`;
+    const [viewCart] = await db
+      .insert(cart)
+      .values({ sessionToken: memberCartToken, customerId: buyer.id })
+      .returning({ id: cart.id });
+    leftovers.cartIds.push(viewCart.id);
+    await db.insert(cartItem).values({ cartId: viewCart.id, variantId: variant.id, quantity: 1 });
+
+    const memberCheckout = await getCheckoutView(db, {
+      cartToken: memberCartToken,
+      customerId: buyer.id,
+    });
+    check(
+      memberCheckout.point !== null,
+      "회원 주문서가 적립금 정보를 내려준다 — 없으면 화면에 입력 칸이 그려지지 않는다",
+    );
+    check(
+      memberCheckout.point?.usableBalance === 5000,
+      "주문서가 내려준 사용 가능액이 실제 잔액과 같다",
+      memberCheckout.point,
+    );
+    check(
+      memberCheckout.point?.useUnitPoint === policy.useUnitPoint &&
+        memberCheckout.point?.minUsePoint === policy.minUsePoint,
+      "사용 규칙도 함께 내려준다 — 화면이 숫자를 따로 적으면 정책 변경 때 갈라진다",
+    );
+
+    const guestCheckout = await getCheckoutView(db, {
+      cartToken: memberCartToken,
+      customerId: null,
+    });
+    check(
+      guestCheckout.point === null,
+      "비회원 주문서는 적립금이 null — 잔액이 귀속될 회원이 없다",
+    );
+
+    const summary = await getPointSummary(db, buyer.id);
+    check(summary.usableBalance === 5000, "마이페이지 요약이 사용 가능액을 준다", summary);
+    const historyPage = await getPointHistory(db, { customerId: buyer.id });
+    check(
+      historyPage.rows.length === 1 && historyPage.rows[0].amount === 5000,
+      "마이페이지 내역에 적립 한 건이 보인다 — 잔액만 보이면 '왜 줄었는지'를 물어야 한다",
+      historyPage.rows.length,
+    );
 
     console.log("\n[1] 적립금 없이 주문 — 기존 동작 그대로 기대");
     const plainOrder = await placeOrder(variant.id, buyer.id, 1, undefined, leftovers);

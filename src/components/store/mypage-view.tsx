@@ -5,8 +5,8 @@
 // [탭 순서](마이페이지 L111): 섹션 내비 → 섹션 콘텐츠 액션 (로고는 공통 셸 몫)
 //
 // 목업과 의도적으로 다르게 간 부분(사유):
-//  - 등급 뱃지·적립금/쿠폰/누적주문 스탯 3열: 적립금·쿠폰·주문이 미구현(2차 확정 숨김 대상 포함)이라
-//    프로필 카드는 아바타·이름·이메일만 남긴다. 이메일 마스킹도 안 한다(본인 화면 — 목업은 데모 값).
+//  - 등급 뱃지·적립금/쿠폰/누적주문 스탯 3열 중 **적립금만** 살린다: 쿠폰·등급은 아직 미구현이라
+//    빈 숫자를 세 칸 늘어놓지 않는다. 이메일 마스킹도 안 한다(본인 화면 — 목업은 데모 값).
 //  - 주문 내역: 주문 도메인 미구현 — 목업 시드 카드 대신 빈 상태(목업에 빈 상태 규격이 없어 신규 설계).
 //  - 내 리뷰: 목록은 이 섹션이, 작성 폼은 /mypage/reviews가 맡는다 — 별점·태그·사진이 들어가는
 //    폼을 섹션에 얹으면 다른 섹션 상태까지 이 화면이 떠안는다.
@@ -22,7 +22,7 @@ import * as React from "react"
 import Link from "next/link"
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
-import { MapPinIcon, PackageIcon, StarIcon, UserIcon } from "lucide-react"
+import { CoinsIcon, MapPinIcon, PackageIcon, StarIcon, UserIcon } from "lucide-react"
 
 import { Button } from "@/components/ui/button"
 import {
@@ -46,10 +46,11 @@ import { cn } from "@/lib/utils"
 import type { CustomerAddress, MyProfile } from "@/server/services/customer.service"
 import { useTRPC } from "@/trpc/client"
 
-type MypageSectionKey = "orders" | "addresses" | "reviews" | "profile"
+type MypageSectionKey = "orders" | "points" | "addresses" | "reviews" | "profile"
 
 const MYPAGE_SECTIONS: { sectionKey: MypageSectionKey; sectionLabel: string }[] = [
   { sectionKey: "orders", sectionLabel: "주문 내역" },
+  { sectionKey: "points", sectionLabel: "적립금" },
   { sectionKey: "addresses", sectionLabel: "배송지 관리" },
   { sectionKey: "reviews", sectionLabel: "내 리뷰" },
   { sectionKey: "profile", sectionLabel: "정보 수정" },
@@ -304,6 +305,143 @@ function ReviewsSection() {
       <Button variant="outline" size="sm-44" className="self-start" asChild>
         <Link href="/mypage/reviews">리뷰 전체 관리</Link>
       </Button>
+    </div>
+  )
+}
+
+// =============================================================
+// 적립금
+// =============================================================
+
+/** 원장 한 줄의 성격 — 부호로 갈린다. 색만으로 전달하지 않으려면 글자 라벨이 필요하다(KWCAG) */
+function pointRowKindLabel(amount: number): string {
+  return amount >= 0 ? "적립" : "차감"
+}
+
+function formatPointDate(value: Date | string): string {
+  const date = new Date(value)
+  const pad = (n: number) => String(n).padStart(2, "0")
+  return `${date.getFullYear()}.${pad(date.getMonth() + 1)}.${pad(date.getDate())}`
+}
+
+function PointsSection() {
+  const trpc = useTRPC()
+  const [page, setPage] = React.useState(1)
+
+  const summaryQuery = useQuery(trpc.mypage.pointSummary.queryOptions())
+  const historyQuery = useQuery(trpc.mypage.pointHistory.queryOptions({ page }))
+
+  if (summaryQuery.isPending) {
+    return (
+      <div className="flex min-h-32 items-center justify-center" aria-busy="true">
+        <Spinner />
+        <span className="sr-only">적립금을 불러오는 중입니다</span>
+      </div>
+    )
+  }
+
+  const pointSummary = summaryQuery.data
+  const history = historyQuery.data
+  const totalPages = history ? Math.max(1, Math.ceil(history.totalCount / history.pageSize)) : 1
+
+  return (
+    <div className="flex flex-col gap-4">
+      {/* 보유와 사용 가능을 나눠 보여준다 — 소멸 대기분이 섞인 보유액만 보이면
+          "있다는데 결제에서 안 된다"가 문의로 돌아온다 */}
+      <div className="rounded-[var(--radius)] border border-border bg-card p-5">
+        <p className="m-0 text-[13px] text-muted-foreground">사용 가능 적립금</p>
+        <strong className="mt-1 block font-heading text-[28px] font-extrabold text-primary">
+          {formatKrw(pointSummary?.usableBalance ?? 0)}
+        </strong>
+        {pointSummary && pointSummary.balance !== pointSummary.usableBalance ? (
+          <p className="m-0 mt-1 text-[13px] text-muted-foreground">
+            보유 {formatKrw(pointSummary.balance)} — 차액은 사용 기한이 지난 금액이에요.
+          </p>
+        ) : null}
+
+        {pointSummary && pointSummary.expiringSoonAmount > 0 ? (
+          <p
+            // 소멸 예정은 '알아야 손해를 막는' 정보라 조용히 두지 않는다
+            className="m-0 mt-3 rounded-[calc(var(--radius)-2px)] border border-primary bg-secondary px-3.5 py-3 text-[13px] font-semibold text-secondary-foreground"
+          >
+            30일 안에 {formatKrw(pointSummary.expiringSoonAmount)}이 소멸돼요. 먼저 사용해 주세요.
+          </p>
+        ) : null}
+      </div>
+
+      {historyQuery.isPending ? (
+        <div className="flex min-h-32 items-center justify-center" aria-busy="true">
+          <Spinner />
+          <span className="sr-only">적립금 내역을 불러오는 중입니다</span>
+        </div>
+      ) : (history?.rows.length ?? 0) === 0 ? (
+        <EmptyState
+          size="section"
+          stateTone="neutral"
+          headingLevel={3}
+          icon={<CoinsIcon aria-hidden="true" />}
+          title="적립금 내역이 없어요"
+          description="구매를 확정하시면 결제 금액의 일부가 적립금으로 돌아와요."
+        />
+      ) : (
+        <>
+          <ul className="m-0 flex list-none flex-col gap-2 p-0">
+            {history?.rows.map((historyRow) => (
+              <li
+                key={historyRow.transactionId}
+                className="flex flex-wrap items-center gap-x-3 gap-y-1 rounded-[var(--radius)] border border-border bg-card p-3.5"
+              >
+                <div className="min-w-0 flex-1">
+                  <p className="m-0 text-sm font-semibold">{historyRow.title}</p>
+                  <p className="m-0 mt-0.5 text-[12px] text-muted-foreground">
+                    {[
+                      formatPointDate(historyRow.createdAt),
+                      historyRow.orderNo ? `주문 ${historyRow.orderNo}` : null,
+                      historyRow.expiresAt
+                        ? `${formatPointDate(historyRow.expiresAt)} 소멸`
+                        : null,
+                    ]
+                      .filter(Boolean)
+                      .join(" · ")}
+                  </p>
+                </div>
+                <div className="shrink-0 text-right">
+                  <b
+                    className={cn(
+                      "block text-sm font-bold",
+                      historyRow.amount >= 0 ? "text-primary" : "text-muted-foreground",
+                    )}
+                  >
+                    <span className="sr-only">{pointRowKindLabel(historyRow.amount)} </span>
+                    {historyRow.amount >= 0 ? "+" : "-"}
+                    {formatKrw(Math.abs(historyRow.amount))}
+                  </b>
+                  <span className="text-[12px] text-muted-foreground">
+                    잔액 {formatKrw(historyRow.balanceAfter)}
+                  </span>
+                </div>
+              </li>
+            ))}
+          </ul>
+
+          {/* 1페이지뿐이어도 [1]을 보여준다 — 목록이 끝났다는 신호가 된다(관리자 규격과 통일) */}
+          <nav aria-label="적립금 내역 페이지" className="flex flex-wrap items-center gap-2">
+            {Array.from({ length: totalPages }, (_, pageIndex) => pageIndex + 1).map(
+              (pageNumber) => (
+                <button
+                  key={pageNumber}
+                  type="button"
+                  aria-current={pageNumber === page ? "page" : undefined}
+                  onClick={() => setPage(pageNumber)}
+                  className="inline-flex size-11 cursor-pointer items-center justify-center rounded-[calc(var(--radius)-4px)] border border-border bg-card text-[13px] font-semibold text-foreground hover:bg-muted aria-[current=page]:border-primary aria-[current=page]:bg-primary aria-[current=page]:text-primary-foreground"
+                >
+                  {pageNumber}
+                </button>
+              ),
+            )}
+          </nav>
+        </>
+      )}
     </div>
   )
 }
@@ -1118,6 +1256,8 @@ export function MypageView() {
   const trpc = useTRPC()
 
   const profileQuery = useQuery(trpc.mypage.getProfile.queryOptions())
+  /* 요약 카드가 쓰는 잔액 — 적립금 섹션도 같은 쿼리를 보므로 캐시가 공유된다 */
+  const pointSummaryQuery = useQuery(trpc.mypage.pointSummary.queryOptions())
 
   const [activeSection, setActiveSection] = React.useState<MypageSectionKey>("orders")
 
@@ -1188,7 +1328,7 @@ export function MypageView() {
         >
           <UserIcon className="size-[26px]" />
         </div>
-        <div className="min-w-0">
+        <div className="min-w-0 flex-1">
           <div className="text-[17px] font-bold">{myProfile.name}님</div>
           {myProfile.email && (
             <div className="truncate text-[13px] text-muted-foreground">
@@ -1196,6 +1336,18 @@ export function MypageView() {
             </div>
           )}
         </div>
+
+        {/* 사용 가능 적립금 — 누르면 내역 섹션으로. 요약 카드가 이미 요청하는 값이라 추가 왕복이 없다 */}
+        <button
+          type="button"
+          onClick={() => setActiveSection("points")}
+          className="flex min-h-11 cursor-pointer flex-col items-end justify-center rounded-[calc(var(--radius)-4px)] px-3 py-1 text-right hover:bg-muted focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring"
+        >
+          <span className="text-[12px] text-muted-foreground">적립금</span>
+          <b className="font-heading text-[17px] font-extrabold text-primary">
+            {pointSummaryQuery.data ? formatKrw(pointSummaryQuery.data.usableBalance) : "—"}
+          </b>
+        </button>
       </section>
 
       <div className="mt-4 md:grid md:grid-cols-[220px_minmax(0,1fr)] md:items-start md:gap-8">
@@ -1239,6 +1391,7 @@ export function MypageView() {
           </h2>
 
           {activeSection === "orders" && <OrdersSection />}
+          {activeSection === "points" && <PointsSection />}
           {activeSection === "addresses" && <AddressesSection />}
           {activeSection === "reviews" && <ReviewsSection />}
           {activeSection === "profile" && <ProfileEditForm myProfile={myProfile} />}

@@ -29,6 +29,7 @@ import { useSearchParams } from "next/navigation"
 import { useMutation, useQuery } from "@tanstack/react-query"
 
 import { isRemoteAreaZipcode } from "@/domain/cart"
+import { calcMaxUsablePoint, checkPointUse } from "@/domain/point"
 import { Button } from "@/components/ui/button"
 import { Checkbox } from "@/components/ui/checkbox"
 import { ImagePlaceholder } from "@/components/store/image-placeholder"
@@ -179,6 +180,8 @@ export function CheckoutView() {
   const [paymentMethod, setPaymentMethod] = React.useState<TossPaymentMethod>("CARD")
   const [launchingPayment, setLaunchingPayment] = React.useState(false)
   const [sameAsOrderer, setSameAsOrderer] = React.useState(false)
+  /** 적립금 사용액 — 문자열로 둔다. 지웠을 때 0이 남아 있으면 지운 걸 다시 지워야 한다 */
+  const [pointInput, setPointInput] = React.useState("")
   const postcodeLayerRef = React.useRef<HTMLDivElement>(null)
   const addressDetailRef = React.useRef<HTMLInputElement>(null)
 
@@ -224,6 +227,32 @@ export function CheckoutView() {
     (line) => !line.unavailable && !line.soldOut,
   )
   const cartSummary = checkoutView?.cart.summary
+
+  // 도서·산간 추가비는 주소가 정해져야 나온다. **서버 주문 생성과 같은 도메인 함수**를 써서
+  // 화면에 보인 금액과 실제 결제액이 갈리지 않게 한다.
+  const selectedZipcode = needsAddressInput
+    ? addressInput.zipcode
+    : (selectedSavedAddress?.zipcode ?? "")
+  const remoteSurcharge =
+    cartSummary && isRemoteAreaZipcode(selectedZipcode)
+      ? (checkoutView?.shippingPolicy.remoteSurcharge ?? 0)
+      : 0
+
+  /* 적립금 — 회원 주문만. 비회원은 잔액이 귀속될 회원이 없어 서버가 아예 거부한다.
+     기준 금액은 **적립금을 빼기 전 결제금액**이다(서버 order.service와 같은 기준) —
+     빼고 난 금액을 기준으로 삼으면 상한이 자기 자신에 따라 움직여 계산이 맞지 않는다. */
+  const pointSetting = isGuestMode ? null : (checkoutView?.point ?? null)
+  const goodsPayableTotal = cartSummary ? cartSummary.grandTotal + remoteSurcharge : 0
+  const requestedPoint = Number(pointInput.replace(/[^0-9]/g, "")) || 0
+  const maxUsablePoint = pointSetting
+    ? calcMaxUsablePoint(pointSetting.usableBalance, goodsPayableTotal, pointSetting)
+    : 0
+  // 판정도 서버와 같은 도메인 함수로 한다 — 화면이 통과시킨 값이 서버에서 막히면 사유를 알 수 없다
+  const pointCheck = pointSetting
+    ? checkPointUse(requestedPoint, pointSetting.usableBalance, goodsPayableTotal, pointSetting)
+    : { usable: true as const }
+  const appliedPoint = pointSetting && pointCheck.usable ? requestedPoint : 0
+  const payableTotal = goodsPayableTotal - appliedPoint
 
   /** 오류는 blur 이후 또는 결제 시도 이후에만 보여준다 — 입력 중 빨간 글씨는 방해가 된다 */
   function visibleError(field: FieldKey): string | undefined {
@@ -308,12 +337,16 @@ export function CheckoutView() {
       // 비회원 전환 시 회원 프리필을 비운다 — 남의 이름으로 주문되는 혼동을 막는다(목업 동작)
       setOrderer((previous) => ({ ...previous, name: "", phone: "" }))
       setSelectedAddressValue(NEW_ADDRESS_VALUE)
+      // 비회원은 적립금을 쓸 수 없다 — 입력값이 남아 있으면 서버가 거부한다
+      setPointInput("")
     }
   }
 
   const blockingReason = (() => {
     if (orderableLines.length === 0) return "주문 가능한 상품이 없습니다."
     if (Object.keys(fieldErrors).length > 0) return "입력하지 않은 정보가 있습니다."
+    // 적립금이 안 맞으면 막는다 — 조용히 0으로 깎으면 "쓴다고 했는데 안 쓰였다"가 된다
+    if (!pointCheck.usable) return pointCheck.message
     if (missingTermsIds.length > 0) return "필수 약관에 동의해 주세요."
     return null
   })()
@@ -420,6 +453,8 @@ export function CheckoutView() {
         shippingAddress,
         cartItemIds: orderableLines.map((line) => line.cartItemId),
         agreedTermsDocumentIds: agreedTermsIds,
+        // 0이면 아예 보내지 않는다 — 서버가 '사용 안 함'과 구분할 필요가 없다
+        pointToUse: appliedPoint > 0 ? appliedPoint : undefined,
         // 주문 생성도 같은 토큰을 봐야 한다 — 여기서 빠지면 주문서는 바로구매 상품을 그렸는데
         // 실제 주문은 장바구니로 만들어진다
         buyToken,
@@ -459,16 +494,6 @@ export function CheckoutView() {
     )
   }
 
-  // 도서·산간 추가비는 주소가 정해져야 나온다. **서버 주문 생성과 같은 도메인 함수**를 써서
-  // 화면에 보인 금액과 실제 결제액이 갈리지 않게 한다.
-  const selectedZipcode = needsAddressInput
-    ? addressInput.zipcode
-    : (selectedSavedAddress?.zipcode ?? "")
-  const remoteSurcharge =
-    cartSummary && isRemoteAreaZipcode(selectedZipcode)
-      ? (checkoutView?.shippingPolicy.remoteSurcharge ?? 0)
-      : 0
-
   const summaryRows = cartSummary
     ? [
         { label: "총 상품금액", value: formatKrw(cartSummary.listTotal) },
@@ -491,10 +516,18 @@ export function CheckoutView() {
         ...(remoteSurcharge > 0
           ? [{ label: "도서·산간 추가", value: `+${formatKrw(remoteSurcharge)}` }]
           : []),
+        ...(appliedPoint > 0
+          ? [
+              {
+                label: "적립금 사용",
+                value: `-${formatKrw(appliedPoint)}`,
+                emphasis: true,
+              },
+            ]
+          : []),
       ]
     : []
 
-  const payableTotal = cartSummary ? cartSummary.grandTotal + remoteSurcharge : 0
   const payLabel = cartSummary ? `${formatKrw(payableTotal)} 결제하기` : "결제하기"
   const isSubmitting = createOrderMutation.isPending || launchingPayment
 
@@ -878,7 +911,89 @@ export function CheckoutView() {
           </ul>
         </section>
 
-        {/* ⑤ 결제수단 — 토스 결제위젯이 들어올 자리 */}
+        {/* ⑤ 적립금 사용 — 회원 주문만. 핸드오프 목업에 없는 섹션이라 주문상품 규격(라벨+인풋)을 준용한다 */}
+        {pointSetting ? (
+          <section aria-labelledby="checkout-point-heading" className="border-t border-border pt-5">
+            <div className="mb-3 flex flex-wrap items-baseline justify-between gap-2">
+              <h2 id="checkout-point-heading" className="m-0 font-heading text-lg font-extrabold">
+                적립금 사용
+              </h2>
+              {/* 보유가 아니라 **쓸 수 있는 금액**을 크게 보여준다 — 보유액에는 소멸 대기분이 섞여 있어
+                  그 숫자를 기준으로 입력하면 "있다는데 안 된다"가 된다 */}
+              <p className="m-0 text-[13px] text-muted-foreground">
+                사용 가능 <b className="font-bold text-foreground">{formatKrw(pointSetting.usableBalance)}</b>
+                {pointSetting.balance !== pointSetting.usableBalance
+                  ? ` (보유 ${formatKrw(pointSetting.balance)})`
+                  : ""}
+              </p>
+            </div>
+
+            <div className="flex flex-wrap items-start gap-2">
+              <div className="min-w-[160px] flex-1">
+                <label htmlFor="checkout-point-input" className="sr-only">
+                  사용할 적립금
+                </label>
+                <Input
+                  id="checkout-point-input"
+                  type="text"
+                  inputMode="numeric"
+                  autoComplete="off"
+                  placeholder="0"
+                  aria-describedby={
+                    pointCheck.usable ? "checkout-point-rule" : "checkout-point-error"
+                  }
+                  aria-invalid={!pointCheck.usable}
+                  value={pointInput}
+                  onChange={(event) => setPointInput(event.target.value.replace(/[^0-9]/g, ""))}
+                />
+              </div>
+              <Button
+                type="button"
+                variant="outline"
+                size="sm-44"
+                // 쓸 수 있는 금액이 0이면 누를 것이 없다 — 눌리는 버튼을 두면 아무 일도 안 일어난다
+                aria-disabled={maxUsablePoint === 0}
+                onClick={() => {
+                  if (maxUsablePoint === 0) {
+                    showToast(
+                      `사용 가능한 적립금이 ${formatKrw(pointSetting.minUsePoint)}보다 적어요.`,
+                      { toastVariant: "info" },
+                    )
+                    return
+                  }
+                  setPointInput(String(maxUsablePoint))
+                }}
+              >
+                전액 사용
+              </Button>
+              {pointInput ? (
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="sm-44"
+                  onClick={() => setPointInput("")}
+                >
+                  사용 안 함
+                </Button>
+              ) : null}
+            </div>
+
+            {pointCheck.usable ? (
+              <p id="checkout-point-rule" className="m-0 mt-2 text-xs text-muted-foreground">
+                {pointSetting.minUsePoint > 0
+                  ? `${formatKrw(pointSetting.minUsePoint)}부터 ${pointSetting.useUnitPoint.toLocaleString()}원 단위로 사용할 수 있어요.`
+                  : `${pointSetting.useUnitPoint.toLocaleString()}원 단위로 사용할 수 있어요.`}
+                {maxUsablePoint > 0 ? ` 이 주문에는 최대 ${formatKrw(maxUsablePoint)}까지 쓸 수 있어요.` : ""}
+              </p>
+            ) : (
+              <p id="checkout-point-error" role="alert" className="m-0 mt-2 text-xs text-destructive">
+                {pointCheck.message}
+              </p>
+            )}
+          </section>
+        ) : null}
+
+        {/* ⑥ 결제수단 — 토스 결제위젯이 들어올 자리 */}
         <section aria-labelledby="checkout-payment-heading" className="border-t border-border pt-5">
           <h2 id="checkout-payment-heading" className="m-0 mb-3 font-heading text-lg font-extrabold">
             결제수단
@@ -920,7 +1035,7 @@ export function CheckoutView() {
           ) : null}
         </section>
 
-        {/* ⑥ 약관 동의 */}
+        {/* ⑦ 약관 동의 */}
         <section aria-labelledby="checkout-terms-heading" className="border-t border-border pt-5">
           <h2 id="checkout-terms-heading" className="sr-only">
             약관 동의
