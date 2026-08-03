@@ -6,6 +6,7 @@ import { adminStoryRouter } from "./admin-story";
 import { bulkInquiryRouter } from "./bulk-inquiry";
 import { adminClaimRouter } from "./admin-claim";
 import { adminCouponRouter } from "./admin-coupon";
+import { adminPromotionRouter } from "./admin-promotion";
 import { adminCustomerRouter } from "./admin-customer";
 import { adminDashboardRouter } from "./admin-dashboard";
 import { adminDisplayRouter } from "./admin-display";
@@ -18,6 +19,7 @@ import { cartRouter } from "./cart";
 import { claimRouter } from "./claim";
 import { mypageRouter } from "./mypage";
 import { orderRouter } from "./order";
+import { promotionRouter } from "./promotion";
 import { reviewRouter } from "./review";
 import { siteSettingRouter } from "./site-setting";
 import { supportRouter } from "./support";
@@ -35,6 +37,7 @@ export const appRouter = router({
   bulkInquiry: bulkInquiryRouter,
   adminClaim: adminClaimRouter,
   adminCoupon: adminCouponRouter,
+  adminPromotion: adminPromotionRouter,
   adminCustomer: adminCustomerRouter,
   adminDashboard: adminDashboardRouter,
   adminDisplay: adminDisplayRouter,
@@ -47,6 +50,7 @@ export const appRouter = router({
   claim: claimRouter,
   mypage: mypageRouter,
   order: orderRouter,
+  promotion: promotionRouter,
   review: reviewRouter,
   siteSetting: siteSettingRouter,
   support: supportRouter,

@@ -90,6 +90,10 @@ import {
   AdminGradeNotFoundError,
 } from "@/server/services/admin-grade.service";
 import {
+  AdminPromotionInvalidError,
+  AdminPromotionNotFoundError,
+} from "@/server/services/admin-promotion.service";
+import {
   CouponIssueUnavailableError,
   CouponUseRejectedError,
 } from "@/server/services/coupon.service";
@@ -144,6 +148,18 @@ export function toOrderTRPCError(error: unknown): unknown {
     return new TRPCError({
       code: "NOT_FOUND",
       message: "쿠폰을 찾을 수 없습니다. 목록을 새로고침해 주세요.",
+      cause: error,
+    });
+  }
+
+  // 기획전 등록·수정 — 문구를 그대로 전달한다
+  if (error instanceof AdminPromotionInvalidError) {
+    return new TRPCError({ code: "BAD_REQUEST", message: error.message, cause: error });
+  }
+  if (error instanceof AdminPromotionNotFoundError) {
+    return new TRPCError({
+      code: "NOT_FOUND",
+      message: "기획전을 찾을 수 없습니다. 목록을 새로고침해 주세요.",
       cause: error,
     });
   }

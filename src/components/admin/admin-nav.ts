@@ -212,6 +212,12 @@ export const ADMIN_NAV_GROUPS: AdminNavGroup[] = [
         icon: TicketPercent,
         children: [
           {
+            childId: "promotion",
+            label: "기획전",
+            href: "/admin/promotions",
+            pageTitle: "기획전",
+          },
+          {
             childId: "coupon",
             label: "쿠폰",
             href: "/admin/coupons",

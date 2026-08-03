@@ -616,6 +616,9 @@ export const promotion = pgTable("promotion", {
   heroMobileImagePath: text("hero_mobile_image_path"),
   startsAt: timestamp("starts_at", { withTimezone: true }),
   endsAt: timestamp("ends_at", { withTimezone: true }),   // 카운트다운 기준
+  // 기획전 전용 쿠폰 — 스트립에 노출되고 "받기"가 이 쿠폰을 발급한다.
+  // 쿠폰이 지워져도 기획전은 남는다(set null) — 스트립만 사라진다
+  couponId: bigint("coupon_id", { mode: "number" }).references(() => coupon.id, { onDelete: "set null" }),
   isActive: boolean("is_active").notNull().default(true),
   ...audit,
 }, (t) => [uniqueIndex("promotion_slug_uq").on(t.slug)]);
