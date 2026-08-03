@@ -8,6 +8,11 @@ import {
   withdrawAdminCustomer,
 } from "@/server/services/admin-customer.service";
 
+import {
+  listAdminGrades,
+  updateAdminGrade,
+} from "@/server/services/admin-grade.service";
+
 import { adminProcedure, router } from "../init";
 import { withOrderErrorMapping } from "../order-error";
 
@@ -19,6 +24,28 @@ import { withOrderErrorMapping } from "../order-error";
 const customerIdSchema = z.number().int().positive();
 
 export const adminCustomerRouter = router({
+  /** 등급 기준 목록 — 회원 수 포함(기준 변경의 영향 범위가 보이게) */
+  listGrades: adminProcedure.query(({ ctx }) => listAdminGrades(ctx.db)),
+
+  /** 등급 기준 저장 — 적립률이 걸린 값이라 서비스가 상한을 다시 본다 */
+  updateGrade: adminProcedure
+    .input(
+      z.object({
+        gradeId: z.number().int().positive(),
+        gradeName: z.string().trim().min(1).max(40),
+        bonusRatePerMille: z.number().int().min(0).max(1000),
+        minRecentSpend: z.number().int().min(0).max(100_000_000),
+      }),
+    )
+    .mutation(({ ctx, input }) =>
+      withOrderErrorMapping(() =>
+        updateAdminGrade(ctx.db, {
+          ...input,
+          actor: { role: "admin", id: ctx.adminUserId },
+        }),
+      ),
+    ),
+
   list: adminProcedure
     .input(
       z.object({

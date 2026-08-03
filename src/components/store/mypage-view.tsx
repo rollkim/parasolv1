@@ -5,8 +5,7 @@
 // [탭 순서](마이페이지 L111): 섹션 내비 → 섹션 콘텐츠 액션 (로고는 공통 셸 몫)
 //
 // 목업과 의도적으로 다르게 간 부분(사유):
-//  - 등급 뱃지·적립금/쿠폰/누적주문 스탯 3열 중 **적립금·쿠폰**을 살린다: 등급은 아직 미구현이라
-//    빈 숫자를 늘어놓지 않는다. 이메일 마스킹도 안 한다(본인 화면 — 목업은 데모 값).
+//  - 등급 뱃지·적립금/쿠폰 스탯을 전부 실배선(누적주문만 생략). 이메일 마스킹은 안 한다(본인 화면 — 목업은 데모 값).
 //  - 주문 내역: 주문 도메인 미구현 — 목업 시드 카드 대신 빈 상태(목업에 빈 상태 규격이 없어 신규 설계).
 //  - 내 리뷰: 목록은 이 섹션이, 작성 폼은 /mypage/reviews가 맡는다 — 별점·태그·사진이 들어가는
 //    폼을 섹션에 얹으면 다른 섹션 상태까지 이 화면이 떠안는다.
@@ -1411,6 +1410,7 @@ export function MypageView({ initialSection }: { initialSection?: MypageSectionK
   /* 요약 카드가 쓰는 잔액 — 적립금 섹션도 같은 쿼리를 보므로 캐시가 공유된다 */
   const pointSummaryQuery = useQuery(trpc.mypage.pointSummary.queryOptions())
   const usableCouponCountQuery = useQuery(trpc.mypage.usableCouponCount.queryOptions())
+  const gradeSummaryQuery = useQuery(trpc.mypage.gradeSummary.queryOptions())
 
   const [activeSection, setActiveSection] = React.useState<MypageSectionKey>(
     initialSection ?? "orders",
@@ -1484,12 +1484,36 @@ export function MypageView({ initialSection }: { initialSection?: MypageSectionK
           <UserIcon className="size-[26px]" />
         </div>
         <div className="min-w-0 flex-1">
-          <div className="text-[17px] font-bold">{myProfile.name}님</div>
+          <div className="flex flex-wrap items-center gap-2">
+            <span className="text-[17px] font-bold">{myProfile.name}님</span>
+            {/* 등급 뱃지 — 배치가 정한 저장값이 진실. 보너스가 있을 때만 %를 덧붙인다 */}
+            {gradeSummaryQuery.data ? (
+              <span className="rounded-full border border-primary px-2 py-0.5 text-[11px] font-bold text-primary">
+                {gradeSummaryQuery.data.gradeName}
+                {gradeSummaryQuery.data.bonusRatePerMille > 0
+                  ? ` +${(gradeSummaryQuery.data.bonusRatePerMille / 10)
+                      .toFixed(1)
+                      .replace(/\.0$/, "")}%`
+                  : ""}
+              </span>
+            ) : null}
+          </div>
           {myProfile.email && (
             <div className="truncate text-[13px] text-muted-foreground">
               {myProfile.email}
             </div>
           )}
+          {/* 다음 등급 안내 — 얼마를 더 사면 되는지. 최고 등급이면 조용히 없다 */}
+          {gradeSummaryQuery.data?.nextGradeName &&
+          gradeSummaryQuery.data.remainingSpend !== null ? (
+            <div className="mt-0.5 text-[12px] text-muted-foreground">
+              {formatKrw(gradeSummaryQuery.data.remainingSpend)} 더 구매하시면{" "}
+              <b className="font-bold text-foreground">
+                {gradeSummaryQuery.data.nextGradeName}
+              </b>
+              이 돼요
+            </div>
+          ) : null}
         </div>
 
         {/* 사용 가능 적립금 — 누르면 내역 섹션으로. 요약 카드가 이미 요청하는 값이라 추가 왕복이 없다 */}

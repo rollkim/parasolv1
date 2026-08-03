@@ -2,7 +2,8 @@ import "server-only";
 
 import { eq } from "drizzle-orm";
 
-import { orders } from "@/db/schema";
+import { customer, customerGrade, orders } from "@/db/schema";
+import { combinedEarnRatePerMille } from "@/domain/grade";
 import {
   calcExpiresAt,
   calcPurchaseEarnAmount,
@@ -30,6 +31,10 @@ import { loadPointPolicy } from "./point-policy.service";
  * 배송비는 뺀다: 배송비에까지 적립을 주면 저가 상품을 여러 번 나눠 사는 게 이득이 된다.
  * 적립금 사용분도 뺀다: 적립금으로 산 금액에 또 적립을 주면 적립금이 스스로 불어난다.
  *
+ * 적립률은 기본 적립률 + **확정 시점의 등급 보너스**다. 주문 시점이 아니라 확정 시점을
+ * 쓰는 이유: 적립이 발생하는 사건이 확정이고, 원장 title에 남는 %와 실제 계산이
+ * 같은 순간을 봐야 내역 설명이 맞다.
+ *
  * dedupe_key = `order:{id}:purchase` — 같은 주문은 몇 번을 확정해도 한 번만 적립된다.
  */
 export async function earnPurchasePoints(
@@ -54,18 +59,31 @@ export async function earnPurchasePoints(
   }
 
   const policy = await loadPointPolicy(tx);
+
+  // 등급 보너스 — grade_id가 없으면 보너스 0(기본 등급 취급). 등급은 조건이 아니라 더해 주는 것
+  const [gradeRow] = await tx
+    .select({ bonusRatePerMille: customerGrade.bonusRate })
+    .from(customer)
+    .innerJoin(customerGrade, eq(customer.gradeId, customerGrade.id))
+    .where(eq(customer.id, orderRow.customerId))
+    .limit(1);
+  const earnRatePerMille = combinedEarnRatePerMille(
+    policy.earnRatePerMille,
+    gradeRow ? { bonusRatePerMille: gradeRow.bonusRatePerMille } : null,
+  );
+
   const paidProductAmount = Math.max(
     0,
     orderRow.subtotal - orderRow.couponDiscount - orderRow.pointUsed,
   );
-  const earnAmount = calcPurchaseEarnAmount(paidProductAmount, policy);
+  const earnAmount = calcPurchaseEarnAmount(paidProductAmount, { earnRatePerMille });
   if (earnAmount <= 0) return { earned: false, reason: "zero_amount" };
 
   return earnPoints(tx, {
     customerId: orderRow.customerId,
     amount: earnAmount,
-    // 적립률을 문구에 박아 두면 정책을 바꿔도 옛 내역의 설명이 그대로 남는다(그게 맞다)
-    title: `구매 확정 적립 (${policy.earnRatePerMille / 10}%)`,
+    // 적립률을 문구에 박아 두면 정책·등급이 바뀌어도 옛 내역의 설명이 그대로 남는다(그게 맞다)
+    title: `구매 확정 적립 (${earnRatePerMille / 10}%)`,
     tagCode: "purchase",
     orderId,
     expiresAt: calcExpiresAt(new Date(), policy),

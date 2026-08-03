@@ -48,7 +48,8 @@
     "check:coupon": "tsx --conditions=react-server src/server/services/_integration/coupon.check.ts",
     "check:coupon-order": "tsx --conditions=react-server src/server/services/_integration/coupon-order.check.ts",
     "check:coupon-claim": "tsx --conditions=react-server src/server/services/_integration/coupon-claim.check.ts",
-    "check:admin-coupon": "tsx --conditions=react-server src/server/services/_integration/admin-coupon.check.ts"
+    "check:admin-coupon": "tsx --conditions=react-server src/server/services/_integration/admin-coupon.check.ts",
+    "check:grade": "tsx --conditions=react-server src/server/services/_integration/grade.check.ts"
   },
   "dependencies": {
     "@tanstack/react-query": "^5.101.4",

@@ -142,7 +142,15 @@ export function AdminCustomerDetailView({ customerId }: { customerId: number }) 
         <section className="rounded-[var(--radius)] border border-border bg-card p-4">
           <div className="flex flex-wrap items-center justify-between gap-2">
             <div>
-              <p className="m-0 text-base font-bold">{customerDetail.name}</p>
+              <p className="m-0 flex items-center gap-1.5 text-base font-bold">
+                {customerDetail.name}
+                {/* 등급 — 배치가 정한 값. 수동 변경 버튼은 없다(다음 산정에서 되돌아간다) */}
+                {customerDetail.gradeName ? (
+                  <span className="rounded-full border border-primary px-2 py-0.5 text-[11px] font-bold text-primary">
+                    {customerDetail.gradeName}
+                  </span>
+                ) : null}
+              </p>
               <p className="m-0 text-[12px] text-muted-foreground">
                 {formatDateTime(customerDetail.joinedAt)} 가입
               </p>

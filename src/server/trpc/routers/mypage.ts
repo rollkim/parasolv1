@@ -14,6 +14,7 @@ import {
   countUsableCoupons,
   listCustomerCoupons,
 } from "@/server/services/coupon.service";
+import { getCustomerGradeSummary } from "@/server/services/grade.service";
 import {
   getPointHistory,
   getPointSummary,
@@ -126,6 +127,11 @@ export const mypageRouter = router({
     .query(({ ctx, input }) =>
       getPointHistory(ctx.db, { customerId: ctx.customerId, page: input?.page }),
     ),
+
+  /** 등급 요약 — 현재 등급·추가 적립률·다음 등급까지 남은 금액 */
+  gradeSummary: protectedProcedure.query(({ ctx }) =>
+    getCustomerGradeSummary(ctx.db, ctx.customerId),
+  ),
 
   /** 보유 쿠폰 — 사용 가능·사용함·만료를 화면이 세 묶음으로 나눈다 */
   coupons: protectedProcedure.query(({ ctx }) => listCustomerCoupons(ctx.db, ctx.customerId)),

@@ -216,6 +216,9 @@ export const customerGrade = pgTable("customer_grade", {
   code: text("code").notNull(),
   name: text("name").notNull(),
   bonusRate: integer("bonus_rate").notNull().default(0), // 0.1% 단위 정수 (예: 20 = 2.0%)
+  // 산정 기간 내 구매확정 실결제액이 이 값 이상이면 이 등급 (0 = 기본 등급).
+  // 기준을 코드에 적으면 리스킨 때 코드를 고쳐야 한다(RULE-11) — 행이 소유한다
+  minRecentSpend: integer("min_recent_spend").notNull().default(0),
   sortOrder: integer("sort_order").notNull().default(0),
   ...audit,
 }, (t) => [uniqueIndex("customer_grade_code_uq").on(t.code)]);

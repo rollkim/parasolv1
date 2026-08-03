@@ -1,12 +1,14 @@
 /**
- * 자동 구매확정 + 적립금 소멸 배치.
+ * 자동 구매확정 + 적립금 소멸 + 등급 재산정 배치.
  * 실행: npm run ops:daily [-- --dry]
  *
- * 운영에서는 크론으로 하루 한 번(새벽) 돌린다. 둘을 한 스크립트에 둔 이유:
- * 매일 돌아야 하는 일이고, 확정이 적립을 일으키므로 순서(확정 → 소멸)가 있다.
+ * 운영에서는 크론으로 하루 한 번(새벽) 돌린다. 셋을 한 스크립트에 둔 이유:
+ * 매일 돌아야 하는 일이고, 순서가 있다 — **확정이 먼저 돌아야** 그날 확정된 주문이
+ * 적립(확정 전이)과 등급 산정(확정 합계)에 들어간다.
  *
  * **이 배치가 안 돌면 구매 적립이 영원히 안 된다.** 고객이 직접 확정하지 않는 주문은
  * delivered에 영구히 머물고, 적립 트리거(confirmed 전이)에 도달하지 못한다.
+ * 등급도 마찬가지다 — 산정이 안 돌면 아무도 단골이 되지 못한다.
  */
 
 import "dotenv/config";
@@ -16,6 +18,7 @@ import { and, gt, isNotNull, lte } from "drizzle-orm";
 import { db } from "@/db";
 import { pointTransaction } from "@/db/schema";
 
+import { recalculateCustomerGrades } from "../grade.service";
 import { runAutoConfirm } from "../order-confirm.service";
 import { expirePointsForCustomer } from "../point.service";
 
@@ -97,8 +100,23 @@ async function main() {
     }
   }
 
+  // ── ③ 등급 재산정 — 확정([1])이 반영된 뒤라야 그날 확정분이 산정에 들어간다
+  let gradeFailed = false;
+  try {
+    const gradeReport = await recalculateCustomerGrades(db);
+    console.log(
+      `\n  [3] 등급 재산정 — 검토 ${gradeReport.scannedCount}명 · 승급 ${gradeReport.promotedCount} · 강등 ${gradeReport.demotedCount}`,
+    );
+  } catch (error) {
+    // 등급 실패가 확정·소멸 결과를 되돌리면 안 된다 — 기록하고 다음 실행에서 다시 잡는다
+    gradeFailed = true;
+    console.log(
+      `\n  [3] 등급 재산정 — ✗ 실패: ${error instanceof Error ? error.message : String(error)}`,
+    );
+  }
+
   // 실패가 있으면 0이 아닌 코드로 끝낸다 — 크론이 조용히 성공으로 넘기면 아무도 모른다
-  const hasFailure = expireFailed.length > 0;
+  const hasFailure = expireFailed.length > 0 || gradeFailed;
   console.log("");
   process.exit(hasFailure ? 1 : 0);
 }

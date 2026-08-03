@@ -86,6 +86,10 @@ import {
   AdminCouponNotFoundError,
 } from "@/server/services/admin-coupon.service";
 import {
+  AdminGradeInvalidError,
+  AdminGradeNotFoundError,
+} from "@/server/services/admin-grade.service";
+import {
   CouponIssueUnavailableError,
   CouponUseRejectedError,
 } from "@/server/services/coupon.service";
@@ -140,6 +144,18 @@ export function toOrderTRPCError(error: unknown): unknown {
     return new TRPCError({
       code: "NOT_FOUND",
       message: "쿠폰을 찾을 수 없습니다. 목록을 새로고침해 주세요.",
+      cause: error,
+    });
+  }
+
+  // 등급 기준 편집 — 적립률이 걸린 값이라 문구를 그대로 전달한다
+  if (error instanceof AdminGradeInvalidError) {
+    return new TRPCError({ code: "BAD_REQUEST", message: error.message, cause: error });
+  }
+  if (error instanceof AdminGradeNotFoundError) {
+    return new TRPCError({
+      code: "NOT_FOUND",
+      message: "등급을 찾을 수 없습니다. 화면을 새로고침해 주세요.",
       cause: error,
     });
   }

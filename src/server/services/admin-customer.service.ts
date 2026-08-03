@@ -2,7 +2,7 @@ import "server-only";
 
 import { and, count, desc, eq, ilike, inArray, isNotNull, isNull, or, sql } from "drizzle-orm";
 
-import { address, customer, customerAuth, orders } from "@/db/schema";
+import { address, customer, customerAuth, customerGrade, orders } from "@/db/schema";
 import { formatPhone } from "@/domain/phone";
 
 import type { DatabaseClient } from "./db-client";
@@ -11,9 +11,9 @@ import { serializeActor, type TransitionActor } from "./order-status.service";
 /**
  * 관리자 회원 관리 — 목록·상세·메모·계정 상태·강제 탈퇴.
  *
- * **적립금 지급·등급 변경은 없다.** 스펙서 §10에서 적립금·회원등급은 2차다.
- * 스키마에 자리는 있지만(customer.point_balance / grade_id) 원장·소멸 배치가 없는 상태에서
- * 지급 버튼만 만들면 잔액만 늘고 근거가 없는 숫자가 된다.
+ * **등급 수동 변경 버튼은 없다.** 등급은 일일 배치(ops:daily)가 기준대로 정한다 —
+ * 수동으로 바꿔도 다음 산정에서 되돌아가므로 버튼은 거짓 약속이 된다. 특정 회원을
+ * 우대하려면 등급이 아니라 쿠폰·수동 적립으로 한다.
  *
  * 회원 상태는 두 축이다: is_active(정지 여부) · deleted_at(탈퇴 여부).
  * 정지는 되돌릴 수 있고, 탈퇴는 개인정보를 지우므로 되돌릴 수 없다.
@@ -28,6 +28,8 @@ export type AdminCustomerCard = {
   email: string | null;
   phone: string | null;
   joinedAt: Date;
+  /** 등급 이름 — null이면 기본 등급(미배정) */
+  gradeName: string | null;
   orderCount: number;
   totalSpending: number;
   isActive: boolean;
@@ -115,6 +117,7 @@ export async function listAdminCustomers(
       email: customer.email,
       phone: customer.phone,
       joinedAt: customer.createdAt,
+      gradeName: customerGrade.name,
       isActive: customer.isActive,
       deletedAt: customer.deletedAt,
       orderCount: orderCountExpression,
@@ -122,6 +125,7 @@ export async function listAdminCustomers(
     })
     .from(customer)
     .leftJoin(orderSummary, eq(orderSummary.customerId, customer.id))
+    .leftJoin(customerGrade, eq(customer.gradeId, customerGrade.id))
     .where(listFilter)
     .orderBy(
       sort === "spending"
@@ -152,6 +156,7 @@ export async function listAdminCustomers(
         // CS가 보고 전화하는 화면이라 하이픈을 붙인다(저장은 정규화)
         phone: row.phone ? formatPhone(row.phone) : null,
         joinedAt: row.joinedAt,
+        gradeName: row.gradeName,
         orderCount: Number(row.orderCount),
         totalSpending: Number(row.totalSpending),
         isActive: row.isActive,
@@ -194,6 +199,8 @@ export type AdminCustomerDetail = {
   isActive: boolean;
   isWithdrawn: boolean;
   statusLabel: string;
+  /** 등급 이름 — null이면 기본 등급(미배정). 변경은 배치 몫이라 편집 UI가 없다 */
+  gradeName: string | null;
   adminMemo: string | null;
   marketing: { smsAgreed: boolean; emailAgreed: boolean };
   loginProviders: string[];
@@ -270,6 +277,15 @@ export async function getAdminCustomerDetail(
     .from(customerAuth)
     .where(eq(customerAuth.customerId, customerId));
 
+  const [gradeRow] =
+    row.gradeId !== null
+      ? await database
+          .select({ gradeName: customerGrade.name })
+          .from(customerGrade)
+          .where(eq(customerGrade.id, row.gradeId))
+          .limit(1)
+      : [];
+
   const isWithdrawn = row.deletedAt !== null;
 
   return {
@@ -281,6 +297,7 @@ export async function getAdminCustomerDetail(
     isActive: row.isActive,
     isWithdrawn,
     statusLabel: customerStatusLabel({ isActive: row.isActive, isWithdrawn }),
+    gradeName: gradeRow?.gradeName ?? null,
     adminMemo: row.adminMemo,
     marketing: {
       smsAgreed: row.marketingSmsAgreedAt !== null,
