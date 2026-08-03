@@ -573,6 +573,9 @@ export const coupon = pgTable("coupon", {
   code: text("code"),                           // code형 등록 코드
   totalQuantity: integer("total_quantity"),     // null = 무제한
   issuedCount: integer("issued_count").notNull().default(0),
+  // 인당 발급 한도. 1이면 종전 '1인 1매'와 같다.
+  // 유니크 인덱스 대신 개수로 판정한다 — 만료 후 재발급·보상 발급·반복 발급이 인덱스에 막혔다
+  perCustomerLimit: integer("per_customer_limit").notNull().default(1),
   validDays: integer("valid_days"),             // 발급일 기준 유효일수 (null이면 endsAt 사용)
   startsAt: timestamp("starts_at", { withTimezone: true }),
   endsAt: timestamp("ends_at", { withTimezone: true }),
@@ -590,7 +593,10 @@ export const couponIssue = pgTable("coupon_issue", {
   discountAmount: integer("discount_amount"),   // 실제 적용 할인액
   ...createdOnly,
 }, (t) => [
-  uniqueIndex("coupon_issue_uq").on(t.couponId, t.customerId), // 1인 1매 원칙 (정책 변경 시 해제)
+  // 인당 한도는 coupon.per_customer_limit로 옮겼다(유니크 인덱스 제거).
+  // **중복 발급 방어는 DB가 아니라 발급 서비스의 조건부 UPDATE에 있다** — 인덱스에 기대면
+  // 만료 후 재발급·보상 발급이 함께 막힌다.
+  index("coupon_issue_coupon_customer_idx").on(t.couponId, t.customerId),
   index("coupon_issue_customer_idx").on(t.customerId),
 ]);
 

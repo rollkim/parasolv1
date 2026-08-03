@@ -10,6 +10,7 @@ import {
 } from "@/domain/order";
 
 import type { TransactionClient } from "./db-client";
+import { restoreOrderCoupon } from "./coupon.service";
 import { earnPurchasePoints, restoreOrderPoints } from "./point-earn.service";
 
 /**
@@ -102,6 +103,9 @@ export async function applyOrderTransition(
   // 적립과 같은 이유로 초크포인트에 둔다.
   if (input.toStatus === "cancelled") {
     await restoreOrderPoints(tx, input.orderId);
+    // 쿠폰도 같은 자리에서 되돌린다 — 취소했는데 쿠폰만 소멸하면 고객은 물건도 쿠폰도 없다.
+    // 부분 반품은 여기 오지 않는다(쿠폰은 한 장이라 절반 복원이 없다 — 환불액에서 비례 차감)
+    await restoreOrderCoupon(tx, input.orderId);
   }
 
   return { changed: true, fromStatus, toStatus: input.toStatus };
