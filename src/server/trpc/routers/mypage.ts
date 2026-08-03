@@ -11,6 +11,10 @@ import {
 } from "@/server/services/customer.service";
 
 import {
+  countUsableCoupons,
+  listCustomerCoupons,
+} from "@/server/services/coupon.service";
+import {
   getPointHistory,
   getPointSummary,
 } from "@/server/services/point-history.service";
@@ -122,6 +126,14 @@ export const mypageRouter = router({
     .query(({ ctx, input }) =>
       getPointHistory(ctx.db, { customerId: ctx.customerId, page: input?.page }),
     ),
+
+  /** 보유 쿠폰 — 사용 가능·사용함·만료를 화면이 세 묶음으로 나눈다 */
+  coupons: protectedProcedure.query(({ ctx }) => listCustomerCoupons(ctx.db, ctx.customerId)),
+
+  /** 사용 가능 쿠폰 개수 — 요약 카드가 쓴다 */
+  usableCouponCount: protectedProcedure.query(({ ctx }) =>
+    countUsableCoupons(ctx.db, ctx.customerId),
+  ),
 
   setDefaultAddress: protectedProcedure
     .input(z.object({ addressId: z.number().int().positive() }))

@@ -369,7 +369,7 @@ export type CouponScopeTarget = {
  * 하위 상품이 나오므로, 같은 대분류 쿠폰이 그 상품에 안 걸리면 고객이 납득하지 못한다.
  */
 export async function calcCouponScopeTarget(
-  tx: TransactionClient,
+  tx: TransactionClient | DatabaseClient,
   input: {
     scopeKind: "all" | "category" | "product";
     scopeRefId: number | null;
@@ -420,6 +420,97 @@ export async function calcCouponScopeTarget(
     targetAmount: matched.reduce((sum, line) => sum + line.lineTotal, 0),
     hasScopeMatch: matched.length > 0,
   };
+}
+
+export type CheckoutCouponOption = {
+  couponIssueId: number;
+  name: string;
+  /** 이 주문에 적용했을 때 실제로 깎이는 금액 — 화면이 큰 순서로 정렬해 고르게 한다 */
+  discountAmount: number;
+  usable: boolean;
+  /** 못 쓰는 이유 — 목록에서 숨기지 않고 사유를 보여준다(왜 안 되는지 알아야 채운다) */
+  unusableReason: string | null;
+  expiresAt: Date | null;
+  minOrderAmount: number;
+};
+
+/**
+ * 이 주문에 쓸 수 있는 쿠폰 목록 — 체크아웃 화면이 소비한다.
+ *
+ * **못 쓰는 쿠폰도 사유와 함께 내린다.** 목록에서 지워 버리면 "분명 쿠폰이 있었는데
+ * 안 보인다"가 되고, 최소 주문 금액이 모자란 경우에는 얼마를 더 담아야 하는지 알 수 없다.
+ *
+ * 이미 사용했거나 만료된 것만 아예 뺀다 — 그건 이 주문의 문제가 아니라 쿠폰이 끝난 것이다.
+ */
+export async function listCheckoutCoupons(
+  database: DatabaseClient,
+  input: {
+    customerId: number;
+    lines: { productId: number; lineTotal: number }[];
+  },
+): Promise<CheckoutCouponOption[]> {
+  const rows = await database
+    .select({
+      ...MY_COUPON_SELECTION,
+      couponStartsAt: coupon.startsAt,
+      couponEndsAt: coupon.endsAt,
+    })
+    .from(couponIssue)
+    .innerJoin(coupon, eq(couponIssue.couponId, coupon.id))
+    .where(
+      and(
+        eq(couponIssue.customerId, input.customerId),
+        eq(coupon.isActive, true),
+        isNull(couponIssue.usedAt),
+        // 만료된 발급건은 목록에서 뺀다 — 이 주문으로 해결할 수 있는 게 없다
+        or(isNull(couponIssue.expiresAt), gt(couponIssue.expiresAt, sql`now()`)),
+      ),
+    )
+    .orderBy(desc(couponIssue.id));
+
+  const now = new Date();
+  const options: CheckoutCouponOption[] = [];
+
+  for (const row of rows) {
+    const issueForOrder: CouponIssueForOrder = {
+      rule: toCouponRule({
+        discountKind: row.discountKind,
+        discountValue: row.discountValue,
+        maxDiscount: row.maxDiscountAmount,
+        minOrderAmount: row.minOrderAmount,
+      }),
+      scopeKind: row.scopeKind,
+      scopeRefId: row.scopeRefId,
+      couponStartsAt: row.couponStartsAt,
+      couponEndsAt: row.couponEndsAt,
+      issueExpiresAt: row.expiresAt,
+      usedAt: row.usedAt,
+    };
+    // 주문 생성과 **같은 계산**을 미리 돌린다 — 화면이 5천원이라 보여 주고 서버가
+    // 4천원을 깎으면 결제 금액이 달라진다
+    const scopeTarget = await calcCouponScopeTarget(database, {
+      scopeKind: row.scopeKind,
+      scopeRefId: row.scopeRefId,
+      lines: input.lines,
+    });
+    const resolved = resolveCouponDiscount({ issueForOrder, scopeTarget, now });
+
+    options.push({
+      couponIssueId: row.couponIssueId,
+      name: row.name,
+      discountAmount: resolved.usable ? resolved.discountAmount : 0,
+      usable: resolved.usable,
+      unusableReason: resolved.usable ? null : resolved.message,
+      expiresAt: row.expiresAt,
+      minOrderAmount: row.minOrderAmount,
+    });
+  }
+
+  // 실제로 많이 깎이는 쿠폰이 먼저 — 고객이 계산해서 고르게 하지 않는다
+  return options.sort((left, right) => {
+    if (left.usable !== right.usable) return left.usable ? -1 : 1;
+    return right.discountAmount - left.discountAmount;
+  });
 }
 
 /**

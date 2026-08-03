@@ -5,8 +5,8 @@
 // [탭 순서](마이페이지 L111): 섹션 내비 → 섹션 콘텐츠 액션 (로고는 공통 셸 몫)
 //
 // 목업과 의도적으로 다르게 간 부분(사유):
-//  - 등급 뱃지·적립금/쿠폰/누적주문 스탯 3열 중 **적립금만** 살린다: 쿠폰·등급은 아직 미구현이라
-//    빈 숫자를 세 칸 늘어놓지 않는다. 이메일 마스킹도 안 한다(본인 화면 — 목업은 데모 값).
+//  - 등급 뱃지·적립금/쿠폰/누적주문 스탯 3열 중 **적립금·쿠폰**을 살린다: 등급은 아직 미구현이라
+//    빈 숫자를 늘어놓지 않는다. 이메일 마스킹도 안 한다(본인 화면 — 목업은 데모 값).
 //  - 주문 내역: 주문 도메인 미구현 — 목업 시드 카드 대신 빈 상태(목업에 빈 상태 규격이 없어 신규 설계).
 //  - 내 리뷰: 목록은 이 섹션이, 작성 폼은 /mypage/reviews가 맡는다 — 별점·태그·사진이 들어가는
 //    폼을 섹션에 얹으면 다른 섹션 상태까지 이 화면이 떠안는다.
@@ -22,7 +22,7 @@ import * as React from "react"
 import Link from "next/link"
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
-import { CoinsIcon, MapPinIcon, PackageIcon, StarIcon, UserIcon } from "lucide-react"
+import { CoinsIcon, MapPinIcon, PackageIcon, StarIcon, TicketIcon, UserIcon } from "lucide-react"
 
 import { Button } from "@/components/ui/button"
 import {
@@ -47,11 +47,12 @@ import { cn } from "@/lib/utils"
 import type { CustomerAddress, MyProfile } from "@/server/services/customer.service"
 import { useTRPC } from "@/trpc/client"
 
-type MypageSectionKey = "orders" | "points" | "addresses" | "reviews" | "profile"
+type MypageSectionKey = "orders" | "points" | "coupons" | "addresses" | "reviews" | "profile"
 
 const MYPAGE_SECTIONS: { sectionKey: MypageSectionKey; sectionLabel: string }[] = [
   { sectionKey: "orders", sectionLabel: "주문 내역" },
   { sectionKey: "points", sectionLabel: "적립금" },
+  { sectionKey: "coupons", sectionLabel: "쿠폰" },
   { sectionKey: "addresses", sectionLabel: "배송지 관리" },
   { sectionKey: "reviews", sectionLabel: "내 리뷰" },
   { sectionKey: "profile", sectionLabel: "정보 수정" },
@@ -306,6 +307,117 @@ function ReviewsSection() {
       <Button variant="outline" size="sm-44" className="self-start" asChild>
         <Link href="/mypage/reviews">리뷰 전체 관리</Link>
       </Button>
+    </div>
+  )
+}
+
+// =============================================================
+// 쿠폰
+// =============================================================
+
+/** 할인 조건 한 줄 — 정률은 0.1% 단위 정수라 화면에서 %로 바꾼다 */
+function formatCouponBenefit(couponCard: {
+  discountKind: "fixed" | "percent"
+  discountValue: number
+  maxDiscountAmount: number | null
+}): string {
+  if (couponCard.discountKind === "fixed") return `${formatKrw(couponCard.discountValue)} 할인`
+  const percentLabel = `${(couponCard.discountValue / 10).toFixed(1).replace(/\.0$/, "")}% 할인`
+  return couponCard.maxDiscountAmount === null
+    ? percentLabel
+    : `${percentLabel} (최대 ${formatKrw(couponCard.maxDiscountAmount)})`
+}
+
+function CouponsSection() {
+  const trpc = useTRPC()
+  const couponsQuery = useQuery(trpc.mypage.coupons.queryOptions())
+
+  if (couponsQuery.isPending) {
+    return (
+      <div className="flex min-h-32 items-center justify-center" aria-busy="true">
+        <Spinner />
+        <span className="sr-only">쿠폰을 불러오는 중입니다</span>
+      </div>
+    )
+  }
+
+  const couponCards = couponsQuery.data ?? []
+  if (couponCards.length === 0) {
+    return (
+      <EmptyState
+        size="section"
+        stateTone="neutral"
+        headingLevel={3}
+        icon={<TicketIcon aria-hidden="true" />}
+        title="보유한 쿠폰이 없어요"
+        description="기획전이나 상품 화면에서 쿠폰을 받으실 수 있어요."
+        actions={[{ label: "상품 보러가기", href: "/products" }]}
+      />
+    )
+  }
+
+  /* 사용 가능 → 사용함 → 만료. 쓸 수 있는 것이 위에 오지 않으면 매번 찾아 내려가야 한다.
+     지난 쿠폰도 지우지 않는다 — "분명 받았는데 없다"를 막고, 언제 왜 사라졌는지 보인다 */
+  const usableCards = couponCards.filter((card) => card.usedAt === null && !card.isExpired)
+  const pastCards = couponCards.filter((card) => card.usedAt !== null || card.isExpired)
+
+  return (
+    <div className="flex flex-col gap-4">
+      <p className="m-0 text-[13px] text-muted-foreground">
+        사용 가능 <b className="font-bold text-foreground">{usableCards.length}장</b>
+        {pastCards.length > 0 ? ` · 사용함·만료 ${pastCards.length}장` : ""}
+      </p>
+
+      <ul className="m-0 flex list-none flex-col gap-2 p-0">
+        {[...usableCards, ...pastCards].map((couponCard) => {
+          const isPast = couponCard.usedAt !== null || couponCard.isExpired
+          return (
+            <li
+              key={couponCard.couponIssueId}
+              className={cn(
+                "flex flex-wrap items-center gap-x-3 gap-y-1 rounded-[var(--radius)] border p-4",
+                isPast ? "border-border bg-muted/40" : "border-primary bg-card",
+              )}
+            >
+              <div className="min-w-0 flex-1">
+                <b className={cn("block text-sm font-bold", isPast && "text-muted-foreground")}>
+                  {couponCard.name}
+                </b>
+                <span className="mt-0.5 block text-[12px] text-muted-foreground">
+                  {[
+                    couponCard.minOrderAmount > 0
+                      ? `${formatKrw(couponCard.minOrderAmount)} 이상`
+                      : null,
+                    couponCard.scopeKind === "all" ? null : "일부 상품 전용",
+                    couponCard.expiresAt
+                      ? `${new Date(couponCard.expiresAt).toLocaleDateString("ko-KR")}까지`
+                      : "기한 없음",
+                  ]
+                    .filter(Boolean)
+                    .join(" · ")}
+                </span>
+              </div>
+
+              <div className="shrink-0 text-right">
+                <b
+                  className={cn(
+                    "block font-heading text-[15px] font-extrabold",
+                    isPast ? "text-muted-foreground" : "text-primary",
+                  )}
+                >
+                  {formatCouponBenefit(couponCard)}
+                </b>
+                {/* 상태는 색이 아니라 글자로 전달한다(KWCAG) */}
+                {isPast ? (
+                  <span className="text-[12px] text-muted-foreground">
+                    {couponCard.usedAt !== null ? "사용함" : "기간 만료"}
+                  </span>
+                ) : null}
+              </div>
+            </li>
+          )
+        })}
+      </ul>
     </div>
   )
 }
@@ -1292,14 +1404,17 @@ function ProfileEditForm({ myProfile }: { myProfile: MyProfile }) {
 // 루트
 // =============================================================
 
-export function MypageView() {
+export function MypageView({ initialSection }: { initialSection?: MypageSectionKey } = {}) {
   const trpc = useTRPC()
 
   const profileQuery = useQuery(trpc.mypage.getProfile.queryOptions())
   /* 요약 카드가 쓰는 잔액 — 적립금 섹션도 같은 쿼리를 보므로 캐시가 공유된다 */
   const pointSummaryQuery = useQuery(trpc.mypage.pointSummary.queryOptions())
+  const usableCouponCountQuery = useQuery(trpc.mypage.usableCouponCount.queryOptions())
 
-  const [activeSection, setActiveSection] = React.useState<MypageSectionKey>("orders")
+  const [activeSection, setActiveSection] = React.useState<MypageSectionKey>(
+    initialSection ?? "orders",
+  )
 
   /* 섹션 전환 시 섹션 제목으로 포커스 이동 — 내비 아래 콘텐츠가 통째로 바뀌는 화면에서
      키보드·스크린리더가 길을 잃지 않게 한다(qna-form 선례). 첫 렌더는 제외 */
@@ -1388,6 +1503,19 @@ export function MypageView() {
             {pointSummaryQuery.data ? formatKrw(pointSummaryQuery.data.usableBalance) : "—"}
           </b>
         </button>
+
+        <button
+          type="button"
+          onClick={() => setActiveSection("coupons")}
+          className="flex min-h-11 cursor-pointer flex-col items-end justify-center rounded-[calc(var(--radius)-4px)] px-3 py-1 text-right hover:bg-muted focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring"
+        >
+          <span className="text-[12px] text-muted-foreground">쿠폰</span>
+          <b className="font-heading text-[17px] font-extrabold text-primary">
+            {usableCouponCountQuery.data !== undefined
+              ? `${usableCouponCountQuery.data}장`
+              : "—"}
+          </b>
+        </button>
       </section>
 
       <div className="mt-4 md:grid md:grid-cols-[220px_minmax(0,1fr)] md:items-start md:gap-8">
@@ -1432,6 +1560,7 @@ export function MypageView() {
 
           {activeSection === "orders" && <OrdersSection />}
           {activeSection === "points" && <PointsSection />}
+          {activeSection === "coupons" && <CouponsSection />}
           {activeSection === "addresses" && <AddressesSection />}
           {activeSection === "reviews" && <ReviewsSection />}
           {activeSection === "profile" && <ProfileEditForm myProfile={myProfile} />}

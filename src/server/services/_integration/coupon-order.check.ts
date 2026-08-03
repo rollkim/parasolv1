@@ -5,7 +5,7 @@
  * 핵심 검증: **쿠폰을 쓴 만큼 청구액이 줄고, 주문·결제·쿠폰원장·적립 기준 네 곳의 숫자가 맞는다.**
  * 하나라도 어긋나면 고객이 덜 내거나 더 내고, 그 차이는 정산에서야 발견된다.
  *
- * 시나리오: [0]★쿠폰 입구가 주문 경로에 있는가 [1]정액 쿠폰 [2]정률·상한 [3]쿠폰+적립금 동시
+ * 시나리오: [0]★쿠폰 입구가 주문 경로에 있는가 [0-b]★체크아웃 화면 목록 [1]정액 쿠폰 [2]정률·상한 [3]쿠폰+적립금 동시
  *           [4]최소주문금액 미달 거절 [5]범위(상품) 쿠폰 [6]비회원 차단 [7]위변조·중복 사용
  *           [8]주문 취소 시 쿠폰·적립금 동시 복원
  */
@@ -29,6 +29,7 @@ import {
 } from "@/db/schema";
 import { calcExpiresAt } from "@/domain/point";
 
+import { getCheckoutView } from "../checkout-view.service";
 import { issueCouponToCustomer, CouponUseRejectedError } from "../coupon.service";
 import { applyOrderTransition } from "../order-status.service";
 import {
@@ -206,6 +207,45 @@ async function main() {
       withCouponAmounts.couponDiscount === 5000,
       "★orders.coupon_discount가 0이 아니다 — 쿠폰이 주문 금액에 실제로 반영된다",
       withCouponAmounts,
+    );
+
+    console.log("\n[0-b] ★쿠폰 입구가 체크아웃 화면에도 있는가");
+    // 감사 교훈: 서비스가 맞아도 화면에 목록이 안 내려가면 아무도 못 쓴다
+    const viewCartToken = `CPO-VIEW-${randomUUID()}`;
+    const [viewCart] = await db
+      .insert(cart)
+      .values({ sessionToken: viewCartToken, customerId: buyer.id })
+      .returning({ id: cart.id });
+    leftovers.cartIds.push(viewCart.id);
+    await db.insert(cartItem).values({ cartId: viewCart.id, variantId: variant.id, quantity: 2 });
+
+    const spareIssue = await db.transaction((tx) =>
+      issueCouponToCustomer(tx, { couponId: flatCouponId, customerId: buyer.id }),
+    );
+    const memberCheckout = await getCheckoutView(db, {
+      cartToken: viewCartToken,
+      customerId: buyer.id,
+    });
+    const spareOption = memberCheckout.coupons.find(
+      (option) => option.couponIssueId === spareIssue.couponIssueId,
+    );
+    check(
+      spareOption !== undefined,
+      "회원 주문서가 쿠폰 목록을 내려준다 — 없으면 화면에 선택지가 그려지지 않는다",
+    );
+    check(
+      spareOption?.usable === true && spareOption.discountAmount === 5000,
+      "★화면이 보여줄 할인액 == 주문 생성이 계산할 할인액 (같은 함수)",
+      spareOption,
+    );
+
+    const guestCheckout = await getCheckoutView(db, {
+      cartToken: viewCartToken,
+      customerId: null,
+    });
+    check(
+      guestCheckout.coupons.length === 0,
+      "비회원 주문서는 쿠폰이 빈 배열 — 쿠폰은 회원에게 발급된다",
     );
 
     console.log("\n[1] 정액 쿠폰 — 청구액이 액면만큼 줄어든다");

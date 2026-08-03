@@ -182,6 +182,8 @@ export function CheckoutView() {
   const [sameAsOrderer, setSameAsOrderer] = React.useState(false)
   /** 적립금 사용액 — 문자열로 둔다. 지웠을 때 0이 남아 있으면 지운 걸 다시 지워야 한다 */
   const [pointInput, setPointInput] = React.useState("")
+  /** 선택한 쿠폰 발급건 — null이면 사용 안 함 */
+  const [selectedCouponIssueId, setSelectedCouponIssueId] = React.useState<number | null>(null)
   const postcodeLayerRef = React.useRef<HTMLDivElement>(null)
   const addressDetailRef = React.useRef<HTMLInputElement>(null)
 
@@ -238,11 +240,24 @@ export function CheckoutView() {
       ? (checkoutView?.shippingPolicy.remoteSurcharge ?? 0)
       : 0
 
+  /* 쿠폰 — 회원 주문만. **할인액은 서버가 계산해 내려준 값을 그대로 쓴다**:
+     화면이 다시 계산하면 주문 생성이 판정한 값과 갈려 결제 금액이 달라진다. */
+  const couponOptions = isGuestMode ? [] : (checkoutView?.coupons ?? [])
+  const selectedCoupon =
+    selectedCouponIssueId === null
+      ? null
+      : (couponOptions.find(
+          (option) => option.couponIssueId === selectedCouponIssueId && option.usable,
+        ) ?? null)
+  const appliedCouponDiscount = selectedCoupon?.discountAmount ?? 0
+
   /* 적립금 — 회원 주문만. 비회원은 잔액이 귀속될 회원이 없어 서버가 아예 거부한다.
-     기준 금액은 **적립금을 빼기 전 결제금액**이다(서버 order.service와 같은 기준) —
-     빼고 난 금액을 기준으로 삼으면 상한이 자기 자신에 따라 움직여 계산이 맞지 않는다. */
+     기준 금액은 **쿠폰을 뺀 뒤, 적립금을 빼기 전 결제금액**이다(서버 order.service와 같은 순서) —
+     쿠폰 전 금액을 기준으로 하면 쿠폰과 적립금을 합쳐 결제액을 음수로 만들 수 있다. */
   const pointSetting = isGuestMode ? null : (checkoutView?.point ?? null)
-  const goodsPayableTotal = cartSummary ? cartSummary.grandTotal + remoteSurcharge : 0
+  const goodsPayableTotal = cartSummary
+    ? cartSummary.grandTotal + remoteSurcharge - appliedCouponDiscount
+    : 0
   const requestedPoint = Number(pointInput.replace(/[^0-9]/g, "")) || 0
   const maxUsablePoint = pointSetting
     ? calcMaxUsablePoint(pointSetting.usableBalance, goodsPayableTotal, pointSetting)
@@ -337,8 +352,9 @@ export function CheckoutView() {
       // 비회원 전환 시 회원 프리필을 비운다 — 남의 이름으로 주문되는 혼동을 막는다(목업 동작)
       setOrderer((previous) => ({ ...previous, name: "", phone: "" }))
       setSelectedAddressValue(NEW_ADDRESS_VALUE)
-      // 비회원은 적립금을 쓸 수 없다 — 입력값이 남아 있으면 서버가 거부한다
+      // 비회원은 쿠폰·적립금을 쓸 수 없다 — 값이 남아 있으면 서버가 거부한다
       setPointInput("")
+      setSelectedCouponIssueId(null)
     }
   }
 
@@ -455,6 +471,7 @@ export function CheckoutView() {
         agreedTermsDocumentIds: agreedTermsIds,
         // 0이면 아예 보내지 않는다 — 서버가 '사용 안 함'과 구분할 필요가 없다
         pointToUse: appliedPoint > 0 ? appliedPoint : undefined,
+        couponIssueId: selectedCoupon?.couponIssueId,
         // 주문 생성도 같은 토큰을 봐야 한다 — 여기서 빠지면 주문서는 바로구매 상품을 그렸는데
         // 실제 주문은 장바구니로 만들어진다
         buyToken,
@@ -515,6 +532,15 @@ export function CheckoutView() {
         },
         ...(remoteSurcharge > 0
           ? [{ label: "도서·산간 추가", value: `+${formatKrw(remoteSurcharge)}` }]
+          : []),
+        ...(appliedCouponDiscount > 0
+          ? [
+              {
+                label: "쿠폰 할인",
+                value: `-${formatKrw(appliedCouponDiscount)}`,
+                emphasis: true,
+              },
+            ]
           : []),
         ...(appliedPoint > 0
           ? [
@@ -911,7 +937,61 @@ export function CheckoutView() {
           </ul>
         </section>
 
-        {/* ⑤ 적립금 사용 — 회원 주문만. 핸드오프 목업에 없는 섹션이라 주문상품 규격(라벨+인풋)을 준용한다 */}
+        {/* ⑤ 쿠폰 — 적립금 **위**에 둔다(적용 순서와 같게: 쿠폰 → 배송비 → 적립금).
+            핸드오프 목업에 없는 섹션이라 주문상품 규격(라벨+선택 목록)을 준용한다 */}
+        {!isGuestMode && couponOptions.length > 0 ? (
+          <section aria-labelledby="checkout-coupon-heading" className="border-t border-border pt-5">
+            <div className="mb-3 flex flex-wrap items-baseline justify-between gap-2">
+              <h2 id="checkout-coupon-heading" className="m-0 font-heading text-lg font-extrabold">
+                쿠폰
+              </h2>
+              <p className="m-0 text-[13px] text-muted-foreground">
+                사용 가능 {couponOptions.filter((option) => option.usable).length}장
+              </p>
+            </div>
+
+            <RadioGroup
+              aria-label="사용할 쿠폰 선택"
+              value={selectedCouponIssueId === null ? "none" : String(selectedCouponIssueId)}
+              onValueChange={(nextValue) =>
+                setSelectedCouponIssueId(nextValue === "none" ? null : Number(nextValue))
+              }
+            >
+              <RadioGroupCard value="none" className="items-center">
+                <b className="text-sm">쿠폰 사용 안 함</b>
+              </RadioGroupCard>
+
+              {couponOptions.map((option) => (
+                <RadioGroupCard
+                  key={option.couponIssueId}
+                  value={String(option.couponIssueId)}
+                  // 못 쓰는 쿠폰은 고를 수 없게 두되 목록에는 남긴다 —
+                  // 지워 버리면 "쿠폰이 있었는데 안 보인다"가 되고, 얼마를 더 담아야 하는지도 알 수 없다
+                  disabled={!option.usable}
+                  className="items-start"
+                >
+                  <span className="flex min-w-0 flex-1 flex-col gap-0.5">
+                    <b className="text-sm">{option.name}</b>
+                    <span className="text-[12px] text-muted-foreground">
+                      {option.usable
+                        ? [
+                            `${formatKrw(option.discountAmount)} 할인`,
+                            option.expiresAt
+                              ? `${new Date(option.expiresAt).toLocaleDateString("ko-KR")}까지`
+                              : null,
+                          ]
+                            .filter(Boolean)
+                            .join(" · ")
+                        : option.unusableReason}
+                    </span>
+                  </span>
+                </RadioGroupCard>
+              ))}
+            </RadioGroup>
+          </section>
+        ) : null}
+
+        {/* ⑥ 적립금 사용 — 회원 주문만. 핸드오프 목업에 없는 섹션이라 주문상품 규격(라벨+인풋)을 준용한다 */}
         {pointSetting ? (
           <section aria-labelledby="checkout-point-heading" className="border-t border-border pt-5">
             <div className="mb-3 flex flex-wrap items-baseline justify-between gap-2">
@@ -993,7 +1073,7 @@ export function CheckoutView() {
           </section>
         ) : null}
 
-        {/* ⑥ 결제수단 — 토스 결제위젯이 들어올 자리 */}
+        {/* ⑦ 결제수단 — 토스 결제위젯이 들어올 자리 */}
         <section aria-labelledby="checkout-payment-heading" className="border-t border-border pt-5">
           <h2 id="checkout-payment-heading" className="m-0 mb-3 font-heading text-lg font-extrabold">
             결제수단
@@ -1035,7 +1115,7 @@ export function CheckoutView() {
           ) : null}
         </section>
 
-        {/* ⑦ 약관 동의 */}
+        {/* ⑧ 약관 동의 */}
         <section aria-labelledby="checkout-terms-heading" className="border-t border-border pt-5">
           <h2 id="checkout-terms-heading" className="sr-only">
             약관 동의

@@ -6,6 +6,7 @@ import type { ShippingPolicy } from "@/domain/cart";
 
 import type { CartView } from "./cart.service";
 import { getCartWithItems } from "./cart.service";
+import { listCheckoutCoupons, type CheckoutCouponOption } from "./coupon.service";
 import { getPointBalance, getUsablePointBalance } from "./point.service";
 import { loadPointPolicy } from "./point-policy.service";
 import { loadShippingPolicy } from "./shipping-policy.service";
@@ -54,6 +55,12 @@ export type CheckoutView = {
     minUsePoint: number;
     useUnitPoint: number;
   } | null;
+  /**
+   * 이 주문에 쓸 수 있는 쿠폰 — 회원만. **할인액을 서버가 미리 계산해 내린다**:
+   * 화면이 계산하면 주문 생성이 다시 계산한 값과 갈려 결제 금액이 달라진다.
+   * 못 쓰는 쿠폰도 사유와 함께 온다 — 목록에서 지우면 "쿠폰이 있었는데 안 보인다"가 된다.
+   */
+  coupons: CheckoutCouponOption[];
   /**
    * 배송 정책 — 화면이 **도서·산간 추가비를 같은 도메인 함수로** 계산하기 위해 필요하다.
    * 주소는 화면에서 정해지므로 카트 요약(주소를 모르는 값)만으로는 결제액을 그릴 수 없다.
@@ -148,6 +155,7 @@ export async function getCheckoutView(
       addresses: [],
       // 비회원은 적립금을 쓸 수 없다 — 잔액이 귀속될 회원이 없다
       point: null,
+      coupons: [],
       terms,
       shippingPolicy,
       tossClientKey: process.env.NEXT_PUBLIC_TOSS_CLIENT_KEY ?? null,
@@ -164,6 +172,13 @@ export async function getCheckoutView(
     await getPointBalance(database, input.customerId),
     await getUsablePointBalance(database, input.customerId),
   ];
+  // 주문 가능한 라인만 기준으로 판정한다 — 품절 라인이 최소주문금액을 채우면 안 된다
+  const coupons = await listCheckoutCoupons(database, {
+    customerId: input.customerId,
+    lines: cart.lines
+      .filter((line) => !line.unavailable && !line.soldOut)
+      .map((line) => ({ productId: line.productId, lineTotal: line.lineTotal })),
+  });
 
   return {
     isMember: true,
@@ -176,6 +191,7 @@ export async function getCheckoutView(
       minUsePoint: pointPolicy.minUsePoint,
       useUnitPoint: pointPolicy.useUnitPoint,
     },
+    coupons,
     terms,
     shippingPolicy,
     tossClientKey: process.env.NEXT_PUBLIC_TOSS_CLIENT_KEY ?? null,
