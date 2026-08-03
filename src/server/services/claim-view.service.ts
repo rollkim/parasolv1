@@ -61,6 +61,10 @@ export type ClaimRequestView = {
   baseShippingFee: number;
   /** 주문 배송비 — 취소 환불액에 더해진다 */
   orderShippingFee: number;
+  /** 주문의 쿠폰 할인 — 취소 예상 환불액에서 빠지고, 반품이면 정산 안내의 근거가 된다 */
+  orderCouponDiscount: number;
+  /** 주문의 적립금 사용액 — 위와 같은 용도 */
+  orderPointUsed: number;
   /** 이 유형에서 쓸 수 있는 배송비 수취 방법(반품=차감, 교환=계좌이체) */
   feeMethods: ClaimFeeMethod[];
 };
@@ -84,6 +88,8 @@ export async function getClaimRequestView(
       guestToken: orders.guestToken,
       deliveredAt: orders.deliveredAt,
       shippingFee: orders.shippingFee,
+      couponDiscount: orders.couponDiscount,
+      pointUsed: orders.pointUsed,
     })
     .from(orders)
     .where(eq(orders.orderNo, input.orderNo))
@@ -193,6 +199,8 @@ export async function getClaimRequestView(
     reasons,
     baseShippingFee: shippingPolicy.baseFee,
     orderShippingFee: orderRow.shippingFee,
+    orderCouponDiscount: orderRow.couponDiscount,
+    orderPointUsed: orderRow.pointUsed,
     feeMethods: allowedFeeMethods(input.claimType),
   };
 }

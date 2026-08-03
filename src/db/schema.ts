@@ -494,6 +494,9 @@ export const claim = pgTable("claim", {
   goodsAmount: integer("goods_amount").notNull().default(0),
   shippingFee: integer("shipping_fee").notNull().default(0), // 반품/교환 배송비
   refundAmount: integer("refund_amount").notNull().default(0),
+  // 이 클레임이 환불액에서 차감한 쿠폰 몫 — 부분 반품 비례 차감의 원장(쿠폰 설계 결정 ④).
+  // 원장이 없으면 "이미 얼마를 차감했는지"를 알 수 없어 나눠 반품할 때 합계가 어긋난다
+  couponDeduction: integer("coupon_deduction").notNull().default(0),
   // 배송비 수취 — 상태(claim.status)가 아니라 별도 축이다. 미입금 교환이 상태머신을 멈추지 않고,
   // 관리자 목록의 '입금 대기' 필터가 대기열을 보여준다(설계 D3-확장).
   feeMethod: text("fee_method"),                // deduct_refund(환불차감) / bank_transfer(계좌이체) / card[2차]

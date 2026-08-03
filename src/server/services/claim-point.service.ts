@@ -5,7 +5,7 @@ import { and, eq, inArray, sql } from "drizzle-orm";
 import { claim, orders, pointTransaction } from "@/db/schema";
 import { calcExpiresAt, calcPointClawbackAmount, calcPointRestoreAmount } from "@/domain/point";
 
-import type { TransactionClient } from "./db-client";
+import type { DatabaseClient, TransactionClient } from "./db-client";
 import { clawbackPoints, restoreUsedPoints } from "./point.service";
 import { loadPointPolicy } from "./point-policy.service";
 
@@ -31,7 +31,7 @@ export type ClaimPointSettlement = {
 
 /** 이 주문에서 지금까지 오간 적립금 — 같은 주문에 클레임이 여러 번 걸릴 수 있어 누적을 본다 */
 async function loadOrderPointHistory(
-  tx: TransactionClient,
+  tx: TransactionClient | DatabaseClient,
   orderId: number,
 ): Promise<{ earned: number; restored: number; clawedBack: number }> {
   const [row] = await tx
@@ -66,7 +66,7 @@ async function loadOrderPointHistory(
  * 완료된 클레임(done)만 센다 — 접수·반려 상태를 세면 아직 처리되지 않은 신청이 금액을 깎는다.
  */
 async function calcRemainingAfterClaim(
-  tx: TransactionClient,
+  tx: TransactionClient | DatabaseClient,
   input: { orderId: number; claimId: number; orderClaimableAmount: number },
 ): Promise<number> {
   const [row] = await tx
@@ -86,6 +86,76 @@ async function calcRemainingAfterClaim(
   return Math.max(0, input.orderClaimableAmount - settled);
 }
 
+export type ClaimPointComputation = {
+  /** 비회원 주문이면 null — 정산할 것이 없다 */
+  customerId: number | null;
+  restoreAmount: number;
+  clawbackAmount: number;
+};
+
+/**
+ * 이 클레임이 확정될 때 오갈 적립금을 **계산만** 한다(원장 기록 없음).
+ *
+ * 환불 실행(claim-refund)이 PG 호출 **전에** 카드 환불액에서 복원 몫을 빼기 위해 쓴다 —
+ * 복원 몫을 빼지 않으면 상품값은 카드로 다 돌려주고 적립금도 또 복원해 이중 지급이 된다.
+ * 실제 기록(settleClaimPoints)도 같은 계산을 쓰므로 두 값이 갈리지 않는다.
+ */
+export async function computeClaimPointSettlement(
+  client: TransactionClient | DatabaseClient,
+  input: { claimId: number; orderId: number },
+): Promise<ClaimPointComputation> {
+  const [orderRow] = await client
+    .select({
+      customerId: orders.customerId,
+      subtotal: orders.subtotal,
+      pointUsed: orders.pointUsed,
+    })
+    .from(orders)
+    .where(eq(orders.id, input.orderId))
+    .limit(1);
+
+  // 비회원 주문은 적립금이 오갈 수 없다
+  if (!orderRow || orderRow.customerId === null) {
+    return { customerId: null, restoreAmount: 0, clawbackAmount: 0 };
+  }
+
+  const [claimRow] = await client
+    .select({ goodsAmount: claim.goodsAmount })
+    .from(claim)
+    .where(eq(claim.id, input.claimId))
+    .limit(1);
+  if (!claimRow) return { customerId: orderRow.customerId, restoreAmount: 0, clawbackAmount: 0 };
+
+  /* 비례 기준은 **상품금액(subtotal)** — 클레임의 goods_amount와 같은 스케일이어야 한다.
+     이전에는 쿠폰을 뺀 금액을 기준으로 삼았는데, goods_amount는 쿠폰을 모르는 상품가격
+     스케일이라 분모만 작아져 비율이 부풀었다(쿠폰 있는 주문에서 과복원).
+     쿠폰이 0이면 두 기준이 같아 지금까지는 드러나지 않았다. */
+  const orderClaimableAmount = orderRow.subtotal;
+  const history = await loadOrderPointHistory(client, input.orderId);
+  const remainingAfterClaim = await calcRemainingAfterClaim(client, {
+    orderId: input.orderId,
+    claimId: input.claimId,
+    orderClaimableAmount,
+  });
+
+  const restoreAmount = calcPointRestoreAmount({
+    orderPointUsed: orderRow.pointUsed,
+    orderClaimableAmount,
+    alreadyRestoredPoint: history.restored,
+    refundBaseAmount: claimRow.goodsAmount,
+    remainingAfterClaim,
+  });
+  const clawbackAmount = calcPointClawbackAmount({
+    earnedPoint: history.earned,
+    alreadyClawedBackPoint: history.clawedBack,
+    refundBaseAmount: claimRow.goodsAmount,
+    orderClaimableAmount,
+    remainingAfterClaim,
+  });
+
+  return { customerId: orderRow.customerId, restoreAmount, clawbackAmount };
+}
+
 /**
  * 반품 확정 시 적립금 정산. 환불 확정 트랜잭션 안에서 호출한다 —
  * 환불이 롤백되면 적립금도 함께 되돌아가야 한다.
@@ -94,86 +164,43 @@ export async function settleClaimPoints(
   tx: TransactionClient,
   input: { claimId: number; claimNo: string; orderId: number },
 ): Promise<ClaimPointSettlement> {
-  const [orderRow] = await tx
-    .select({
-      customerId: orders.customerId,
-      orderNo: orders.orderNo,
-      subtotal: orders.subtotal,
-      couponDiscount: orders.couponDiscount,
-      pointUsed: orders.pointUsed,
-      orderStatus: orders.status,
-    })
-    .from(orders)
-    .where(eq(orders.id, input.orderId))
-    .limit(1);
-
-  // 비회원 주문은 적립금이 오갈 수 없다
-  if (!orderRow || orderRow.customerId === null) {
+  const computed = await computeClaimPointSettlement(tx, {
+    claimId: input.claimId,
+    orderId: input.orderId,
+  });
+  if (computed.customerId === null) {
     return { restoredPoint: 0, clawedBackPoint: 0 };
   }
-
-  const [claimRow] = await tx
-    .select({ goodsAmount: claim.goodsAmount })
-    .from(claim)
-    .where(eq(claim.id, input.claimId))
-    .limit(1);
-  if (!claimRow) return { restoredPoint: 0, clawedBackPoint: 0 };
-
-  // 적립금이 적용된 기준 금액 — 배송비는 제외한다(적립·사용 모두 상품 금액 기준)
-  const orderClaimableAmount = Math.max(
-    0,
-    orderRow.subtotal - orderRow.couponDiscount,
-  );
-  const history = await loadOrderPointHistory(tx, input.orderId);
-  const remainingAfterClaim = await calcRemainingAfterClaim(tx, {
-    orderId: input.orderId,
-    claimId: input.claimId,
-    orderClaimableAmount,
-  });
 
   const policy = await loadPointPolicy(tx);
   let restoredPoint = 0;
   let clawedBackPoint = 0;
 
   // ── 사용분 복원
-  const restoreAmount = calcPointRestoreAmount({
-    orderPointUsed: orderRow.pointUsed,
-    orderClaimableAmount,
-    alreadyRestoredPoint: history.restored,
-    refundBaseAmount: claimRow.goodsAmount,
-    remainingAfterClaim,
-  });
-  if (restoreAmount > 0) {
+  if (computed.restoreAmount > 0) {
     const result = await restoreUsedPoints(tx, {
-      customerId: orderRow.customerId,
-      amount: restoreAmount,
+      customerId: computed.customerId,
+      amount: computed.restoreAmount,
       title: `반품 적립금 반환 (${input.claimNo})`,
       orderId: input.orderId,
       expiresAt: calcExpiresAt(new Date(), policy),
       // 같은 클레임을 두 번 확정해도 복원은 한 번 — 환불 재시도가 돈을 늘리면 안 된다
       dedupeKey: `claim:${input.claimId}:point-restore`,
     });
-    if (result.earned) restoredPoint = restoreAmount;
+    if (result.earned) restoredPoint = computed.restoreAmount;
   }
 
   // ── 적립분 회수 (확정 후 반품)
-  // 확정 전 반품은 애초에 적립이 없어 history.earned가 0이므로 자연히 0이 된다
-  const clawbackAmount = calcPointClawbackAmount({
-    earnedPoint: history.earned,
-    alreadyClawedBackPoint: history.clawedBack,
-    refundBaseAmount: claimRow.goodsAmount,
-    orderClaimableAmount,
-    remainingAfterClaim,
-  });
-  if (clawbackAmount > 0) {
+  // 확정 전 반품은 애초에 적립이 없어 earned가 0이므로 자연히 0이 된다
+  if (computed.clawbackAmount > 0) {
     const result = await clawbackPoints(tx, {
-      customerId: orderRow.customerId,
-      amount: clawbackAmount,
+      customerId: computed.customerId,
+      amount: computed.clawbackAmount,
       title: `반품 적립 회수 (${input.claimNo})`,
       orderId: input.orderId,
       dedupeKey: `claim:${input.claimId}:point-clawback`,
     });
-    if (result.earned) clawedBackPoint = clawbackAmount;
+    if (result.earned) clawedBackPoint = computed.clawbackAmount;
   }
 
   return { restoredPoint, clawedBackPoint };

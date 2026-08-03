@@ -14,7 +14,8 @@ import { buildClaimStockTargets } from "./claim-process.service";
 import type { DatabaseClient, TransactionClient } from "./db-client";
 import { restoreStock } from "./inventory.service";
 import type { PaymentGateway } from "../payments/payment-gateway";
-import { settleClaimPoints } from "./claim-point.service";
+import { settleClaimCoupon, computeClaimCouponDeduction } from "./claim-coupon.service";
+import { computeClaimPointSettlement, settleClaimPoints } from "./claim-point.service";
 import { applyOrderTransition, serializeActor, type TransitionActor } from "./order-status.service";
 
 /**
@@ -83,6 +84,10 @@ export type RefundClaimResult = {
   refundChannel: RefundChannel;
   /** 환불 후 남은 환불 가능 잔액 */
   remainingBalance: number;
+  /** 반품 정산 — 카드 대신 적립금으로 돌아간 몫(취소는 0, 초크포인트가 전액 복원) */
+  pointRestored: number;
+  /** 반품 정산 — 쿠폰 할인이라 환불에서 차감된 몫 */
+  couponDeducted: number;
   orderCancelled: boolean;
 };
 
@@ -170,7 +175,30 @@ export async function refundClaim(
     throw new ClaimPaymentMissingError(input.claimId);
   }
 
-  const refundAmount = context.refundAmount;
+  /* 카드로 나갈 금액을 확정한다 — PG 호출 전에 끝나야 한다.
+     반품의 환불액 스냅샷(goods − 배송비)은 상품 기준이라, 결제수단별 몫을 빼야 카드 환불액이 된다:
+      - 적립금 복원 몫: 복원은 적립금으로 돌아가므로 카드로 또 주면 **이중 지급**이다
+      - 쿠폰 차감 몫: 할인받았던 금액이라 아무도 돌려받지 않는다(설계 결정 ④)
+     취소는 스냅샷이 이미 실결제액(쿠폰·적립금 차감 후)이라 그대로 쓴다 — 원본 복원은 초크포인트 몫.
+     기록(settle)도 같은 계산을 재수행하므로 두 값이 갈리지 않는다. */
+  let plannedPointRestore = 0;
+  let plannedCouponDeduction = 0;
+  if (claimType === "return") {
+    const pointPlan = await computeClaimPointSettlement(database, {
+      claimId: input.claimId,
+      orderId: context.orderId,
+    });
+    plannedPointRestore = pointPlan.restoreAmount;
+    plannedCouponDeduction = await computeClaimCouponDeduction(database, {
+      claimId: input.claimId,
+      orderId: context.orderId,
+    });
+  }
+  const refundAmount = Math.max(
+    0,
+    context.refundAmount - plannedPointRestore - plannedCouponDeduction,
+  );
+
   const balanceBefore = await readRefundableBalance(
     database,
     context.paymentId,
@@ -225,6 +253,8 @@ export async function refundClaim(
       refundedAmount: refundAmount,
       refundChannel,
       remainingBalance: balanceBefore - refundAmount,
+      pointRestored: plannedPointRestore,
+      couponDeducted: plannedCouponDeduction,
       orderCancelled: finalized.orderCancelled,
     };
   });
@@ -314,10 +344,14 @@ async function finalizeClaimRefund(
   }
 
   // 반품은 주문 상태를 안 바꾸므로 초크포인트를 지나지 않는다 — 여기서 직접 정산한다.
-  // 같은 트랜잭션이라 환불이 롤백되면 적립금도 함께 되돌아간다
+  // 같은 트랜잭션이라 환불이 롤백되면 적립금·쿠폰 차감 기록도 함께 되돌아간다
   await settleClaimPoints(tx, {
     claimId: args.claimId,
     claimNo: args.claimNo,
+    orderId: args.orderId,
+  });
+  await settleClaimCoupon(tx, {
+    claimId: args.claimId,
     orderId: args.orderId,
   });
 

@@ -123,6 +123,8 @@ export function ClaimRequestView({
           fault: selectedReason.fault,
           baseFee: requestView.baseShippingFee,
           orderShippingFee: requestView.orderShippingFee,
+          orderCouponDiscount: requestView.orderCouponDiscount,
+          orderPointUsed: requestView.orderPointUsed,
           lines: selectedLines.map(({ target, quantity }) => ({
             unitPrice: target.unitPrice,
             claimQuantity: quantity,

@@ -221,11 +221,41 @@ describe("금액 계산", () => {
       fault: "buyer",
       baseFee: BASE_FEE,
       orderShippingFee: 3000,
+      orderCouponDiscount: 0,
+      orderPointUsed: 0,
       lines: [{ unitPrice: 20700, claimQuantity: 1, orderedQuantity: 1, addonTotal: 1000 }],
     });
     expect(amounts.goodsAmount).toBe(21700);
     expect(amounts.shippingFee).toBe(0);
     expect(amounts.refundAmount).toBe(24700); // 21,700 + 주문 배송비 3,000
+  });
+
+  it("취소: 쿠폰·적립금 사용분을 빼면 곧 실결제액이다", () => {
+    // 상품 20,000 + 배송 3,000 − 쿠폰 5,000 − 적립금 2,000 = 카드로 낸 16,000
+    // 안 빼면 카드 결제액보다 큰 환불을 시도해 잔액 불변식에 막힌다(환불 실패)
+    const amounts = calcClaimAmounts({
+      claimType: "cancel",
+      fault: "buyer",
+      baseFee: BASE_FEE,
+      orderShippingFee: 3000,
+      orderCouponDiscount: 5000,
+      orderPointUsed: 2000,
+      lines: [{ unitPrice: 20000, claimQuantity: 1, orderedQuantity: 1, addonTotal: 0 }],
+    });
+    expect(amounts.refundAmount).toBe(16000);
+  });
+
+  it("반품의 환불액 스냅샷은 쿠폰·적립금을 모른다 — 비례 차감은 환불 실행 시점 몫", () => {
+    const amounts = calcClaimAmounts({
+      claimType: "return",
+      fault: "seller",
+      baseFee: BASE_FEE,
+      orderShippingFee: 0,
+      orderCouponDiscount: 5000,
+      orderPointUsed: 2000,
+      lines: [{ unitPrice: 10000, claimQuantity: 1, orderedQuantity: 2, addonTotal: 0 }],
+    });
+    expect(amounts.refundAmount).toBe(10000);
   });
 
   it("반품(구매자 귀책): 상품금액 − 배송비", () => {
@@ -234,6 +264,8 @@ describe("금액 계산", () => {
       fault: "buyer",
       baseFee: BASE_FEE,
       orderShippingFee: 0,
+      orderCouponDiscount: 0,
+      orderPointUsed: 0,
       lines: [{ unitPrice: 20000, claimQuantity: 1, orderedQuantity: 2, addonTotal: 0 }],
     });
     expect(amounts.refundAmount).toBe(17000);
@@ -245,6 +277,8 @@ describe("금액 계산", () => {
       fault: "buyer",
       baseFee: BASE_FEE,
       orderShippingFee: 0,
+      orderCouponDiscount: 0,
+      orderPointUsed: 0,
       lines: [{ unitPrice: 2000, claimQuantity: 1, orderedQuantity: 1, addonTotal: 0 }],
     });
     expect(amounts.refundAmount).toBe(0); // 2,000 − 3,000 → 0
@@ -256,6 +290,8 @@ describe("금액 계산", () => {
       fault: "buyer",
       baseFee: BASE_FEE,
       orderShippingFee: 0,
+      orderCouponDiscount: 0,
+      orderPointUsed: 0,
       lines: [{ unitPrice: 20000, claimQuantity: 1, orderedQuantity: 1, addonTotal: 0 }],
     });
     expect(amounts.refundAmount).toBe(0);
@@ -268,6 +304,8 @@ describe("금액 계산", () => {
       fault: "seller",
       baseFee: BASE_FEE,
       orderShippingFee: 0,
+      orderCouponDiscount: 0,
+      orderPointUsed: 0,
       lines: [{ unitPrice: 10000, claimQuantity: 2, orderedQuantity: 2, addonTotal: 3000 }],
     });
     expect(full.goodsAmount).toBe(23000);
@@ -277,6 +315,8 @@ describe("금액 계산", () => {
       fault: "seller",
       baseFee: BASE_FEE,
       orderShippingFee: 0,
+      orderCouponDiscount: 0,
+      orderPointUsed: 0,
       lines: [{ unitPrice: 10000, claimQuantity: 1, orderedQuantity: 2, addonTotal: 3000 }],
     });
     expect(partial.goodsAmount).toBe(10000); // addon 미포함 — 복원 수량이 소수가 되므로
@@ -289,6 +329,8 @@ describe("금액 계산", () => {
         fault: "buyer",
         baseFee: BASE_FEE,
         orderShippingFee: 0,
+        orderCouponDiscount: 0,
+        orderPointUsed: 0,
         lines: [{ unitPrice: 10000, claimQuantity: 3, orderedQuantity: 2, addonTotal: 0 }],
       }),
     ).toThrow(ClaimQuantityExceededError);

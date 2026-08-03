@@ -356,8 +356,13 @@ export type ClaimAmounts = {
 /**
  * 클레임 금액 3종을 계산한다. 전부 원 단위 정수(RULE-11).
  *
- * - 취소: 상품 전액 + 주문 배송비 환불(배송이 일어나지 않았다)
- * - 반품: 상품금액 − 클레임 배송비. 음수면 0으로 절단하고 차액은 청구하지 않는다(불변식 2)
+ * - 취소: 상품 전액 + 주문 배송비 − **쿠폰·적립금 사용분**. 취소는 전 품목 전량이므로
+ *   환불액이 곧 실결제액(grand_total)이다 — 쿠폰·적립금을 빼지 않으면 카드 결제액보다
+ *   큰 환불을 시도해 잔액 불변식에 막힌다(돈이 안 나가는 게 아니라 **환불 자체가 실패**한다).
+ *   쿠폰·적립금 원본은 주문 취소 초크포인트가 복원하므로 여기서는 금액만 맞춘다.
+ * - 반품: 상품금액 − 클레임 배송비. 음수면 0으로 절단하고 차액은 청구하지 않는다(불변식 2).
+ *   쿠폰·적립금 몫은 여기서 빼지 않는다 — 부분 반품의 비례 차감은 환불 실행 시점에
+ *   원장(과거 클레임 누적)을 보고 정한다(claim-refund가 수행).
  * - 교환: 환불 0 — 배송비는 fee_method로 별도 수취
  * - 추가상품은 라인 전량 클레임일 때만 포함(D11) — 부분 수량 비례 배분은 재고 복원
  *   수량이 소수가 되어 불가능하다
@@ -368,6 +373,10 @@ export function calcClaimAmounts(input: {
   baseFee: number;
   /** 원 주문의 배송비(orders.shipping_fee) — 취소 환불에만 포함 */
   orderShippingFee: number;
+  /** 주문의 쿠폰 할인(orders.coupon_discount) — 취소 환불액에서 빠진다 */
+  orderCouponDiscount: number;
+  /** 주문의 적립금 사용액(orders.point_used) — 취소 환불액에서 빠진다(원본은 초크포인트가 복원) */
+  orderPointUsed: number;
   lines: ClaimAmountLine[];
 }): ClaimAmounts {
   for (const line of input.lines) {
@@ -387,7 +396,13 @@ export function calcClaimAmounts(input: {
 
   const refundAmount =
     input.claimType === "cancel"
-      ? goodsAmount + input.orderShippingFee
+      ? Math.max(
+          0,
+          goodsAmount +
+            input.orderShippingFee -
+            input.orderCouponDiscount -
+            input.orderPointUsed,
+        )
       : input.claimType === "return"
         ? Math.max(0, goodsAmount - shippingFee)
         : 0;

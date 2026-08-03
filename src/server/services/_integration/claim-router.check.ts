@@ -118,6 +118,8 @@ async function main() {
       fault: buyerReason.fault,
       baseFee: requestView.baseShippingFee,
       orderShippingFee: requestView.orderShippingFee,
+      orderCouponDiscount: requestView.orderCouponDiscount,
+      orderPointUsed: requestView.orderPointUsed,
       lines: [
         {
           unitPrice: requestView.targets[0].unitPrice,

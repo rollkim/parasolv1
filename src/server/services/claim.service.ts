@@ -158,6 +158,8 @@ export async function requestClaim(
         guestToken: orders.guestToken,
         deliveredAt: orders.deliveredAt,
         shippingFee: orders.shippingFee,
+        couponDiscount: orders.couponDiscount,
+        pointUsed: orders.pointUsed,
       })
       .from(orders)
       .where(eq(orders.orderNo, input.orderNo))
@@ -248,6 +250,8 @@ export async function requestClaim(
       fault: reasonPolicy.meta.fault,
       baseFee: shippingPolicy.baseFee,
       orderShippingFee: orderRow.shippingFee,
+      orderCouponDiscount: orderRow.couponDiscount,
+      orderPointUsed: orderRow.pointUsed,
       lines: amountLines,
     });
 
