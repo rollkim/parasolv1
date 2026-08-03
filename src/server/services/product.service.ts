@@ -283,7 +283,7 @@ export async function getProductListPage(
           .select(selection as typeof productCardSelection)
           .from(product)
           .leftJoin(maker, eq(product.makerId, maker.id))
-          .where(visibleProduct);
+          .where(listedProduct);
 
   const [countRow] = categoryFilter
     ? await database
