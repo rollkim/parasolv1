@@ -36,6 +36,8 @@ const PRODUCT_SORT_VALUES: readonly ProductSort[] = [
 
 type ProductListSearchParams = {
   category?: string | string[]
+  /** 검색어 — 통합검색(/search)의 "전체 보기"가 이 목록으로 넘긴다 */
+  q?: string | string[]
   sort?: string | string[]
   page?: string | string[]
 }
@@ -67,9 +69,12 @@ function productListHref(
   categorySlug: string | null,
   sort: ProductSort,
   pageNumber: number,
+  keyword: string,
 ): string {
   const listQuery = new URLSearchParams()
   if (categorySlug) listQuery.set("category", categorySlug)
+  // 검색어를 빠뜨리면 2페이지로 넘어가는 순간 검색이 풀려 전체 목록이 나온다
+  if (keyword) listQuery.set("q", keyword)
   if (sort !== "latest") listQuery.set("sort", sort)
   if (pageNumber > 1) listQuery.set("page", String(pageNumber))
   const queryString = listQuery.toString()
@@ -106,6 +111,7 @@ export default async function ProductListPage({
 }) {
   const rawParams = await searchParams
   const categorySlug = parseCategorySlug(rawParams.category)
+  const keyword = (firstParam(rawParams.q) ?? "").trim()
   const sort = parseSort(rawParams.sort)
   const requestedPage = parsePage(rawParams.page)
 
@@ -113,6 +119,7 @@ export default async function ProductListPage({
     getStoreNavCategories(db),
     getProductListPage(db, {
       categorySlug: categorySlug ?? undefined,
+      keyword: keyword || undefined,
       sort,
       page: requestedPage,
     }),
@@ -123,6 +130,7 @@ export default async function ProductListPage({
     requestedPage > lastPage
       ? await getProductListPage(db, {
           categorySlug: categorySlug ?? undefined,
+          keyword: keyword || undefined,
           sort,
           page: lastPage,
         })
@@ -153,7 +161,7 @@ export default async function ProductListPage({
         {placement.child && placement.root ? (
           <>
             <Link
-              href={productListHref(placement.root.slug, sort, 1)}
+              href={productListHref(placement.root.slug, sort, 1, keyword)}
               className="text-muted-foreground transition-colors hover:text-primary"
             >
               {placement.root.name}
@@ -185,6 +193,7 @@ export default async function ProductListPage({
         categoryChips={placement.chips}
         chipsAllSlug={placement.chipsAllSlug}
         activeCategorySlug={categorySlug}
+        activeKeyword={keyword}
         activeSort={sort}
       />
 
@@ -193,10 +202,20 @@ export default async function ProductListPage({
           size="panel"
           icon={<span>🫙</span>}
           iconSize={40}
-          title="조건에 맞는 상품이 없어요"
-          description="필터를 조정하면 더 많은 상품을 볼 수 있어요."
-          // 초기화는 카테고리·페이지만 되돌린다 — 정렬은 필터가 아니다(목업 초기화도 정렬은 유지)
-          actions={[{ label: "필터 초기화", href: productListHref(null, sort, 1) }]}
+          // 검색으로 들어온 빈 결과에 "필터를 조정하세요"라고 하면 조정할 필터가 없어 막힌다
+          title={keyword ? `‘${keyword}’ 검색 결과가 없어요` : "조건에 맞는 상품이 없어요"}
+          description={
+            keyword
+              ? "다른 검색어로 찾아보시거나 전체 상품에서 둘러보세요."
+              : "필터를 조정하면 더 많은 상품을 볼 수 있어요."
+          }
+          // 초기화는 카테고리·검색어·페이지를 되돌린다 — 정렬은 필터가 아니다(목업 초기화도 정렬은 유지)
+          actions={[
+            {
+              label: keyword ? "전체 상품 보기" : "필터 초기화",
+              href: productListHref(null, sort, 1, ""),
+            },
+          ]}
         />
       ) : (
         <div className="grid grid-cols-2 gap-3 min-[600px]:grid-cols-3 min-[600px]:gap-4 min-[1080px]:grid-cols-4 min-[1080px]:gap-[18px]">
@@ -213,7 +232,7 @@ export default async function ProductListPage({
         >
           {currentPage > 1 ? (
             <Link
-              href={productListHref(categorySlug, sort, currentPage - 1)}
+              href={productListHref(categorySlug, sort, currentPage - 1, keyword)}
               aria-label="이전 페이지"
               className={cn(PAGE_ITEM_CLASS, "text-foreground transition-colors hover:bg-muted")}
             >
@@ -241,7 +260,7 @@ export default async function ProductListPage({
             ) : (
               <Link
                 key={pageNumber}
-                href={productListHref(categorySlug, sort, pageNumber)}
+                href={productListHref(categorySlug, sort, pageNumber, keyword)}
                 aria-label={`${pageNumber}페이지`}
                 className={cn(
                   PAGE_ITEM_CLASS,
@@ -255,7 +274,7 @@ export default async function ProductListPage({
 
           {currentPage < lastPage ? (
             <Link
-              href={productListHref(categorySlug, sort, currentPage + 1)}
+              href={productListHref(categorySlug, sort, currentPage + 1, keyword)}
               aria-label="다음 페이지"
               className={cn(PAGE_ITEM_CLASS, "text-foreground transition-colors hover:bg-muted")}
             >

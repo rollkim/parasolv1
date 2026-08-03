@@ -39,6 +39,8 @@ export type ProductListControlsProps = {
   /** 현재 선택된 카테고리 — 중분류면 그 중분류 칩이 활성화된다 */
   activeCategorySlug: string | null;
   activeSort: ProductSort;
+  /** 검색어 — 칩·정렬을 바꿔도 검색이 풀리지 않게 함께 싣는다 */
+  activeKeyword: string;
 };
 
 const PRODUCT_SORT_OPTIONS: { sortValue: ProductSort; sortLabel: string }[] = [
@@ -52,9 +54,11 @@ const PRODUCT_SORT_OPTIONS: { sortValue: ProductSort; sortLabel: string }[] = [
 function productListHref(
   categorySlug: string | null,
   sort: ProductSort,
+  keyword: string,
 ): string {
   const listQuery = new URLSearchParams();
   if (categorySlug) listQuery.set("category", categorySlug);
+  if (keyword) listQuery.set("q", keyword);
   if (sort !== "latest") listQuery.set("sort", sort);
   const queryString = listQuery.toString();
   return queryString ? `/products?${queryString}` : "/products";
@@ -65,6 +69,7 @@ export function ProductListControls({
   chipsAllSlug,
   activeCategorySlug,
   activeSort,
+  activeKeyword,
 }: ProductListControlsProps) {
   const router = useRouter();
 
@@ -95,7 +100,7 @@ export function ProductListControls({
               type="button"
               aria-pressed={chipItem.slug === activeCategorySlug}
               onClick={() =>
-                router.push(productListHref(chipItem.slug, activeSort))
+                router.push(productListHref(chipItem.slug, activeSort, activeKeyword))
               }
               className="inline-flex min-h-11 shrink-0 cursor-pointer items-center rounded-full border border-border bg-card px-[15px] text-[13px] font-semibold whitespace-nowrap text-foreground transition-colors hover:bg-muted aria-pressed:border-primary aria-pressed:bg-primary aria-pressed:text-primary-foreground aria-pressed:hover:bg-primary"
             >
@@ -117,7 +122,7 @@ export function ProductListControls({
           value={activeSort}
           onValueChange={(nextSort) =>
             router.push(
-              productListHref(activeCategorySlug, nextSort as ProductSort),
+              productListHref(activeCategorySlug, nextSort as ProductSort, activeKeyword),
             )
           }
         >

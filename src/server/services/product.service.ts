@@ -1,6 +1,6 @@
 import "server-only";
 
-import { and, asc, count, desc, eq, inArray, isNull, or } from "drizzle-orm";
+import { and, asc, count, desc, eq, ilike, inArray, isNull, or } from "drizzle-orm";
 
 import type { db as Database } from "@/db";
 import {
@@ -241,6 +241,8 @@ export async function getProductListPage(
   database: typeof Database,
   options: {
     categorySlug?: string;
+    /** 검색어 — 상품명·요약 부분일치. 통합검색(/search)이 넘긴다 */
+    keyword?: string;
     sort?: ProductSort;
     page?: number;
     pageSize?: number;
@@ -249,6 +251,16 @@ export async function getProductListPage(
   const sort = options.sort ?? "latest";
   const page = Math.max(1, options.page ?? 1);
   const pageSize = options.pageSize ?? PRODUCT_LIST_DEFAULT_PAGE_SIZE;
+
+  /* 검색어는 상품명과 요약만 본다. 상세 설명(HTML)은 제외한다 —
+     태그 문자열까지 걸려 "div" 한 단어로 전 상품이 나오는 일이 생긴다 */
+  const keyword = options.keyword?.trim() ?? "";
+  const keywordFilter =
+    keyword.length > 0
+      ? or(ilike(product.name, "%" + keyword + "%"), ilike(product.summary, "%" + keyword + "%"))
+      : undefined;
+  /** 목록 조건 = 노출 조건 + 검색어. 목록과 개수 쿼리가 같은 조건을 봐야 페이지 수가 맞는다 */
+  const listedProduct = keywordFilter ? and(visibleProduct, keywordFilter) : visibleProduct;
 
   let categoryFilter = undefined;
   if (options.categorySlug) {
@@ -266,7 +278,7 @@ export async function getProductListPage(
           .from(product)
           .leftJoin(maker, eq(product.makerId, maker.id))
           .innerJoin(productCategory, eq(productCategory.productId, product.id))
-          .where(and(visibleProduct, categoryFilter))
+          .where(and(listedProduct, categoryFilter))
       : database
           .select(selection as typeof productCardSelection)
           .from(product)
@@ -278,8 +290,8 @@ export async function getProductListPage(
         .select({ totalCount: count() })
         .from(product)
         .innerJoin(productCategory, eq(productCategory.productId, product.id))
-        .where(and(visibleProduct, categoryFilter))
-    : await database.select({ totalCount: count() }).from(product).where(visibleProduct);
+        .where(and(listedProduct, categoryFilter))
+    : await database.select({ totalCount: count() }).from(product).where(listedProduct);
 
   const rows = await baseFrom(productCardSelection)
     .orderBy(...sortClause(sort))
