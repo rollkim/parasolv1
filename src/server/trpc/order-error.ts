@@ -82,7 +82,12 @@ import {
   DuplicateStorySlugError,
 } from "@/server/services/admin-story.service";
 import {
+  CouponIssueUnavailableError,
+  CouponUseRejectedError,
+} from "@/server/services/coupon.service";
+import {
   CartNotFoundError,
+  GuestCouponUseError,
   GuestPointUseError,
   PointUseRejectedError,
   TermsNotAgreedError,
@@ -121,6 +126,15 @@ export function toOrderTRPCError(error: unknown): unknown {
       message: "장바구니를 찾을 수 없습니다. 상품을 다시 담아 주세요.",
       cause: error,
     });
+  }
+
+  // 쿠폰 거절 — 문구가 이미 원인+다음 행동을 담는다(도메인 checkCouponUsable이 만든 것).
+  // 발급 실패(소진·기간)는 CONFLICT: 고객 입력이 틀린 게 아니라 상황이 바뀐 것이다
+  if (error instanceof CouponIssueUnavailableError) {
+    return new TRPCError({ code: "CONFLICT", message: error.message, cause: error });
+  }
+  if (error instanceof CouponUseRejectedError || error instanceof GuestCouponUseError) {
+    return new TRPCError({ code: "BAD_REQUEST", message: error.message, cause: error });
   }
 
   // 적립금 사용 거절 — 문구가 이미 원인+다음 행동을 담는다(도메인 checkPointUse가 만든 것)

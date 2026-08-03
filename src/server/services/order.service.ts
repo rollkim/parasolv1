@@ -22,6 +22,13 @@ import { normalizePhone } from "@/domain/phone";
 import { checkPointUse } from "@/domain/point";
 
 import { getCartWithItems, type CartLine } from "./cart.service";
+import {
+  calcCouponScopeTarget,
+  CouponUseRejectedError,
+  loadCouponIssueForOrder,
+  resolveCouponDiscount,
+  useCouponForOrder,
+} from "./coupon.service";
 import { rememberOrderAddress } from "./customer.service";
 import type { DatabaseClient, TransactionClient } from "./db-client";
 import { getUsablePointBalance, usePoints } from "./point.service";
@@ -108,6 +115,12 @@ export type CreatePendingOrderInput = {
    * 값은 서버가 정책·잔액으로 다시 검증한다 — 화면이 계산한 최대치를 믿지 않는다.
    */
   pointToUse?: number;
+  /**
+   * 사용할 쿠폰 발급건. 회원만 쓸 수 있다(쿠폰은 회원에게 발급된다).
+   * **할인액은 화면이 아니라 서버가 계산한다** — 화면이 보낸 금액을 믿으면
+   * 5천원 쿠폰으로 5만원을 깎을 수 있다.
+   */
+  couponIssueId?: number;
 };
 
 export type CreatePendingOrderResult = {
@@ -130,6 +143,13 @@ export class PointUseRejectedError extends Error {
   constructor(message: string) {
     super(message);
     this.name = "PointUseRejectedError";
+  }
+}
+
+export class GuestCouponUseError extends Error {
+  constructor() {
+    super("쿠폰은 로그인 후 사용할 수 있어요.");
+    this.name = "GuestCouponUseError";
   }
 }
 
@@ -252,13 +272,47 @@ async function createPendingOrderInTransaction(
     // 체크아웃 화면도 같은 도메인 함수로 계산하므로 보인 금액과 결제액이 갈리지 않는다.
     // ① 적립금을 빼기 전 금액을 먼저 구한다 — "얼마까지 쓸 수 있나"의 기준이 이 값이다.
     //    순수 계산이라 두 번 불러도 비용이 없다.
-    const draftBeforePoint = buildOrderDraft(
-      selectedLines.map(toDraftLine),
-      shippingPolicy,
-      input.shippingAddress.zipcode,
-    );
+    const draftLines = selectedLines.map(toDraftLine);
+    const draftBeforeDiscount = buildOrderDraft(draftLines, shippingPolicy, {
+      shippingZipcode: input.shippingAddress.zipcode,
+    });
 
-    // ② 적립금 사용 검증 — 화면이 보낸 값을 정책·잔액으로 다시 판정한다(RULE-11 금액 무결성).
+    /* ② 쿠폰 검증 — 화면이 보낸 쿠폰을 기간·범위·최소금액으로 다시 판정한다.
+          할인액도 여기서 계산한다: 화면이 보낸 금액을 믿으면 5천원 쿠폰으로 5만원을 깎을 수 있다.
+          비회원은 대상이 아니다 — 쿠폰은 회원에게 발급된다. */
+    if (input.couponIssueId !== undefined && input.customerId === null) {
+      throw new GuestCouponUseError();
+    }
+    let couponDiscount = 0;
+    if (input.couponIssueId !== undefined && input.customerId !== null) {
+      const issueForOrder = await loadCouponIssueForOrder(tx, {
+        couponIssueId: input.couponIssueId,
+        customerId: input.customerId,
+      });
+      const scopeTarget = await calcCouponScopeTarget(tx, {
+        scopeKind: issueForOrder.scopeKind,
+        scopeRefId: issueForOrder.scopeRefId,
+        lines: draftBeforeDiscount.items.map((item) => ({
+          productId: item.productId,
+          lineTotal: item.lineTotal,
+        })),
+      });
+      const resolved = resolveCouponDiscount({ issueForOrder, scopeTarget });
+      if (!resolved.usable) throw new CouponUseRejectedError(resolved.message);
+      couponDiscount = resolved.discountAmount;
+    }
+
+    // 적립금 상한의 기준은 **쿠폰을 뺀 뒤** 결제 금액이다. 쿠폰 전 금액을 기준으로 하면
+    // 쿠폰과 적립금을 합쳐 결제액을 음수로 만들 수 있다
+    const draftAfterCoupon =
+      couponDiscount === 0
+        ? draftBeforeDiscount
+        : buildOrderDraft(draftLines, shippingPolicy, {
+            shippingZipcode: input.shippingAddress.zipcode,
+            couponDiscount,
+          });
+
+    // ③ 적립금 사용 검증 — 화면이 보낸 값을 정책·잔액으로 다시 판정한다(RULE-11 금액 무결성).
     //    비회원은 아예 대상이 아니다: 잔액이 귀속될 회원이 없는데 금액만 깎이면 그대로 손실이다.
     const requestedPoint = Math.max(0, Math.trunc(input.pointToUse ?? 0));
     if (requestedPoint > 0 && input.customerId === null) {
@@ -273,7 +327,7 @@ async function createPendingOrderInTransaction(
       const useCheck = checkPointUse(
         requestedPoint,
         balance,
-        draftBeforePoint.grandTotal,
+        draftAfterCoupon.grandTotal,
         pointPolicy,
       );
       if (!useCheck.usable) throw new PointUseRejectedError(useCheck.message);
@@ -282,13 +336,12 @@ async function createPendingOrderInTransaction(
 
     const draft =
       pointToUse === 0
-        ? draftBeforePoint
-        : buildOrderDraft(
-            selectedLines.map(toDraftLine),
-            shippingPolicy,
-            input.shippingAddress.zipcode,
-            pointToUse,
-          );
+        ? draftAfterCoupon
+        : buildOrderDraft(draftLines, shippingPolicy, {
+            shippingZipcode: input.shippingAddress.zipcode,
+            couponDiscount,
+            pointUsed: pointToUse,
+          });
 
     const orderNo = await allocateOrderNo(tx);
     const guestToken = input.customerId === null ? randomUUID() : null;
@@ -361,6 +414,16 @@ async function createPendingOrderInTransaction(
     // 적립금 차감 — 주문 행이 생긴 뒤라야 원장이 어느 주문에 쓴 건지 가리킬 수 있다.
     // 검증 시점과 여기 사이에 다른 주문이 잔액을 써버렸으면 조건부 UPDATE가 0행이 되어
     // 던지고, 주문 전체가 롤백된다 — 잔액 없이 할인만 받은 주문이 남지 않는다.
+    // 쿠폰 사용 처리 — 주문이 롤백되면 쿠폰도 미사용으로 돌아간다(같은 트랜잭션)
+    if (input.couponIssueId !== undefined && input.customerId !== null && couponDiscount > 0) {
+      await useCouponForOrder(tx, {
+        couponIssueId: input.couponIssueId,
+        customerId: input.customerId,
+        orderId: orderRow.id,
+        discountAmount: couponDiscount,
+      });
+    }
+
     if (pointToUse > 0 && input.customerId !== null) {
       await usePoints(tx, {
         customerId: input.customerId,

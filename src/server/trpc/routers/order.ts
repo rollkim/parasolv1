@@ -142,6 +142,7 @@ export const orderRouter = router({
          * 최소액·단위·잔액·주문금액 초과는 서버 정책과 실제 잔액을 봐야 하므로 서비스가 판정한다.
          */
         pointToUse: z.number().int().min(0).optional(),
+        couponIssueId: z.number().int().positive().optional(),
         /** 바로구매 — 장바구니가 아니라 이 임시 카트로 주문한다 */
         buyToken: z.string().max(64).optional(),
       }),
@@ -169,6 +170,7 @@ export const orderRouter = router({
           agreedTermsDocumentIds: input.agreedTermsDocumentIds,
           agreementIp: ctx.clientIp,
           pointToUse: input.pointToUse,
+          couponIssueId: input.couponIssueId,
         }),
       );
 

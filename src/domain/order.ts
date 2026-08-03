@@ -194,7 +194,8 @@ export type OrderDraft = {
   addonTotal: number;
   subtotal: number;
   shippingFee: number;
-  couponDiscount: 0; // [2차] — 쿠폰은 아직 0
+  /** 쿠폰 할인 — 상품금액에서만 뺀다(배송비 제외) */
+  couponDiscount: number;
   /** 적립금 사용액 — 결제할 금액을 그만큼 줄인다 */
   pointUsed: number;
   grandTotal: number;
@@ -244,17 +245,37 @@ function addonLineTotal(addon: OrderDraftLine["addons"][number]): number {
  * 카트 라인에서 주문 초안(금액·스냅샷)을 만든다. 합계는 서버 계산(RULE-11).
  * 주문 불가 라인이 하나라도 포함되면 throw — 부분 진행 금지(설계 D6).
  */
-export function buildOrderDraft(
-  lines: OrderDraftLine[],
-  policy: ShippingPolicy,
+/**
+ * 주문 금액 조정값 — 배송지·쿠폰·적립금.
+ *
+ * **위치 인자로 두지 않는다.** `buildOrderDraft(lines, policy, zip, 5000, 2000)`에서
+ * 어느 쪽이 쿠폰이고 어느 쪽이 적립금인지 호출부만 봐서는 알 수 없고, 뒤바뀌어도
+ * 타입이 같아 컴파일을 통과한다 — 금액이 걸린 자리에서 가장 비싼 실수다.
+ */
+export type OrderDraftAdjustments = {
   /** 배송지 우편번호 — 도서·산간 추가비 판정에 쓴다. 없으면 추가비 없음 */
-  shippingZipcode?: string | null,
+  shippingZipcode?: string | null;
+  /**
+   * 쿠폰 할인액. 적용 대상·최소금액·기간 판정은 서비스가 이미 끝낸 값이 온다.
+   * **상품 금액에서만 빼고 배송비에는 적용하지 않는다** — 정률 쿠폰이 배송비까지 깎으면
+   * 무료배송 기준을 넘겼는지 판정이 흔들린다(설계 결정 ②).
+   */
+  couponDiscount?: number;
   /**
    * 적립금 사용액. 정책 검증(최소액·단위·잔액)은 서비스가 이미 끝낸 값이 온다 —
    * 도메인은 결제할 금액을 넘지 않는지만 마지막으로 확인한다.
    */
-  pointUsed = 0,
+  pointUsed?: number;
+};
+
+export function buildOrderDraft(
+  lines: OrderDraftLine[],
+  policy: ShippingPolicy,
+  adjustments: OrderDraftAdjustments = {},
 ): OrderDraft {
+  const { shippingZipcode } = adjustments;
+  const couponDiscount = adjustments.couponDiscount ?? 0;
+  const pointUsed = adjustments.pointUsed ?? 0;
   if (lines.length === 0) {
     throw new BlockedOrderLineError([]);
   }
@@ -301,8 +322,16 @@ export function buildOrderDraft(
     })),
   }));
 
-  // summary.grandTotal은 주소를 모르는 값이라 다시 더한다
-  const payableBeforePoint = summary.subtotal + shippingFee;
+  // 쿠폰은 **상품 금액에서만** 뺀다. 상품 금액을 넘는 쿠폰은 서비스가 이미 걸렀지만,
+  // 검증을 건너뛴 호출이 결제액을 음수로 만들기 전에 여기서 멈춘다
+  if (couponDiscount < 0 || couponDiscount > summary.subtotal) {
+    throw new OrderAmountMismatchError(summary.subtotal, couponDiscount);
+  }
+
+  // 적용 순서: 상품금액 − 쿠폰 + 배송비 − 적립금 (설계 결정 ②).
+  // 순서를 바꾸면 같은 쿠폰·적립금 조합에서 결제액이 달라진다.
+  // summary.grandTotal은 주소를 모르는 값이라 배송비를 다시 더한다
+  const payableBeforePoint = summary.subtotal - couponDiscount + shippingFee;
   if (pointUsed < 0 || pointUsed > payableBeforePoint) {
     // 여기 걸리면 서비스 검증을 건너뛴 호출이다 — 결제액이 음수가 되기 전에 멈춘다
     throw new OrderAmountMismatchError(payableBeforePoint, pointUsed);
@@ -315,7 +344,7 @@ export function buildOrderDraft(
     addonTotal: summary.addonTotal,
     subtotal: summary.subtotal,
     shippingFee,
-    couponDiscount: 0,
+    couponDiscount,
     pointUsed,
     grandTotal: payableBeforePoint - pointUsed,
     items,

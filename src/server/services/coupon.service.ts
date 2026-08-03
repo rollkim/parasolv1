@@ -1,9 +1,10 @@
 import "server-only";
 
-import { and, count, desc, eq, gt, isNull, isNotNull, or, sql } from "drizzle-orm";
+import { and, count, desc, eq, gt, inArray, isNull, isNotNull, or, sql } from "drizzle-orm";
 
-import { coupon, couponIssue } from "@/db/schema";
+import { category, coupon, couponIssue, productCategory } from "@/db/schema";
 import {
+  calcCouponDiscount,
   canIssueMoreToCustomer,
   checkCouponUsable,
   type CouponRule,
@@ -287,21 +288,29 @@ export async function countUsableCoupons(
   return Number(row?.usableCount ?? 0);
 }
 
+export type CouponIssueForOrder = {
+  rule: CouponRule;
+  scopeKind: "all" | "category" | "product";
+  scopeRefId: number | null;
+  couponStartsAt: Date | null;
+  couponEndsAt: Date | null;
+  issueExpiresAt: Date | null;
+  usedAt: Date | null;
+};
+
 /**
- * 주문에 쓸 수 있는지 판정 — 주문 생성이 화면이 보낸 쿠폰을 다시 본다.
+ * 주문이 쓰려는 쿠폰을 읽는다 — **판정에 필요한 재료만** 모은다.
  *
- * 도메인 함수(checkCouponUsable)에 넘길 재료를 모으는 몫만 한다. 판정 규칙 자체는
- * 도메인에 있어야 화면 안내와 서버 판정이 갈리지 않는다.
+ * 판정 자체는 도메인(checkCouponUsable)이 한다. 여기서 판정까지 하면 화면 안내와
+ * 서버 판정이 다른 코드가 되어 "화면에서는 되는데 주문이 막히는" 상태가 생긴다.
+ *
+ * 대상 금액(targetAmount)은 범위 계산이 끝나야 나오므로 이 함수가 받지 않는다 —
+ * 호출부가 calcCouponScopeTarget으로 구한 뒤 도메인 판정에 함께 넘긴다.
  */
-export async function loadCouponForOrder(
+export async function loadCouponIssueForOrder(
   tx: TransactionClient,
-  input: {
-    couponIssueId: number;
-    customerId: number;
-    targetAmount: number;
-    hasScopeMatch: boolean;
-  },
-): Promise<{ rule: CouponRule; scopeKind: "all" | "category" | "product"; scopeRefId: number | null }> {
+  input: { couponIssueId: number; customerId: number },
+): Promise<CouponIssueForOrder> {
   const [row] = await tx
     .select({
       ...MY_COUPON_SELECTION,
@@ -314,6 +323,7 @@ export async function loadCouponForOrder(
     .where(
       and(
         eq(couponIssue.id, input.couponIssueId),
+        // 남의 발급건 id를 알아도 통하지 않는다
         eq(couponIssue.customerId, input.customerId),
       ),
     )
@@ -326,26 +336,120 @@ export async function loadCouponForOrder(
     throw new CouponUseRejectedError("사용이 중지된 쿠폰이에요.");
   }
 
-  const rule = toCouponRule({
-    discountKind: row.discountKind,
-    discountValue: row.discountValue,
-    maxDiscount: row.maxDiscountAmount,
-    minOrderAmount: row.minOrderAmount,
-  });
-
-  const usableCheck = checkCouponUsable({
-    rule,
-    startsAt: row.couponStartsAt,
-    endsAt: row.couponEndsAt,
+  return {
+    rule: toCouponRule({
+      discountKind: row.discountKind,
+      discountValue: row.discountValue,
+      maxDiscount: row.maxDiscountAmount,
+      minOrderAmount: row.minOrderAmount,
+    }),
+    scopeKind: row.scopeKind,
+    scopeRefId: row.scopeRefId,
+    couponStartsAt: row.couponStartsAt,
+    couponEndsAt: row.couponEndsAt,
     issueExpiresAt: row.expiresAt,
     usedAt: row.usedAt,
-    targetAmount: input.targetAmount,
-    hasScopeMatch: input.hasScopeMatch,
-    now: new Date(),
-  });
-  if (!usableCheck.usable) {
-    throw new CouponUseRejectedError(usableCheck.message);
+  };
+}
+
+export type CouponScopeTarget = {
+  /** 쿠폰이 적용되는 상품 금액 — 할인 계산과 최소주문금액 판정이 같은 값을 쓴다 */
+  targetAmount: number;
+  /** 범위에 걸리는 상품이 주문에 있는가 */
+  hasScopeMatch: boolean;
+};
+
+/**
+ * 범위(scope) 쿠폰의 대상 금액.
+ *
+ * **최소 주문 금액도 이 값으로 판정한다**(설계 결정 ⑥). 전체 주문 금액을 기준으로 하면
+ * "3만원 이상"을 다른 상품으로 채우고 대상 상품 하나에 할인을 받는다.
+ *
+ * 카테고리 쿠폰은 **하위 카테고리까지** 포함한다 — 스토어 목록에서 대분류를 누르면
+ * 하위 상품이 나오므로, 같은 대분류 쿠폰이 그 상품에 안 걸리면 고객이 납득하지 못한다.
+ */
+export async function calcCouponScopeTarget(
+  tx: TransactionClient,
+  input: {
+    scopeKind: "all" | "category" | "product";
+    scopeRefId: number | null;
+    lines: { productId: number; lineTotal: number }[];
+  },
+): Promise<CouponScopeTarget> {
+  if (input.scopeKind === "all") {
+    const targetAmount = input.lines.reduce((sum, line) => sum + line.lineTotal, 0);
+    return { targetAmount, hasScopeMatch: input.lines.length > 0 };
   }
 
-  return { rule, scopeKind: row.scopeKind, scopeRefId: row.scopeRefId };
+  if (input.scopeRefId === null) {
+    // 범위 쿠폰인데 대상이 비었다 — 관리자 등록 실수다. 전체 할인으로 오해되지 않게 막는다
+    return { targetAmount: 0, hasScopeMatch: false };
+  }
+
+  if (input.scopeKind === "product") {
+    const matched = input.lines.filter((line) => line.productId === input.scopeRefId);
+    return {
+      targetAmount: matched.reduce((sum, line) => sum + line.lineTotal, 0),
+      hasScopeMatch: matched.length > 0,
+    };
+  }
+
+  // category — 지정 카테고리 + 하위 카테고리
+  const childRows = await tx
+    .select({ id: category.id })
+    .from(category)
+    .where(eq(category.parentId, input.scopeRefId));
+  const scopeCategoryIds = [input.scopeRefId, ...childRows.map((row) => row.id)];
+
+  const productIds = [...new Set(input.lines.map((line) => line.productId))];
+  if (productIds.length === 0) return { targetAmount: 0, hasScopeMatch: false };
+
+  const mappedRows = await tx
+    .selectDistinct({ productId: productCategory.productId })
+    .from(productCategory)
+    .where(
+      and(
+        inArray(productCategory.productId, productIds),
+        inArray(productCategory.categoryId, scopeCategoryIds),
+      ),
+    );
+  const matchedProductIds = new Set(mappedRows.map((row) => row.productId));
+
+  const matched = input.lines.filter((line) => matchedProductIds.has(line.productId));
+  return {
+    targetAmount: matched.reduce((sum, line) => sum + line.lineTotal, 0),
+    hasScopeMatch: matched.length > 0,
+  };
+}
+
+/**
+ * 쿠폰 사용 판정 + 할인액 계산을 한 번에.
+ *
+ * 주문 생성과 체크아웃 화면이 **같은 함수**를 쓴다 — 화면이 5천원이라고 보여 주고
+ * 서버가 4천원을 깎으면 결제 금액이 달라진다.
+ */
+export function resolveCouponDiscount(input: {
+  issueForOrder: CouponIssueForOrder;
+  scopeTarget: CouponScopeTarget;
+  now?: Date;
+}): { usable: true; discountAmount: number } | { usable: false; message: string } {
+  const usableCheck = checkCouponUsable({
+    rule: input.issueForOrder.rule,
+    startsAt: input.issueForOrder.couponStartsAt,
+    endsAt: input.issueForOrder.couponEndsAt,
+    issueExpiresAt: input.issueForOrder.issueExpiresAt,
+    usedAt: input.issueForOrder.usedAt,
+    targetAmount: input.scopeTarget.targetAmount,
+    hasScopeMatch: input.scopeTarget.hasScopeMatch,
+    now: input.now ?? new Date(),
+  });
+  if (!usableCheck.usable) return { usable: false, message: usableCheck.message };
+
+  return {
+    usable: true,
+    discountAmount: calcCouponDiscount(
+      input.issueForOrder.rule,
+      input.scopeTarget.targetAmount,
+    ),
+  };
 }
