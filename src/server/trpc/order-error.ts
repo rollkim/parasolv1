@@ -82,6 +82,10 @@ import {
   DuplicateStorySlugError,
 } from "@/server/services/admin-story.service";
 import {
+  AdminCouponInvalidError,
+  AdminCouponNotFoundError,
+} from "@/server/services/admin-coupon.service";
+import {
   CouponIssueUnavailableError,
   CouponUseRejectedError,
 } from "@/server/services/coupon.service";
@@ -124,6 +128,18 @@ export function toOrderTRPCError(error: unknown): unknown {
     return new TRPCError({
       code: "NOT_FOUND",
       message: "장바구니를 찾을 수 없습니다. 상품을 다시 담아 주세요.",
+      cause: error,
+    });
+  }
+
+  // 관리자 쿠폰 등록·수정 — 잘못 등록된 쿠폰은 돈이 잘못 나간다. 문구를 그대로 전달한다
+  if (error instanceof AdminCouponInvalidError) {
+    return new TRPCError({ code: "BAD_REQUEST", message: error.message, cause: error });
+  }
+  if (error instanceof AdminCouponNotFoundError) {
+    return new TRPCError({
+      code: "NOT_FOUND",
+      message: "쿠폰을 찾을 수 없습니다. 목록을 새로고침해 주세요.",
       cause: error,
     });
   }

@@ -52,6 +52,20 @@ export function calcCouponDiscount(rule: CouponRule, targetAmount: number): numb
   return Math.max(0, Math.min(cappedDiscount, targetAmount));
 }
 
+/**
+ * 관리자 등록 화면 미리보기 — 이 조건이 이 주문액에서 실제로 얼마를 깎는지.
+ *
+ * 최소 주문 금액에 못 미치면 0이다. 이걸 빼면 "3만원 이상 쿠폰"이 1만원 주문에서도
+ * 깎이는 것처럼 보여 관리자가 조건을 잘못 이해한다.
+ */
+export function previewCouponDiscount(
+  rule: CouponRule,
+  orderAmount: number,
+): number {
+  if (orderAmount < rule.minOrderAmount) return 0;
+  return calcCouponDiscount(rule, orderAmount);
+}
+
 // ── 사용 가능 판정 ────────────────────────────────────
 
 export type CouponRejection =

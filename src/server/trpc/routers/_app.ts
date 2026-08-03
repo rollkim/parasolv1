@@ -5,6 +5,7 @@ import { adminCategoryRouter } from "./admin-category";
 import { adminStoryRouter } from "./admin-story";
 import { bulkInquiryRouter } from "./bulk-inquiry";
 import { adminClaimRouter } from "./admin-claim";
+import { adminCouponRouter } from "./admin-coupon";
 import { adminCustomerRouter } from "./admin-customer";
 import { adminDashboardRouter } from "./admin-dashboard";
 import { adminDisplayRouter } from "./admin-display";
@@ -33,6 +34,7 @@ export const appRouter = router({
   adminStory: adminStoryRouter,
   bulkInquiry: bulkInquiryRouter,
   adminClaim: adminClaimRouter,
+  adminCoupon: adminCouponRouter,
   adminCustomer: adminCustomerRouter,
   adminDashboard: adminDashboardRouter,
   adminDisplay: adminDisplayRouter,
