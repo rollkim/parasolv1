@@ -2,7 +2,7 @@
 // 폼 실측 규격·검증·제출은 클라이언트 컴포넌트(qna-form.tsx)가 소유한다.
 //
 // 목업과 의도적으로 다르게 간 부분(사유):
-//  - '문의하기/내 문의 내역' 탭 없음: 내역 화면은 미구현(후속 배선) — 이 화면은 작성 전용이다.
+//  - '문의하기/문의 내역' 탭 — 내역은 회원(세션)·비회원(연락처+비밀번호) 모두 지원.
 //
 // 서버 셸의 역할: 회원/비회원 판별 + qna_type 목록 주입.
 // 판별 기준은 auth.sessionInfo와 동일 — 쿠키 해석에 그치지 않고 프로필까지 확인해
@@ -10,7 +10,7 @@
 
 import type { Metadata } from "next";
 
-import { QnaForm } from "@/components/store/qna-form";
+import { QnaView } from "@/components/store/qna-view";
 import { db } from "@/db";
 import { readSessionCustomerId } from "@/server/auth/session";
 import { getActiveCommonCodes } from "@/server/services/common-code.service";
@@ -33,7 +33,7 @@ export default async function QnaPage() {
       <h1 className="m-0 mb-[18px] font-heading text-[22px] font-extrabold">
         1:1 문의
       </h1>
-      <QnaForm
+      <QnaView
         qnaTypeOptions={qnaTypeOptions}
         memberName={sessionProfile?.name ?? null}
       />

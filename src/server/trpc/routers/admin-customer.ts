@@ -12,6 +12,7 @@ import {
   listAdminGrades,
   updateAdminGrade,
 } from "@/server/services/admin-grade.service";
+import { issueTempPassword } from "@/server/services/admin-customer.service";
 
 import { adminProcedure, router } from "../init";
 import { withOrderErrorMapping } from "../order-error";
@@ -74,6 +75,18 @@ export const adminCustomerRouter = router({
     .input(z.object({ customerId: customerIdSchema, isActive: z.boolean() }))
     .mutation(({ ctx, input }) =>
       withOrderErrorMapping(() => changeAdminCustomerActive(ctx.db, input)),
+    ),
+
+  /** 임시 비밀번호 발급 — 평문은 응답으로 한 번만 나간다(저장은 해시뿐) */
+  issueTempPassword: adminProcedure
+    .input(z.object({ customerId: customerIdSchema }))
+    .mutation(({ ctx, input }) =>
+      withOrderErrorMapping(() =>
+        issueTempPassword(ctx.db, {
+          customerId: input.customerId,
+          actor: { role: "admin", id: ctx.adminUserId },
+        }),
+      ),
     ),
 
   /** 강제 탈퇴 — 개인정보를 지운다. 되돌릴 수 없다 */

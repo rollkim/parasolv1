@@ -1,6 +1,6 @@
 import "server-only";
 
-import { and, count, desc, eq, gte, inArray, isNull, lt, sql } from "drizzle-orm";
+import { and, count, desc, eq, gte, inArray, isNotNull, isNull, lt, sql } from "drizzle-orm";
 
 import {
   board,
@@ -124,8 +124,21 @@ export type DashboardInquiryQueueItem = {
   count: number;
 };
 
+/** 돈이 걸린 비정상 상태 — 있으면 대시보드가 빨간 카드로 알린다 */
+export type DashboardMoneyAnomaly = {
+  orderNo: string;
+  grandTotal: number;
+  detectedNote: string;
+};
+
 export type AdminDashboard = {
   kpi: DashboardKpi;
+  /**
+   * 결제 보상 실패 표식 — 주문은 cancelled인데 결제가 ready로 남은 건.
+   * 토스에 돈이 잡혀 있는데 환불 원장이 없다는 뜻이다(payment.service ⓑ 실패).
+   * 알림 채널(알림톡)이 없는 동안 이 카드가 유일한 경보다 — 조용히 실패하면 아무도 모른다.
+   */
+  moneyAnomalies: DashboardMoneyAnomaly[];
   queue: DashboardQueueItem[];
   /** 최근 7일(오늘 포함) 일별 매출 */
   dailyRevenue: DashboardDailyRevenue[];
@@ -476,7 +489,31 @@ export async function getAdminDashboard(database: DatabaseClient): Promise<Admin
     href: `/admin/inquiries/${row.productId === null ? "direct" : "product"}?post=${row.postId}`,
   }));
 
+  // 보상 실패 표식 — 주문 cancelled + 결제 ready(키 있음). 본결제만(claim_id null)
+  const anomalyRows = await database
+    .select({
+      orderNo: orders.orderNo,
+      grandTotal: orders.grandTotal,
+    })
+    .from(orders)
+    .innerJoin(payment, eq(payment.orderId, orders.id))
+    .where(
+      and(
+        eq(orders.status, "cancelled"),
+        eq(payment.status, "ready"),
+        isNotNull(payment.paymentKey),
+        isNull(payment.claimId),
+      ),
+    )
+    .orderBy(desc(orders.id))
+    .limit(10);
+
   return {
+    moneyAnomalies: anomalyRows.map((row) => ({
+      orderNo: row.orderNo,
+      grandTotal: row.grandTotal,
+      detectedNote: "주문은 취소됐는데 결제 취소 기록이 없습니다 — 토스 콘솔에서 환불 여부를 확인하세요.",
+    })),
     kpi: {
       todayOrderCount: Number(todayRow?.todayOrderCount ?? 0),
       todayRevenue: Number(todayRow?.todayRevenue ?? 0),

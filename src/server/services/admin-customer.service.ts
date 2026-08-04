@@ -1,5 +1,9 @@
 import "server-only";
 
+import { randomBytes } from "node:crypto";
+
+import bcrypt from "bcryptjs";
+
 import { and, count, desc, eq, ilike, inArray, isNotNull, isNull, or, sql } from "drizzle-orm";
 
 import { address, customer, customerAuth, customerGrade, orders } from "@/db/schema";
@@ -405,4 +409,71 @@ export async function withdrawAdminCustomer(
       removedAuthCount: removedAuths.length,
     };
   });
+}
+
+// =============================================================
+// 임시 비밀번호 발급 — 메일·알림톡 채널이 없는 동안의 CS 절차
+// =============================================================
+
+export class CustomerHasNoLocalLoginError extends Error {
+  constructor() {
+    super("이 회원은 아이디·비밀번호 로그인이 없습니다(소셜 로그인 전용).");
+    this.name = "CustomerHasNoLocalLoginError";
+  }
+}
+
+/** 헷갈리는 글자(0/O, 1/l/I)를 뺀 문자셋 — 전화로 불러줄 값이라 오독이 곧 CS 재문의다 */
+const TEMP_PASSWORD_CHARSET = "abcdefghjkmnpqrstuvwxyz23456789";
+const TEMP_PASSWORD_LENGTH = 10;
+
+function generateTempPassword(): string {
+  const bytes = randomBytes(TEMP_PASSWORD_LENGTH);
+  let generated = "";
+  for (const byte of bytes) {
+    generated += TEMP_PASSWORD_CHARSET[byte % TEMP_PASSWORD_CHARSET.length];
+  }
+  return generated;
+}
+
+/**
+ * 임시 비밀번호 발급 — 관리자 전용.
+ *
+ * 셀프서비스 재설정(password_reset_token)은 발송 채널(메일·알림톡)이 붙어야 안전하게
+ * 동작한다 — 채널 없이 화면만 만들면 "재설정 링크를 보냈어요"가 거짓말이 된다.
+ * 그때까지는 실무 절차(고객이 고객센터에 전화 → 본인 확인 → 임시 비밀번호 안내)를 지원한다.
+ *
+ * **평문은 반환값으로 한 번만 나간다.** 저장은 해시뿐이라 이 화면을 닫으면 아무도 다시
+ * 볼 수 없다 — 어딘가에 평문이 남는 순간 그게 유출 지점이 된다.
+ */
+export async function issueTempPassword(
+  database: DatabaseClient,
+  input: { customerId: number; actor: TransitionActor },
+): Promise<{ tempPassword: string; loginId: string }> {
+  const [localAuth] = await database
+    .select({ id: customerAuth.id, loginId: customerAuth.providerUid })
+    .from(customerAuth)
+    .where(
+      and(eq(customerAuth.customerId, input.customerId), eq(customerAuth.provider, "local")),
+    )
+    .limit(1);
+  if (!localAuth) throw new CustomerHasNoLocalLoginError();
+
+  const tempPassword = generateTempPassword();
+  const passwordHash = await bcrypt.hash(tempPassword, 12);
+
+  await database.transaction(async (tx) => {
+    await tx
+      .update(customerAuth)
+      .set({ passwordHash })
+      .where(eq(customerAuth.id, localAuth.id));
+    // 발급 사실은 메모에 남긴다(평문은 남기지 않는다) — 나중에 "누가 언제 바꿨나"에 답할 수 있게
+    await tx
+      .update(customer)
+      .set({
+        adminMemo: sql`coalesce(${customer.adminMemo} || E'\n', '') || ${`임시 비밀번호 발급 (${serializeActor(input.actor)})`}`,
+      })
+      .where(eq(customer.id, input.customerId));
+  });
+
+  return { tempPassword, loginId: localAuth.loginId };
 }

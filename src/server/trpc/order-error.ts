@@ -85,6 +85,7 @@ import {
   AdminCouponInvalidError,
   AdminCouponNotFoundError,
 } from "@/server/services/admin-coupon.service";
+import { CustomerHasNoLocalLoginError } from "@/server/services/admin-customer.service";
 import {
   AdminGradeInvalidError,
   AdminGradeNotFoundError,
@@ -150,6 +151,10 @@ export function toOrderTRPCError(error: unknown): unknown {
       message: "쿠폰을 찾을 수 없습니다. 목록을 새로고침해 주세요.",
       cause: error,
     });
+  }
+
+  if (error instanceof CustomerHasNoLocalLoginError) {
+    return new TRPCError({ code: "BAD_REQUEST", message: error.message, cause: error });
   }
 
   // 기획전 등록·수정 — 문구를 그대로 전달한다

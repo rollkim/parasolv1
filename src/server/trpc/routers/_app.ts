@@ -1,4 +1,5 @@
 import { createCallerFactory, router } from "../init";
+import { adminAuditRouter } from "./admin-audit";
 import { adminAuthRouter } from "./admin-auth";
 import { adminBoardRouter } from "./admin-board";
 import { adminCategoryRouter } from "./admin-category";
@@ -30,6 +31,7 @@ import { wishlistRouter } from "./wishlist";
  * 화면·기능이 늘면 이 목록에 라우터를 추가한다(product·cart·order…).
  */
 export const appRouter = router({
+  adminAudit: adminAuditRouter,
   adminAuth: adminAuthRouter,
   adminBoard: adminBoardRouter,
   adminCategory: adminCategoryRouter,

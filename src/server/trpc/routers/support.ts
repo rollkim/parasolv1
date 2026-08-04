@@ -1,14 +1,16 @@
 import { TRPCError } from "@trpc/server";
 import { z } from "zod";
 
-import { assertQnaAllowed } from "@/server/security/rate-limit";
+import { assertQnaAllowed, recordAttempt } from "@/server/security/rate-limit";
 import {
   createProductQna,
   createQnaPost,
   getProductQnas,
+  listGuestQnaPosts,
+  listMyQnaPosts,
 } from "@/server/services/board.service";
 
-import { publicProcedure, router } from "../init";
+import { protectedProcedure, publicProcedure, router } from "../init";
 
 /**
  * 고객지원 라우터 — 1:1 문의 등록.
@@ -104,6 +106,41 @@ export const supportRouter = router({
           title: input.title,
           content: input.content,
           isSecret: ALWAYS_PRIVATE,
+        });
+      }),
+
+    /** 내 문의 내역 — 회원. 세션이 곧 인증이라 추가 입력이 없다 */
+    listMine: protectedProcedure.query(({ ctx }) => listMyQnaPosts(ctx.db, ctx.customerId)),
+
+    /**
+     * 비회원 문의 확인 — 연락처 + 작성 시 비밀번호(주문조회와 같은 2요소).
+     * 비밀번호 대입을 막기 위해 IP+연락처 기준으로 분당 5회로 묶는다.
+     */
+    guestLookup: publicProcedure
+      .input(
+        z.object({
+          guestPhone: z
+            .string()
+            .transform((raw) => raw.replaceAll("-", ""))
+            .pipe(z.string().regex(/^01[016789][0-9]{7,8}$/, "휴대폰 번호 형식이 올바르지 않습니다.")),
+          guestPassword: z.string().min(4, "비밀번호는 4자 이상입니다.").max(50),
+        }),
+      )
+      .mutation(({ ctx, input }) => {
+        const limitState = recordAttempt(
+          "qna-lookup:" + (ctx.clientIp ?? "unknown") + ":" + input.guestPhone,
+          { limit: 5, windowMs: 60_000 },
+        );
+        if (!limitState.allowed) {
+          throw new TRPCError({
+            code: "TOO_MANY_REQUESTS",
+            message: "시도가 너무 잦습니다. " + limitState.retryAfterSeconds + "초 뒤에 다시 시도해 주세요.",
+          });
+        }
+        // 등록 스키마와 같은 transform이 이미 하이픈을 걷어냈다 — 저장값과 형식이 같다
+        return listGuestQnaPosts(ctx.db, {
+          guestPhone: input.guestPhone,
+          guestPassword: input.guestPassword,
         });
       }),
   }),

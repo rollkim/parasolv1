@@ -172,6 +172,40 @@ export function AdminDashboardView() {
         </div>
       </div>
 
+      {/* 돈 이상 감지 — 있을 때만 나타난다. 조용할 때 자리를 차지하면 늘 있는 배경이 되어
+          정작 떴을 때 아무도 안 본다. 알림 채널(알림톡)이 붙기 전까지 이 카드가 유일한 경보다 */}
+      {dashboard.moneyAnomalies.length > 0 ? (
+        <section
+          role="alert"
+          aria-labelledby="dashboard-anomaly-heading"
+          className="rounded-[var(--radius)] border-2 border-destructive bg-destructive/5 p-4"
+        >
+          <h2
+            id="dashboard-anomaly-heading"
+            className="m-0 font-heading text-[15px] font-extrabold text-destructive"
+          >
+            ⚠ 환불 확인 필요 {dashboard.moneyAnomalies.length}건
+          </h2>
+          <p className="m-0 mt-1 text-[12px] text-muted-foreground">
+            주문은 취소됐는데 결제 취소 기록이 없습니다 — 고객 돈이 걸려 있으니 먼저 처리하세요.
+          </p>
+          <ul className="m-0 mt-2.5 flex list-none flex-col gap-1.5 p-0">
+            {dashboard.moneyAnomalies.map((anomaly) => (
+              <li key={anomaly.orderNo} className="flex flex-wrap items-center gap-2 text-[13px]">
+                <Link
+                  href={`/admin/orders?keyword=${encodeURIComponent(anomaly.orderNo)}`}
+                  className="font-bold text-destructive underline-offset-2 hover:underline"
+                >
+                  {anomaly.orderNo}
+                </Link>
+                <span className="font-bold">{formatKrw(anomaly.grandTotal)}</span>
+                <span className="text-muted-foreground">{anomaly.detectedNote}</span>
+              </li>
+            ))}
+          </ul>
+        </section>
+      ) : null}
+
       {/* 처리 대기열 — 다음 할 일로 가는 문 */}
       <SectionCard title="처리 대기열">
         <ul className="m-0 grid list-none grid-cols-2 gap-2 p-0 md:grid-cols-5">

@@ -409,3 +409,113 @@ export async function createProductQna(
     .where(eq(post.id, created.qnaPostId));
   return created;
 }
+
+// =============================================================
+// 문의 내역 조회 — 회원(세션) · 비회원(연락처+비밀번호)
+// =============================================================
+
+export type MyQnaCard = {
+  qnaPostId: number;
+  title: string;
+  content: string;
+  qnaTypeCode: string | null;
+  isAnswered: boolean;
+  answer: { content: string; createdAt: Date } | null;
+  createdAt: Date;
+};
+
+/** 문의 목록에 답변을 붙인다 — 관리자 답글(comment.authorType=admin) 중 첫 것 */
+async function attachAnswers(
+  database: typeof Database,
+  rows: {
+    qnaPostId: number;
+    title: string;
+    content: string;
+    qnaTypeCode: string | null;
+    isAnswered: boolean;
+    createdAt: Date;
+  }[],
+): Promise<MyQnaCard[]> {
+  const postIds = rows.map((row) => row.qnaPostId);
+  const answerRows =
+    postIds.length === 0
+      ? []
+      : await database
+          .select({ postId: comment.postId, content: comment.content, createdAt: comment.createdAt })
+          .from(comment)
+          .where(and(inArray(comment.postId, postIds), eq(comment.authorType, "admin")))
+          .orderBy(asc(comment.id));
+
+  return rows.map((row) => {
+    const answer = answerRows.find((answerRow) => answerRow.postId === row.qnaPostId);
+    return { ...row, answer: answer ? { content: answer.content, createdAt: answer.createdAt } : null };
+  });
+}
+
+/** 회원 1:1 문의 내역 — 본인 것만(세션이 곧 인증). 상품문의 포함 */
+export async function listMyQnaPosts(
+  database: typeof Database,
+  customerId: number,
+): Promise<MyQnaCard[]> {
+  const qnaBoardId = await getBoardIdBySlug(database, "qna");
+  const rows = await database
+    .select({
+      qnaPostId: post.id,
+      title: post.title,
+      content: post.content,
+      qnaTypeCode: post.categoryCode,
+      isAnswered: post.isAnswered,
+      createdAt: post.createdAt,
+    })
+    .from(post)
+    .where(and(eq(post.boardId, qnaBoardId), eq(post.customerId, customerId)))
+    .orderBy(desc(post.id))
+    .limit(30);
+  return attachAnswers(database, rows);
+}
+
+/**
+ * 비회원 1:1 문의 내역 — 연락처 + 작성 시 정한 비밀번호.
+ *
+ * **비밀번호가 맞는 글만 돌려준다.** 연락처만으로 목록을 주면 남의 번호를 넣어 보는
+ * 것만으로 문의 제목·내용이 새어나간다(주문조회와 같은 이유로 두 요소를 함께 요구).
+ * 같은 번호로 여러 번 문의하며 비밀번호를 다르게 적었을 수 있어 글 단위로 대조한다.
+ */
+export async function listGuestQnaPosts(
+  database: typeof Database,
+  input: { guestPhone: string; guestPassword: string },
+): Promise<MyQnaCard[]> {
+  const qnaBoardId = await getBoardIdBySlug(database, "qna");
+  const rows = await database
+    .select({
+      qnaPostId: post.id,
+      title: post.title,
+      content: post.content,
+      qnaTypeCode: post.categoryCode,
+      isAnswered: post.isAnswered,
+      createdAt: post.createdAt,
+      guestPasswordHash: post.guestPasswordHash,
+    })
+    .from(post)
+    .where(and(eq(post.boardId, qnaBoardId), eq(post.guestPhone, input.guestPhone)))
+    .orderBy(desc(post.id))
+    .limit(30);
+
+  const unlocked: typeof rows = [];
+  for (const row of rows) {
+    if (row.guestPasswordHash && (await bcrypt.compare(input.guestPassword, row.guestPasswordHash))) {
+      unlocked.push(row);
+    }
+  }
+  return attachAnswers(
+    database,
+    unlocked.map((row) => ({
+      qnaPostId: row.qnaPostId,
+      title: row.title,
+      content: row.content,
+      qnaTypeCode: row.qnaTypeCode,
+      isAnswered: row.isAnswered,
+      createdAt: row.createdAt,
+    })),
+  );
+}

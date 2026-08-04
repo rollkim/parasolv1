@@ -4,8 +4,9 @@
 // 계정 상태 변경 · 강제 탈퇴.
 //
 // 목업과 의도적으로 다르게 간 부분(사유):
-//  - **적립금 지급·등급 변경 버튼을 두지 않았다.** 2차 기능이고, 원장 없이 잔액만 늘리면
-//    나중에 "이 적립금 어디서 왔지"에 답할 수 없다.
+//  - **적립금 지급·등급 변경 버튼을 두지 않았다.** 등급은 배치가 산정하고(수동 변경은
+//    다음 산정에서 되돌아간다), 우대는 쿠폰 발급으로 한다. 임시 비밀번호 발급은 있다 —
+//    메일·알림톡 채널이 없는 동안의 CS 절차(전화 안내)를 지원한다.
 //  - 강제 탈퇴 모달이 **무엇이 지워지는지 먼저 밝힌다**. 되돌릴 수 없는 조치라
 //    "정말요?"만 묻는 확인은 확인이 아니다.
 
@@ -54,6 +55,11 @@ export function AdminCustomerDetailView({ customerId }: { customerId: number }) 
   const saveMemoMutation = useMutation(trpc.adminCustomer.saveMemo.mutationOptions())
   const changeActiveMutation = useMutation(trpc.adminCustomer.changeActive.mutationOptions())
   const withdrawMutation = useMutation(trpc.adminCustomer.withdraw.mutationOptions())
+  const issueTempPasswordMutation = useMutation(trpc.adminCustomer.issueTempPassword.mutationOptions())
+  const [tempPasswordResult, setTempPasswordResult] = React.useState<{
+    tempPassword: string
+    loginId: string
+  } | null>(null)
 
   const [memoInput, setMemoInput] = React.useState<string | null>(null)
   const [isWithdrawOpen, setIsWithdrawOpen] = React.useState(false)
@@ -309,6 +315,46 @@ export function AdminCustomerDetailView({ customerId }: { customerId: number }) 
               <p className="m-0 text-[12px] text-muted-foreground">
                 정지하면 로그인할 수 없습니다. 되돌릴 수 있어요.
               </p>
+
+              <Button
+                type="button"
+                variant="outline"
+                size="admin-40"
+                disabled={issueTempPasswordMutation.isPending}
+                onClick={() => {
+                  if (issueTempPasswordMutation.isPending) return
+                  issueTempPasswordMutation.mutate(
+                    { customerId: customerDetail.customerId },
+                    {
+                      onSuccess: (issued) => setTempPasswordResult(issued),
+                      onError: (issueError) =>
+                        showToast(issueError.message, { toastVariant: "error" }),
+                    },
+                  )
+                }}
+              >
+                {issueTempPasswordMutation.isPending ? "발급 중…" : "임시 비밀번호 발급"}
+              </Button>
+              <p className="m-0 text-[12px] text-muted-foreground">
+                기존 비밀번호는 즉시 무효가 됩니다. 본인 확인 후에만 발급하세요.
+              </p>
+
+              {/* 평문은 이 자리에서 한 번만 보인다 — 저장은 해시뿐이라 닫으면 다시 볼 수 없다 */}
+              {tempPasswordResult ? (
+                <div
+                  role="alert"
+                  className="rounded-[calc(var(--radius)-2px)] border border-primary bg-secondary px-3.5 py-3"
+                >
+                  <b className="block text-[13px] font-extrabold text-secondary-foreground">
+                    임시 비밀번호: <code className="select-all">{tempPasswordResult.tempPassword}</code>
+                  </b>
+                  <p className="m-0 mt-1 text-[12px] text-secondary-foreground/80">
+                    아이디 <b>{tempPasswordResult.loginId}</b> · 고객에게 전화로 안내하세요.
+                    이 화면을 벗어나면 다시 볼 수 없습니다.
+                  </p>
+                </div>
+              ) : null}
+
               <Button
                 type="button"
                 variant="destructive-outline"
@@ -321,12 +367,12 @@ export function AdminCustomerDetailView({ customerId }: { customerId: number }) 
           )}
         </section>
 
-        {/* 적립금·등급은 2차라 자리만 밝힌다 — 없는 버튼이 있는 것처럼 보이면 안 된다 */}
+        {/* 적립금·등급의 소유자를 밝힌다 — 없는 버튼이 있는 것처럼 보이면 안 된다 */}
         <section className="rounded-[var(--radius)] border border-border bg-card p-4">
           <h2 className="m-0 font-heading text-[15px] font-extrabold">적립금 · 등급</h2>
           <p className="m-0 mt-2 text-[12px] text-muted-foreground">
-            적립금과 회원등급은 2차 기능입니다. 지급 원장·소멸 배치가 함께 있어야 잔액을 신뢰할 수
-            있어서, 지금은 화면을 열지 않았습니다.
+            등급은 일일 배치가 최근 구매액 기준으로 자동 산정합니다(이름 옆 뱃지). 적립금
+            잔액·내역은 원장이 소유하며, 우대가 필요하면 쿠폰 발급으로 처리하세요.
           </p>
         </section>
 
