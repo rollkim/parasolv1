@@ -858,7 +858,9 @@ export const adminUser = pgTable("admin_user", {
   passwordHash: text("password_hash").notNull(),
   name: text("name").notNull(),
   role: adminRole("role").notNull().default("manager"),
-  totpSecret: text("totp_secret"),               // 2단계 인증(관리자 로그인 OTP)
+  totpSecret: text("totp_secret"),               // 2단계 인증(관리자 로그인 OTP) — null이면 미사용
+  // 마지막으로 인증에 쓰인 TOTP 스텝 — 같은 코드의 재사용(어깨너머 훔쳐보기)을 막는다(RFC 6238 §5.2)
+  totpLastUsedStep: bigint("totp_last_used_step", { mode: "number" }),
   isActive: boolean("is_active").notNull().default(true),
   lastLoginAt: timestamp("last_login_at", { withTimezone: true }),
   ...audit,

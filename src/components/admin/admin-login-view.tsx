@@ -5,8 +5,8 @@
 // [탭 순서](목업 L?): 1 아이디 → 2 비밀번호 → 3 표시 토글 → 4 로그인유지 → 5 로그인
 //
 // 목업과 의도적으로 다르게 간 부분(사유):
-//  - **2단계 인증(OTP) 단계 제외**: 스펙서 §10이 '관리자 2FA'를 2차로 명시한다.
-//    admin_user.totp_secret 컬럼은 이미 있어 2차에 단계만 끼우면 된다.
+//  - **2단계 인증(TOTP)**: 비밀번호가 통과한 계정에 켜져 있으면 코드 입력 단계가 나타난다.
+//    설정은 관리자 설정 > 보안에서(코드 확인 후에만 활성화 — 잠금 사고 방지).
 //  - '이 기기 신뢰(30일)'·'로그인 유지' 미구현: 관리자 세션을 8시간으로 짧게 두는 결정과
 //    상충한다. 권한이 큰 계정의 세션을 늘리는 옵션은 2FA와 함께 다루는 것이 맞다.
 //  - 실패 사유를 구분하지 않는다(아이디 없음/비밀번호 틀림 동일 문구) — 서버도 같은 이유로
@@ -35,6 +35,10 @@ export function AdminLoginView({ siteName }: { siteName: string }) {
   const [password, setPassword] = React.useState("")
   const [passwordVisible, setPasswordVisible] = React.useState(false)
   const [failureMessage, setFailureMessage] = React.useState<string | null>(null)
+  /** 2단계 진입 — 비밀번호가 맞았고 앱 코드만 남은 상태 */
+  const [totpRequired, setTotpRequired] = React.useState(false)
+  const [totpCode, setTotpCode] = React.useState("")
+  const totpRef = React.useRef<HTMLInputElement>(null)
 
   const loginIdRef = React.useRef<HTMLInputElement>(null)
   const passwordRef = React.useRef<HTMLInputElement>(null)
@@ -62,19 +66,41 @@ export function AdminLoginView({ siteName }: { siteName: string }) {
       return
     }
 
+    if (totpRequired && !totpCode.trim()) {
+      setFailureMessage("앱에 표시된 6자리 인증 코드를 입력해 주세요.")
+      totpRef.current?.focus()
+      return
+    }
+
     setFailureMessage(null)
     loginMutation.mutate(
-      { loginId: loginId.trim(), password },
       {
-        onSuccess: () => {
+        loginId: loginId.trim(),
+        password,
+        totpCode: totpRequired ? totpCode.trim() : undefined,
+      },
+      {
+        onSuccess: (loginResult) => {
+          // 비밀번호 통과 + TOTP 계정 → 코드 입력 단계로. 세션은 아직 없다
+          if (loginResult.requiresTotp) {
+            setTotpRequired(true)
+            window.setTimeout(() => totpRef.current?.focus(), 0)
+            return
+          }
           // 서버 컴포넌트(레이아웃)가 세션을 다시 읽어야 셸이 붙는다
           router.replace(resolveNextPath())
           router.refresh()
         },
         onError: (loginError) => {
           setFailureMessage(loginError.message)
-          setPassword("")
-          passwordRef.current?.focus()
+          if (totpRequired) {
+            // 코드만 틀렸다 — 비밀번호를 지우면 처음부터 다시 치게 된다
+            setTotpCode("")
+            totpRef.current?.focus()
+          } else {
+            setPassword("")
+            passwordRef.current?.focus()
+          }
         },
       },
     )
@@ -134,6 +160,33 @@ export function AdminLoginView({ siteName }: { siteName: string }) {
             </div>
           </div>
 
+          {/* 2단계 — 비밀번호가 통과해야만 나타난다. 처음부터 보여주면
+              TOTP를 안 켠 관리자가 "나도 코드가 필요한가" 헤맨다 */}
+          {totpRequired ? (
+            <div>
+              <Label htmlFor="admin-totp" required>
+                인증 코드
+              </Label>
+              <Input
+                id="admin-totp"
+                ref={totpRef}
+                className="mt-1.5 tracking-[0.3em]"
+                inputMode="numeric"
+                autoComplete="one-time-code"
+                placeholder="000000"
+                maxLength={6}
+                value={totpCode}
+                aria-describedby="admin-totp-hint"
+                onChange={(event) =>
+                  setTotpCode(event.target.value.replace(/[^0-9]/g, ""))
+                }
+              />
+              <p id="admin-totp-hint" className="m-0 mt-1.5 text-xs text-muted-foreground">
+                인증 앱(Google OTP 등)에 표시된 6자리를 입력하세요. 30초마다 바뀝니다.
+              </p>
+            </div>
+          ) : null}
+
           {/* 실패는 원인을 구분하지 않는다 — 아이디 열거 방지 */}
           {failureMessage ? (
             <p
@@ -145,7 +198,11 @@ export function AdminLoginView({ siteName }: { siteName: string }) {
           ) : null}
 
           <Button type="submit" variant="primary" size="lg-52" className="mt-1 w-full">
-            {loginMutation.isPending ? "로그인 중…" : "로그인"}
+            {loginMutation.isPending
+              ? "확인 중…"
+              : totpRequired
+                ? "인증하고 로그인"
+                : "로그인"}
           </Button>
         </form>
 
