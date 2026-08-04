@@ -51,19 +51,35 @@ export class ImageNotFoundError extends Error {
   }
 }
 
+/** 개발 기본값의 폴더 이름 — 프로젝트 폴더와 나란히 놓인다 */
+const DEFAULT_UPLOAD_DIR_NAME = "parasol-uploads";
+
 /**
  * 업로드 루트 — **항상 프로젝트 밖**이다.
+ * 프로젝트 안에 두면 재배포·빌드 정리 한 번에 업로드가 날아간다.
  *
- * 기본값을 프로젝트 안에 두면 재배포·빌드 정리·저장소 clone 한 번에 업로드가 날아간다.
- * env가 없어도 안전하도록 기본값 자체를 상위 폴더로 잡는다:
- *   개발(Windows) C:\_Hope\PaRaSOL\parasolv1 → C:\_Hope\PaRaSOL\parasol-uploads
- *   운영(Linux)   /home/parasol/app          → /home/parasol/parasol-uploads
- * 다른 볼륨에 두려면 PARASOL_UPLOAD_DIR에 절대경로를 준다.
+ * **운영에서는 PARASOL_UPLOAD_DIR를 반드시 준다.** 없으면 조용히 릴리스 폴더 옆에 쌓여
+ * 다음 배포 때 "사진이 사라졌다"가 된다 — 그래서 기본값으로 넘어가지 않고 멈춘다.
+ * 개발에서만 프로젝트 옆 폴더를 기본값으로 쓴다:
+ *   C:\_Hope\PaRaSOL\parasolv1 → C:\_Hope\PaRaSOL\parasol-uploads
+ *
+ * 빌드 참고: 여기서 env·cwd로 경로를 만들면 빌드 추적기가 값을 알 수 없어
+ * "프로젝트 전체가 필요하다"고 판단하고 standalone 폴더에 src/·.env까지 복사한다
+ * (빌드가 "Encountered unexpected file in NFT list"로 알려준다).
+ * 런타임에 정해지는 저장 위치라 피할 수 없는 성질이므로, **무엇이 배포되는지는
+ * 패키징 스크립트의 허용목록이 통제한다**(scripts/pack-release.sh) — 추적기 판단에 기대지 않는다.
  */
 function getUploadRootDir(): string {
   const configuredDir = process.env.PARASOL_UPLOAD_DIR;
   if (configuredDir) return path.resolve(configuredDir);
-  return path.resolve(process.cwd(), "..", "parasol-uploads");
+
+  if (process.env.NODE_ENV === "production") {
+    throw new Error(
+      "PARASOL_UPLOAD_DIR가 설정되지 않았습니다. 업로드가 릴리스 폴더에 쌓여 재배포 때 사라지므로, " +
+        "절대경로(예: /home/parasol/parasol-uploads)를 환경변수로 지정해 주세요.",
+    );
+  }
+  return path.join(path.dirname(process.cwd()), DEFAULT_UPLOAD_DIR_NAME);
 }
 
 /** "products/202607/ab12cd34.jpg" 형태 — DB(product_image.path 등)에 이 상대경로만 저장한다 */

@@ -22,6 +22,13 @@
       "when": 1785117570774,
       "tag": "0002_order_domain_v06",
       "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "7",
+      "when": 1785826812853,
+      "tag": "0003_glossy_mentallo",
+      "breakpoints": true
     }
   ]
 }

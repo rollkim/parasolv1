@@ -20,6 +20,9 @@
 # production
 /build
 
+# 배포용 배치 번들 — scripts/build-ops.mjs가 매 배포마다 새로 만드는 산출물
+/dist-ops/
+
 # misc
 .DS_Store
 *.pem

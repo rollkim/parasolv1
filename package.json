@@ -5,6 +5,8 @@
   "scripts": {
     "dev": "next dev",
     "build": "next build",
+    "build:ops": "node scripts/build-ops.mjs",
+    "pack:release": "node scripts/pack-release.mjs",
     "start": "next start",
     "lint": "eslint",
     "db:generate": "drizzle-kit generate",
@@ -95,6 +97,7 @@
     "@types/react-dom": "^19",
     "@types/sanitize-html": "^2.16.1",
     "drizzle-kit": "^0.31.10",
+    "esbuild": "^0.28.1",
     "eslint": "^9",
     "eslint-config-next": "16.2.11",
     "tailwindcss": "^4",
