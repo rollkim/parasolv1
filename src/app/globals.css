@@ -83,6 +83,18 @@
   --font-display: var(--font-display-black-han), var(--font-display-gothic), var(--font-body);
 }
 
+/* ── 관리자는 프리셋의 서체 교체를 받지 않는다 ──
+   핸드오프 관리자 목업(대시보드·셸)이 grape 블록 안에서 --font-display를 다시
+   "Gothic A1"으로 되돌려 놓았다. Black Han Sans는 스토어프론트 브랜딩용이고,
+   표·숫자가 빽빽한 업무 화면에서는 굵기가 과해 가독성을 해친다.
+   색은 프리셋을 그대로 받고 서체만 되돌린다.
+
+   선택자 특정도: [data-theme].admin-scope(0,2,0) > [data-theme="grape"](0,1,0) —
+   클래스만 쓰면 같은 특정도라 순서에 의존하게 되므로 속성+클래스로 확실히 이긴다. */
+[data-theme].admin-scope {
+  --font-display: var(--font-display-gothic), var(--font-body);
+}
+
 /* ── 토큰 → Tailwind 클래스 연결 ──
    여기 등록된 이름이 bg-primary, text-muted-foreground, rounded-md 같은
    유틸리티 클래스가 된다. inline: 클래스가 var()를 그대로 참조하게 해서
@@ -171,6 +183,18 @@
   :focus-visible {
     outline: 2px solid var(--ring);
     outline-offset: 2px;
+  }
+
+  /* ── 입력칸 넘침 전역 방어 ──
+     input·select는 브라우저 기본 size(≈20자) 만큼의 고유 폭을 갖고, flex/grid 자식은
+     min-width:auto 라 그 폭 밑으로 줄어들지 않는다 — 좁은 칸·모바일에서 입력칸이
+     컨테이너를 뚫고 나가는 원인이 전부 이것이다. 화면마다 w-full을 기억으로 챙기는 대신
+     기본값을 안전한 쪽으로 눕힌다(개별 화면은 필요하면 명시적 폭으로 이긴다). */
+  input,
+  select,
+  textarea {
+    min-width: 0;
+    max-width: 100%;
   }
 
   /* 움직임 최소화 설정 존중 (prefers-reduced-motion) */

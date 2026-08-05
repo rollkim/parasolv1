@@ -8,6 +8,7 @@ import {
 
 import { publicProcedure, router } from "../init";
 import { withOrderErrorMapping } from "../order-error";
+import { optionalEmailTextInput } from "../shared-input";
 
 /**
  * 단체구매 문의 — 로그인 없이 접수한다.
@@ -40,7 +41,7 @@ export const bulkInquiryRouter = router({
               .string()
               .regex(/^0[0-9]{8,10}$/, "연락처 형식이 올바르지 않습니다. 숫자만 입력해 주세요."),
           ),
-        email: z.email("이메일 형식이 올바르지 않습니다.").optional().or(z.literal("")),
+        email: optionalEmailTextInput.optional(),
         wantedProduct: z.string().trim().max(200).optional(),
         // 수량은 필수다 — 없으면 견적을 낼 수 없다(목업도 필수 표시)
         quantity: z

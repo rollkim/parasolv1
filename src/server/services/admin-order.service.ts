@@ -2,14 +2,16 @@ import "server-only";
 
 import { and, count, desc, eq, ilike, inArray, or, sql } from "drizzle-orm";
 
-import { orderItem, orders, payment, shipment } from "@/db/schema";
+import { orderItem, orders, orderStatusHistory, payment, shipment } from "@/db/schema";
 import {
   allowedTargets,
   orderStatusLabel,
   type OrderStatus,
 } from "@/domain/order";
 
-import { applyOrderTransition } from "./order-status.service";
+import { sendAlimtalkSafely } from "@/server/notifications/alimtalk.service";
+
+import { applyOrderTransition, serializeActor } from "./order-status.service";
 import type { DatabaseClient } from "./db-client";
 import type { TransitionActor } from "./order-status.service";
 
@@ -316,9 +318,15 @@ export async function registerShipmentInvoice(
     actor: TransitionActor;
   },
 ): Promise<{ orderNo: string; orderStatus: OrderStatus }> {
-  return database.transaction(async (tx) => {
+  const registered = await database.transaction(async (tx) => {
     const [orderRow] = await tx
-      .select({ id: orders.id, status: orders.status })
+      .select({
+        id: orders.id,
+        status: orders.status,
+        // 커밋 뒤 알림톡용 — 트랜잭션 안에서 함께 읽어 재조회를 없앤다
+        recipientName: orders.recipient,
+        recipientPhone: orders.phone,
+      })
       .from(orders)
       .where(eq(orders.orderNo, input.orderNo))
       .for("update")
@@ -357,7 +365,88 @@ export async function registerShipmentInvoice(
       memo: `송장 등록 (${input.carrierCode} ${input.trackingNo})`,
     });
 
-    return { orderNo: input.orderNo, orderStatus: "shipping" as OrderStatus };
+    return {
+      orderNo: input.orderNo,
+      orderStatus: "shipping" as OrderStatus,
+      recipientName: orderRow.recipientName,
+      recipientPhone: orderRow.recipientPhone,
+    };
+  });
+
+  // 알림은 커밋 뒤에만 — 롤백됐는데 "배송이 시작됐어요"가 나가면 거짓 알림이다
+  await sendAlimtalkSafely({
+    messageKind: "shipping_started",
+    toPhone: registered.recipientPhone,
+    orderNo: registered.orderNo,
+    recipientName: registered.recipientName,
+    carrierCode: input.carrierCode,
+    trackingNo: input.trackingNo,
+  });
+
+  return { orderNo: registered.orderNo, orderStatus: registered.orderStatus };
+}
+
+export class InvoiceEditNotAllowedError extends Error {
+  constructor() {
+    super("배송중·배송완료 상태에서만 송장을 수정할 수 있습니다.");
+    this.name = "InvoiceEditNotAllowedError";
+  }
+}
+
+export class ShipmentMissingError extends Error {
+  constructor() {
+    super("수정할 송장이 없습니다. 먼저 송장을 등록해 주세요.");
+    this.name = "ShipmentMissingError";
+  }
+}
+
+/**
+ * 송장 수정 — **상태 전이 없이** 택배사·송장번호만 바로잡는다.
+ *
+ * 송장번호 오타는 상태 문제가 아니다. 정정을 "배송준비중으로 되돌렸다 재등록"으로만
+ * 풀게 하면 고객 화면이 배송완료→배송중→배송완료로 출렁이고, shipped_at까지 리셋된다.
+ * 배송중·배송완료에서 허용한다(그 외 상태는 송장이 의미를 갖기 전·후다).
+ * shipped_at은 유지한다 — 번호를 고친 것이지 다시 발송한 것이 아니다.
+ */
+export async function updateShipmentInvoice(
+  database: DatabaseClient,
+  input: {
+    orderNo: string;
+    carrierCode: string;
+    trackingNo: string;
+    actor: TransitionActor;
+  },
+): Promise<{ orderNo: string }> {
+  return database.transaction(async (tx) => {
+    const [orderRow] = await tx
+      .select({ id: orders.id, status: orders.status })
+      .from(orders)
+      .where(eq(orders.orderNo, input.orderNo))
+      .for("update")
+      .limit(1);
+    if (!orderRow) throw new AdminOrderNotFoundError(input.orderNo);
+    if (orderRow.status !== "shipping" && orderRow.status !== "delivered") {
+      throw new InvoiceEditNotAllowedError();
+    }
+
+    // 클레임 회수 송장(claim_id 있는 행)은 건드리지 않는다 — 원 배송 송장만
+    const updatedRows = await tx
+      .update(shipment)
+      .set({ carrier: input.carrierCode, trackingNo: input.trackingNo })
+      .where(and(eq(shipment.orderId, orderRow.id), sql`${shipment.claimId} IS NULL`))
+      .returning({ id: shipment.id });
+    if (updatedRows.length === 0) throw new ShipmentMissingError();
+
+    // 이력에 남긴다 — 상태는 그대로지만 "누가 언제 송장을 고쳤나"는 남아야 한다
+    await tx.insert(orderStatusHistory).values({
+      orderId: orderRow.id,
+      fromStatus: orderRow.status,
+      toStatus: orderRow.status,
+      actor: serializeActor(input.actor),
+      memo: `송장 수정 (${input.carrierCode} ${input.trackingNo})`,
+    });
+
+    return { orderNo: input.orderNo };
   });
 }
 

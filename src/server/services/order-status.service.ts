@@ -1,8 +1,8 @@
 import "server-only";
 
-import { eq, sql } from "drizzle-orm";
+import { and, eq, ne, sql } from "drizzle-orm";
 
-import { orders, orderStatusHistory } from "@/db/schema";
+import { claim, orders, orderStatusHistory } from "@/db/schema";
 import {
   assertTransition,
   type OrderStatus,
@@ -35,6 +35,16 @@ export type TransitionResult = {
   fromStatus: OrderStatus;
   toStatus: OrderStatus;
 };
+
+/** 배송완료 되돌리기가 진행 중 클레임과 충돌 — 운영자 화면에 문구 그대로 뜬다 */
+export class RevertBlockedByClaimError extends Error {
+  constructor() {
+    super(
+      "반품·교환이 접수된 주문이라 배송완료를 되돌릴 수 없습니다. 클레임을 먼저 처리해 주세요.",
+    );
+    this.name = "RevertBlockedByClaimError";
+  }
+}
 
 /**
  * 상태를 전이하고 이력을 원자적으로 남긴다. 트랜잭션 안에서만 호출한다.
@@ -70,11 +80,27 @@ export async function applyOrderTransition(
   // 불법 전이·권한 없는 actor는 여기서 차단(도메인 전이표가 판정)
   assertTransition(fromStatus, input.toStatus, input.actor.role);
 
+  // 배송완료 되돌리기(운영 실수 정정) — 클레임이 이미 접수된 주문은 막는다.
+  // 반품·교환은 "배송완료"를 전제로 진행 중이라, 상태가 뒤로 가면 클레임 화면·배송비
+  // 계산이 전부 어긋난다. 거절된 클레임만 있는 주문은 정정을 막을 이유가 없다.
+  if (fromStatus === "delivered" && input.toStatus === "shipping") {
+    const [activeClaim] = await tx
+      .select({ id: claim.id })
+      .from(claim)
+      .where(and(eq(claim.orderId, input.orderId), ne(claim.status, "rejected")))
+      .limit(1);
+    if (activeClaim) throw new RevertBlockedByClaimError();
+  }
+
   const actorText = serializeActor(input.actor);
   const timestampPatch: Record<string, unknown> = {};
   // 전이 시각은 상태와 같은 UPDATE로 박아야 배치·조회가 어긋나지 않는다
   if (input.toStatus === "delivered") timestampPatch.deliveredAt = sql`now()`;
   if (input.toStatus === "confirmed") timestampPatch.confirmedAt = sql`now()`;
+  // 되돌리기: delivered_at을 지운다 — 남으면 자동확정 배치가 배송중 주문을 확정한다
+  if (fromStatus === "delivered" && input.toStatus === "shipping") {
+    timestampPatch.deliveredAt = null;
+  }
 
   // orders는 감사 시각 2컬럼만 갖는다(사용자 생성 데이터 규약) — 변경 주체는 이력 테이블이 보관
   await tx

@@ -63,9 +63,11 @@ describe("상태 전이표", () => {
     expect(canTransition("pending", "paid", "customer")).toBe(false); // 결제 전이는 system만
   });
 
-  it("건너뛰기·역행·정의되지 않은 전이는 불법", () => {
+  it("건너뛰기·정의되지 않은 전이는 불법", () => {
     expect(canTransition("pending", "shipping", "admin")).toBe(false);
-    expect(canTransition("delivered", "shipping", "admin")).toBe(false);
+    // 역행 중 허용된 것은 운영 정정 2건(shipping→preparing·delivered→shipping)뿐이다 —
+    // 그 외 역행은 여전히 불법
+    expect(canTransition("preparing", "paid", "admin")).toBe(false);
     expect(canTransition("paid", "pending", "admin")).toBe(false);
   });
 
@@ -97,6 +99,21 @@ describe("상태 전이표", () => {
     expect(allowedTargets("paid", "admin").sort()).toEqual(["cancelled", "preparing"]);
     expect(allowedTargets("delivered", "customer")).toEqual(["confirmed"]);
     expect(allowedTargets("confirmed", "admin")).toEqual([]);
+  });
+
+  it("운영 실수 되돌리기 — admin만, confirmed 이후는 불가", () => {
+    // 배송중 → 배송준비중 (송장 잘못 등록)
+    expect(canTransition("shipping", "preparing", "admin")).toBe(true);
+    expect(canTransition("shipping", "preparing", "customer")).toBe(false);
+    expect(canTransition("shipping", "preparing", "system")).toBe(false);
+    // 배송완료 → 배송중 (완료 실수) — delivered_at을 지우는 부작용이 반드시 걸려야 한다.
+    // 빠지면 자동확정 배치가 "배송중인데 완료 +N일 경과"로 보고 확정해 버린다
+    expect(canTransition("delivered", "shipping", "admin")).toBe(true);
+    expect(canTransition("delivered", "shipping", "customer")).toBe(false);
+    expect(sideEffectsFor("delivered", "shipping")).toEqual(["clear_delivered_at"]);
+    // 돈이 움직인 뒤로는 되돌리기 없음
+    expect(canTransition("confirmed", "delivered", "admin")).toBe(false);
+    expect(canTransition("cancelled", "paid", "admin")).toBe(false);
   });
 });
 

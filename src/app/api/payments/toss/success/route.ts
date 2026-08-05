@@ -5,6 +5,7 @@ import { getPaymentGateway } from "@/server/payments";
 import { confirmPayment } from "@/server/services/payment.service";
 import { CART_COOKIE_NAME } from "@/server/trpc/context";
 import { readCookieValueFromHeader } from "@/server/auth/session";
+import { resolvePublicOrigin } from "@/server/http/request-origin";
 
 /**
  * 토스 successUrl 콜백 — 결제 인증에 성공한 브라우저가 여기로 리다이렉트된다.
@@ -22,7 +23,10 @@ export async function GET(request: Request) {
   const orderNo = requestUrl.searchParams.get("orderId");
   const amountText = requestUrl.searchParams.get("amount");
 
-  const checkoutUrl = new URL("/checkout", requestUrl.origin);
+  // 프록시 뒤에서는 request.url이 http://127.0.0.1:3100 이라 그대로 쓰면
+  // HTTPS로 결제한 사용자를 http로 되돌려 보낸다
+  const publicOrigin = resolvePublicOrigin(request);
+  const checkoutUrl = new URL("/checkout", publicOrigin);
 
   if (!paymentKey || !orderNo) {
     checkoutUrl.searchParams.set("payError", "INVALID_CALLBACK");
@@ -43,7 +47,7 @@ export async function GET(request: Request) {
       cartToken,
     });
 
-    const completeUrl = new URL("/order/complete", requestUrl.origin);
+    const completeUrl = new URL("/order/complete", publicOrigin);
     completeUrl.searchParams.set("orderNo", confirmed.orderNo);
     return NextResponse.redirect(completeUrl);
   } catch (confirmError) {

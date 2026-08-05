@@ -23,6 +23,7 @@ import { Textarea } from "@/components/ui/textarea"
 import { useToast } from "@/components/ui/toast"
 import { useRouter } from "next/navigation"
 
+import { AdminAccountSection } from "@/components/admin/admin-account-section"
 import { AdminTotpSection } from "@/components/admin/admin-totp-section"
 import { useTRPC } from "@/trpc/client"
 import type { ThemePreset } from "@/server/services/theme.service"
@@ -35,7 +36,7 @@ const THEME_PRESET_LABEL: Record<ThemePreset, string> = {
   grape: "자두 그레이프",
 }
 
-type SettingSection = "site" | "theme" | "policy" | "shipping" | "analytics" | "security"
+type SettingSection = "site" | "theme" | "policy" | "shipping" | "analytics" | "security" | "accounts"
 
 const SETTING_SECTIONS: { section: SettingSection; label: string }[] = [
   { section: "site", label: "사이트·사업자 정보" },
@@ -44,6 +45,7 @@ const SETTING_SECTIONS: { section: SettingSection; label: string }[] = [
   { section: "shipping", label: "배송비 정책" },
   { section: "analytics", label: "측정 ID" },
   { section: "security", label: "보안" },
+  { section: "accounts", label: "계정 관리" },
 ]
 
 export function AdminSettingView() {
@@ -103,6 +105,7 @@ export function AdminSettingView() {
           <AnalyticsForm key="analytics" initial={settings.analytics} />
         ) : null}
         {activeSection === "security" ? <AdminTotpSection key="security" /> : null}
+        {activeSection === "accounts" ? <AdminAccountSection key="accounts" /> : null}
 
         {/* 없는 칸을 찾아 헤매지 않도록 어디서 관리하는지 밝힌다 */}
         <section className="rounded-[var(--radius)] border border-border bg-card p-4">

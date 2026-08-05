@@ -208,6 +208,8 @@ export type AdminCustomerDetail = {
   adminMemo: string | null;
   marketing: { smsAgreed: boolean; emailAgreed: boolean };
   loginProviders: string[];
+  /** 자체가입 아이디 — 이메일과 다른 값이다. 소셜 전용 회원은 null */
+  localLoginId: string | null;
   orderSummary: { orderCount: number; totalSpending: number };
   recentOrders: {
     orderNo: string;
@@ -277,7 +279,7 @@ export async function getAdminCustomerDetail(
     .orderBy(desc(address.isDefault), address.id);
 
   const authRows = await database
-    .select({ provider: customerAuth.provider })
+    .select({ provider: customerAuth.provider, providerUid: customerAuth.providerUid })
     .from(customerAuth)
     .where(eq(customerAuth.customerId, customerId));
 
@@ -308,6 +310,14 @@ export async function getAdminCustomerDetail(
       emailAgreed: row.marketingEmailAgreedAt !== null,
     },
     loginProviders: authRows.map((authRow) => authRow.provider),
+    /**
+     * 자체가입 아이디. **이메일과 다른 값**이라 이메일만 보여주면 상담원이 회원을 특정할 수 없다
+     * (임시 비밀번호 발급도 이 아이디 기준으로 나간다).
+     * 소셜 전용 회원은 없으므로 null — 그때는 provider 라벨만 보여준다.
+     * 소셜 provider_uid는 사람이 읽을 값이 아니고 노출할 이유도 없어 내보내지 않는다.
+     */
+    localLoginId:
+      authRows.find((authRow) => authRow.provider === "local")?.providerUid ?? null,
     orderSummary: {
       orderCount: Number(summaryRow?.orderCount ?? 0),
       totalSpending: Number(summaryRow?.totalSpending ?? 0),

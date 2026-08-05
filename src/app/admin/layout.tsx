@@ -45,8 +45,9 @@ export default async function AdminLayout({
 
   return (
     <ToastProvider>
-      {/* 관리자 색 프리셋 — 스토어와 따로 정한다(오래 보는 업무 화면이라 브랜드 색이 강하면 눈이 피로하다) */}
-      <div data-theme={themeSetting.admin} className="contents">
+      {/* 관리자 색 프리셋 — 스토어와 따로 정한다(오래 보는 업무 화면이라 브랜드 색이 강하면 눈이 피로하다)
+          admin-scope: 프리셋이 바꾸는 것 중 **색만 받고 서체는 안 받는다**(globals.css 참조) */}
+      <div data-theme={themeSetting.admin} className="admin-scope contents">
       <AdminShell
         siteName={businessInfo.brandName}
         pageTitle={<AdminPageTitle fallbackTitle="관리자" />}

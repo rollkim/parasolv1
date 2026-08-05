@@ -15,6 +15,7 @@ import {
   listCustomerCoupons,
 } from "@/server/services/coupon.service";
 import { getCustomerGradeSummary } from "@/server/services/grade.service";
+import { emailInput, mobilePhoneInput } from "@/server/trpc/shared-input";
 import {
   getPointHistory,
   getPointSummary,
@@ -28,12 +29,8 @@ import { protectedProcedure, router } from "../init";
  * 여기서는 zod 검증만 하고, 소유 검증·기본 배송지 단일 보장은 서비스가 한다(RULE-14).
  */
 
-const mobilePhoneSchema = z
-  .string()
-  .transform((rawPhone) => rawPhone.replaceAll("-", ""))
-  .pipe(
-    z.string().regex(/^01[016789][0-9]{7,8}$/, "휴대폰 번호 형식이 올바르지 않습니다."),
-  );
+/** 연락처 검증은 라우터마다 따로 두지 않는다 — shared-input 하나만 쓴다 */
+const mobilePhoneSchema = mobilePhoneInput;
 
 const addressFieldsSchema = z.object({
   label: z
@@ -77,7 +74,7 @@ export const mypageRouter = router({
           .trim()
           .min(1, "이름을 입력해 주세요.")
           .max(50, "이름은 50자 이하로 입력해 주세요."),
-        email: z.email("이메일 형식이 올바르지 않습니다. 다시 확인해 주세요."),
+        email: emailInput,
         phone: mobilePhoneSchema,
       }),
     )

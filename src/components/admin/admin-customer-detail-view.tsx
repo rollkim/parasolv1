@@ -176,6 +176,20 @@ export function AdminCustomerDetailView({ customerId }: { customerId: number }) 
           </div>
 
           <dl className="m-0 mt-3 flex flex-col gap-2 border-t border-border pt-3 text-[13px]">
+            {/* 아이디·회원번호를 맨 위에 둔다 — 상담 중 회원을 특정하는 값이라
+                이메일·연락처보다 먼저 눈에 들어와야 한다 */}
+            <div className="flex gap-3">
+              <dt className="w-[92px] shrink-0 text-muted-foreground">아이디</dt>
+              <dd className="m-0 font-medium">
+                {customerDetail.localLoginId ?? (
+                  <span className="text-muted-foreground">소셜 로그인 전용</span>
+                )}
+              </dd>
+            </div>
+            <div className="flex gap-3">
+              <dt className="w-[92px] shrink-0 text-muted-foreground">회원번호</dt>
+              <dd className="m-0 tabular-nums">{customerDetail.customerId}</dd>
+            </div>
             <div className="flex gap-3">
               <dt className="w-[92px] shrink-0 text-muted-foreground">이메일</dt>
               <dd className="m-0">{customerDetail.email ?? "—"}</dd>

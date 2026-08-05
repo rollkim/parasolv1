@@ -672,6 +672,7 @@ export function CheckoutView() {
                   fieldRefs.current.ordererName = node
                 }}
                 aria-label="주문자 이름"
+                maxLength={50}
                 placeholder="이름"
                 value={orderer.name}
                 aria-invalid={visibleError("ordererName") ? true : undefined}
@@ -690,6 +691,7 @@ export function CheckoutView() {
                 }}
                 aria-label="주문자 연락처"
                 inputMode="numeric"
+                maxLength={13}
                 placeholder="연락처 (예: 010-1234-5678)"
                 value={orderer.phone}
                 aria-invalid={visibleError("ordererPhone") ? true : undefined}
@@ -708,6 +710,7 @@ export function CheckoutView() {
                 }}
                 aria-label="이메일"
                 type="email"
+                maxLength={254}
                 placeholder="이메일 (주문내역 발송)"
                 value={orderer.email}
                 aria-invalid={visibleError("ordererEmail") ? true : undefined}
@@ -779,7 +782,8 @@ export function CheckoutView() {
                     fieldRefs.current.recipient = node
                   }}
                   aria-label="받는 분"
-                  placeholder="받는 분"
+                  maxLength={50}
+                placeholder="받는 분"
                   readOnly={sameAsOrderer}
                   className={sameAsOrderer ? "bg-muted" : undefined}
                   value={addressInput.recipient}
@@ -799,7 +803,8 @@ export function CheckoutView() {
                   }}
                   aria-label="받는 분 연락처"
                   inputMode="numeric"
-                  placeholder="받는 분 연락처"
+                  maxLength={13}
+                placeholder="받는 분 연락처"
                   readOnly={sameAsOrderer}
                   className={sameAsOrderer ? "bg-muted" : undefined}
                   value={addressInput.phone}
@@ -820,7 +825,8 @@ export function CheckoutView() {
                     }}
                     aria-label="우편번호"
                     inputMode="numeric"
-                    placeholder="우편번호"
+                    maxLength={5}
+                placeholder="우편번호"
                     className="max-w-[140px]"
                     value={addressInput.zipcode}
                     aria-invalid={visibleError("zipcode") ? true : undefined}
@@ -853,7 +859,8 @@ export function CheckoutView() {
                     fieldRefs.current.addr1 = node
                   }}
                   aria-label="기본 주소"
-                  placeholder="기본 주소"
+                  maxLength={200}
+                placeholder="기본 주소"
                   value={addressInput.addr1}
                   aria-invalid={visibleError("addr1") ? true : undefined}
                   aria-describedby={visibleError("addr1") ? "err-addr1" : undefined}
@@ -867,6 +874,7 @@ export function CheckoutView() {
               <Input
                 ref={addressDetailRef}
                 aria-label="상세 주소"
+                maxLength={200}
                 placeholder="상세 주소 (동·호수 등)"
                 value={addressInput.addr2}
                 onChange={(event) =>

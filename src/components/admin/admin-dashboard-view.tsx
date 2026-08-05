@@ -39,13 +39,17 @@ function SectionCard({
   title,
   action,
   children,
+  id,
 }: {
   title: string
   action?: React.ReactNode
   children: React.ReactNode
+  /** KPI 카드가 앵커로 데려올 섹션에만 준다 */
+  id?: string
 }) {
   return (
-    <section className="rounded-[var(--radius)] border border-border bg-card p-4">
+    // scroll-mt: 앵커로 점프했을 때 상단 고정 헤더에 제목이 가리지 않게 여백을 확보
+    <section id={id} className="scroll-mt-20 rounded-[var(--radius)] border border-border bg-card p-4">
       <div className="flex flex-wrap items-center justify-between gap-2">
         <h2 className="m-0 font-heading text-[15px] font-extrabold">{title}</h2>
         {action}
@@ -113,9 +117,14 @@ export function AdminDashboardView() {
 
   return (
     <div className="flex flex-col gap-4">
-      {/* KPI */}
+      {/* KPI — 전부 눌러서 이동한다. 숫자만 보여주고 끝나면 "그래서 어디를 여나"를
+          운영자가 메뉴에서 다시 찾아야 한다. 집계 카드(처리 대기·미답변)는 세부 항목이
+          여러 갈래라 페이지 대신 아래 해당 섹션으로 데려간다(거기서 갈래를 고른다) */}
       <div className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-4">
-        <div className="rounded-[var(--radius)] border border-border bg-card p-4">
+        <Link
+          href="/admin/orders"
+          className="block rounded-[var(--radius)] border border-border bg-card p-4 transition-colors hover:border-primary focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring"
+        >
           <p className="m-0 text-[12px] font-semibold text-muted-foreground">오늘 주문</p>
           <p className="m-0 mt-1 font-heading text-2xl font-extrabold">
             {dashboard.kpi.todayOrderCount.toLocaleString("ko-KR")}건
@@ -126,9 +135,12 @@ export function AdminDashboardView() {
               previous={dashboard.kpi.yesterdayOrderCount}
             />
           </p>
-        </div>
+        </Link>
 
-        <div className="rounded-[var(--radius)] border border-border bg-card p-4">
+        <Link
+          href="/admin/orders"
+          className="block rounded-[var(--radius)] border border-border bg-card p-4 transition-colors hover:border-primary focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring"
+        >
           <p className="m-0 text-[12px] font-semibold text-muted-foreground">오늘 매출</p>
           <p className="m-0 mt-1 font-heading text-2xl font-extrabold">
             {formatKrw(dashboard.kpi.todayRevenue)}
@@ -139,11 +151,12 @@ export function AdminDashboardView() {
               previous={dashboard.kpi.yesterdayRevenue}
             />
           </p>
-        </div>
+        </Link>
 
-        <div
+        <a
+          href="#pending-queue"
           className={cn(
-            "rounded-[var(--radius)] border bg-card p-4",
+            "block rounded-[var(--radius)] border bg-card p-4 transition-colors hover:border-primary focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring",
             dashboard.kpi.pendingTaskCount > 0 ? "border-primary" : "border-border",
           )}
         >
@@ -154,11 +167,12 @@ export function AdminDashboardView() {
           <p className="m-0 mt-1 text-[12px] text-muted-foreground">
             {dashboard.kpi.pendingTaskCount > 0 ? "아래 대기열에서 처리하세요" : "밀린 일이 없어요"}
           </p>
-        </div>
+        </a>
 
-        <div
+        <a
+          href="#inquiry-queue"
           className={cn(
-            "rounded-[var(--radius)] border bg-card p-4",
+            "block rounded-[var(--radius)] border bg-card p-4 transition-colors hover:border-destructive focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring",
             dashboard.kpi.unansweredInquiryCount > 0 ? "border-destructive" : "border-border",
           )}
         >
@@ -169,7 +183,7 @@ export function AdminDashboardView() {
           <p className="m-0 mt-1 text-[12px] text-muted-foreground">
             {dashboard.kpi.unansweredInquiryCount > 0 ? "답변이 필요해요" : "모두 답변했어요"}
           </p>
-        </div>
+        </a>
       </div>
 
       {/* 돈 이상 감지 — 있을 때만 나타난다. 조용할 때 자리를 차지하면 늘 있는 배경이 되어
@@ -207,7 +221,7 @@ export function AdminDashboardView() {
       ) : null}
 
       {/* 처리 대기열 — 다음 할 일로 가는 문 */}
-      <SectionCard title="처리 대기열">
+      <SectionCard id="pending-queue" title="처리 대기열">
         <ul className="m-0 grid list-none grid-cols-2 gap-2 p-0 md:grid-cols-5">
           {dashboard.queue.map((queueItem) => (
             <li key={queueItem.queueKey}>
@@ -228,7 +242,7 @@ export function AdminDashboardView() {
 
       {/* 문의 처리 대기 — 총합 하나로는 어디를 열어야 할지 모른다. 메뉴별로 쪼개 바로 보낸다.
           대기 0인 줄도 남긴다: 사라지면 "그 메뉴가 없는 건지 0인 건지"를 구분할 수 없다 */}
-      <SectionCard title="문의 처리 대기">
+      <SectionCard id="inquiry-queue" title="문의 처리 대기">
         <ul className="m-0 grid list-none grid-cols-1 gap-2 p-0 sm:grid-cols-3">
           {dashboard.inquiryQueue.map((inquiryItem) => (
             <li key={inquiryItem.inquiryKind}>

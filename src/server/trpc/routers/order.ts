@@ -18,6 +18,7 @@ import { confirmPayment } from "@/server/services/payment.service";
 import { GUEST_ORDER_COOKIE_NAME } from "../context";
 import { protectedProcedure, publicProcedure, router } from "../init";
 import { withOrderErrorMapping } from "../order-error";
+import { mobilePhoneInput, optionalEmailTextInput } from "../shared-input";
 
 /** 주문 직후 완료 화면을 보는 동안만 필요하다 — 오래 두면 공용 PC에서 남의 주문이 열린다 */
 const GUEST_ORDER_COOKIE_MAX_AGE_SECONDS = 60 * 60;
@@ -68,11 +69,9 @@ async function issueGuestOrderCookie(guestToken: string): Promise<void> {
  */
 
 /** 하이픈이 섞여 들어와도 통과시키고, 정규화·형식 검증은 도메인 규칙으로 한다 */
-const phoneInputSchema = z
-  .string()
-  .trim()
-  .min(1, "연락처를 입력해 주세요.")
-  .max(20, "연락처를 다시 확인해 주세요.");
+/** 연락처 검증은 라우터마다 따로 두지 않는다 — shared-input 하나만 쓴다.
+ *  이전에는 길이만 검사해서 아무 글자나 연락처로 저장됐다(배송 사고 직결). */
+const phoneInputSchema = mobilePhoneInput;
 
 const ordererSchema = z.object({
   name: z
@@ -81,7 +80,7 @@ const ordererSchema = z.object({
     .min(1, "주문자 이름을 입력해 주세요.")
     .max(50, "이름은 50자 이하로 입력해 주세요."),
   phone: phoneInputSchema,
-  email: z.email("이메일 형식이 올바르지 않습니다.").optional().or(z.literal("")),
+  email: optionalEmailTextInput.optional(),
 });
 
 const shippingAddressSchema = z.object({

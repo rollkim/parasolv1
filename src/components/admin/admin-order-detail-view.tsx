@@ -46,10 +46,13 @@ export function AdminOrderDetailView({ orderNo }: { orderNo: string }) {
 
   const detailQuery = useQuery(trpc.adminOrder.detail.queryOptions({ orderNo }))
   const registerInvoiceMutation = useMutation(trpc.adminOrder.registerInvoice.mutationOptions())
+  const updateInvoiceMutation = useMutation(trpc.adminOrder.updateInvoice.mutationOptions())
   const changeStatusMutation = useMutation(trpc.adminOrder.changeStatus.mutationOptions())
 
   const [carrierCode, setCarrierCode] = React.useState(CARRIERS[0].code)
   const [trackingNo, setTrackingNo] = React.useState("")
+  /** 송장 수정 폼 열림 — 오타 정정용이라 평소엔 접어 둔다 */
+  const [isEditingInvoice, setIsEditingInvoice] = React.useState(false)
 
   const orderDetail = detailQuery.data
 
@@ -70,6 +73,26 @@ export function AdminOrderDetailView({ orderNo }: { orderNo: string }) {
         onSuccess: () => {
           showToast("송장을 등록하고 배송중으로 변경했어요.", { toastVariant: "info" })
           setTrackingNo("")
+          refreshOrder()
+        },
+        onError: (invoiceError) => showToast(invoiceError.message, { toastVariant: "error" }),
+      },
+    )
+  }
+
+  function submitInvoiceEdit(event: React.FormEvent) {
+    event.preventDefault()
+    if (updateInvoiceMutation.isPending) return
+    if (!trackingNo.trim()) {
+      showToast("송장번호를 입력해 주세요.", { toastVariant: "error" })
+      return
+    }
+    updateInvoiceMutation.mutate(
+      { orderNo, carrierCode, trackingNo: trackingNo.trim() },
+      {
+        onSuccess: () => {
+          showToast("송장을 수정했어요. 배송 상태는 그대로예요.", { toastVariant: "info" })
+          setIsEditingInvoice(false)
           refreshOrder()
         },
         onError: (invoiceError) => showToast(invoiceError.message, { toastVariant: "error" }),
@@ -220,12 +243,71 @@ export function AdminOrderDetailView({ orderNo }: { orderNo: string }) {
 
           <div className="mt-3 border-t border-border pt-3">
             <h3 className="m-0 text-[13px] font-bold">송장 정보</h3>
-            {orderDetail.shipmentInfo?.trackingNo ? (
-              <p className="m-0 mt-1.5 text-[13px]">
-                {CARRIERS.find((c) => c.code === orderDetail.shipmentInfo?.carrierCode)?.label ??
-                  orderDetail.shipmentInfo.carrierCode}{" "}
-                <span className="font-mono">{orderDetail.shipmentInfo.trackingNo}</span>
-              </p>
+            {orderDetail.shipmentInfo?.trackingNo && !isEditingInvoice ? (
+              <div className="mt-1.5 flex flex-wrap items-center gap-2">
+                <p className="m-0 text-[13px]">
+                  {CARRIERS.find((c) => c.code === orderDetail.shipmentInfo?.carrierCode)?.label ??
+                    orderDetail.shipmentInfo.carrierCode}{" "}
+                  <span className="font-mono">{orderDetail.shipmentInfo.trackingNo}</span>
+                </p>
+                {/* 오타 정정 — 상태를 되돌리지 않고 번호만 고친다(배송중·배송완료에서만) */}
+                {orderDetail.orderStatus === "shipping" ||
+                orderDetail.orderStatus === "delivered" ? (
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="admin-38"
+                    onClick={() => {
+                      setCarrierCode(orderDetail.shipmentInfo?.carrierCode ?? CARRIERS[0].code)
+                      setTrackingNo(orderDetail.shipmentInfo?.trackingNo ?? "")
+                      setIsEditingInvoice(true)
+                    }}
+                  >
+                    송장 수정
+                  </Button>
+                ) : null}
+              </div>
+            ) : orderDetail.shipmentInfo?.trackingNo && isEditingInvoice ? (
+              <form className="mt-2 flex flex-col gap-2" onSubmit={submitInvoiceEdit}>
+                <Label htmlFor="admin-carrier-edit">택배사</Label>
+                <select
+                  id="admin-carrier-edit"
+                  className="h-10 rounded-[calc(var(--radius)-4px)] border border-input bg-card px-2.5 text-[13px]"
+                  value={carrierCode}
+                  onChange={(event) => setCarrierCode(event.target.value)}
+                >
+                  {CARRIERS.map((carrier) => (
+                    <option key={carrier.code} value={carrier.code}>
+                      {carrier.label}
+                    </option>
+                  ))}
+                </select>
+                <Label htmlFor="admin-tracking-edit">송장번호</Label>
+                <Input
+                  id="admin-tracking-edit"
+                  size="admin"
+                  inputMode="numeric"
+                  maxLength={50}
+                  value={trackingNo}
+                  onChange={(event) => setTrackingNo(event.target.value)}
+                />
+                <div className="flex gap-2">
+                  <Button type="submit" variant="primary" size="admin-40">
+                    {updateInvoiceMutation.isPending ? "수정 중…" : "수정 저장"}
+                  </Button>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="admin-40"
+                    onClick={() => setIsEditingInvoice(false)}
+                  >
+                    취소
+                  </Button>
+                </div>
+                <p className="m-0 text-[12px] text-muted-foreground">
+                  번호만 바뀝니다 — 배송 상태·발송 시각은 그대로예요.
+                </p>
+              </form>
             ) : canRegisterInvoice ? (
               <form className="mt-2 flex flex-col gap-2" onSubmit={submitInvoice}>
                 <Label htmlFor="admin-carrier">택배사</Label>

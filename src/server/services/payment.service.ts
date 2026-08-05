@@ -13,6 +13,7 @@ import {
 } from "@/db/schema";
 import { planStockDeductions, type OrderLineForStock } from "@/domain/inventory";
 import { assertPaidAmountMatches, type OrderStatus } from "@/domain/order";
+import { sendAlimtalkSafely } from "@/server/notifications/alimtalk.service";
 
 import {
   PaymentRejectedError,
@@ -131,6 +132,9 @@ export async function confirmPayment(
       orderNo: orders.orderNo,
       status: orders.status,
       grandTotal: orders.grandTotal,
+      // 확정 후 알림톡용 — 여기서 함께 읽어 두면 알림을 위해 다시 조회하지 않는다
+      ordererName: orders.ordererName,
+      ordererPhone: orders.ordererPhone,
     })
     .from(orders)
     .where(eq(orders.orderNo, input.orderNo))
@@ -224,9 +228,21 @@ export async function confirmPayment(
 
   // ── ③ 확정 트랜잭션 — 실패 유형에 따라 보상한다
   try {
-    return await database.transaction((tx) =>
+    const confirmed = await database.transaction((tx) =>
       finalizeConfirmedPayment(tx, { orderRow, paymentRow, approval, input }),
     );
+    // 알림은 **커밋 뒤에만** — 커밋 전에 보내면 롤백 시 거짓 알림이 된다.
+    // 중복 콜백의 멱등 반환에는 보내지 않는다(첫 확정 때 이미 나갔다).
+    if (!confirmed.alreadyConfirmed) {
+      await sendAlimtalkSafely({
+        messageKind: "payment_completed",
+        toPhone: orderRow.ordererPhone,
+        orderNo: orderRow.orderNo,
+        ordererName: orderRow.ordererName,
+        grandTotal: orderRow.grandTotal,
+      });
+    }
+    return confirmed;
   } catch (finalizeError) {
     const refundContext = {
       orderId: orderRow.id,

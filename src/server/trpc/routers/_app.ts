@@ -1,5 +1,6 @@
 import { createCallerFactory, router } from "../init";
 import { adminAuditRouter } from "./admin-audit";
+import { adminAccountRouter } from "./admin-account";
 import { adminAuthRouter } from "./admin-auth";
 import { adminBoardRouter } from "./admin-board";
 import { adminCategoryRouter } from "./admin-category";
@@ -32,6 +33,7 @@ import { wishlistRouter } from "./wishlist";
  */
 export const appRouter = router({
   adminAudit: adminAuditRouter,
+  adminAccount: adminAccountRouter,
   adminAuth: adminAuthRouter,
   adminBoard: adminBoardRouter,
   adminCategory: adminCategoryRouter,

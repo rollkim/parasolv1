@@ -323,9 +323,12 @@ const SIGNUP_ACCOUNT_FIELDS: {
   fieldPlaceholder: string
   inputType: "text" | "password" | "email" | "tel"
   autoCompleteToken: string
+  /** 서버 zod 상한과 같은 값 — 넘는 글자는 입력 단계에서 물리적으로 막는다 */
+  maxCharacters: number
 }[] = [
   {
     fieldKey: "loginId",
+    maxCharacters: 20,
     fieldLabel: "아이디",
     fieldPlaceholder: "영문 소문자·숫자 4~20자",
     inputType: "text",
@@ -333,6 +336,7 @@ const SIGNUP_ACCOUNT_FIELDS: {
   },
   {
     fieldKey: "password",
+    maxCharacters: 72,
     fieldLabel: "비밀번호",
     fieldPlaceholder: "8자 이상",
     inputType: "password",
@@ -340,6 +344,7 @@ const SIGNUP_ACCOUNT_FIELDS: {
   },
   {
     fieldKey: "passwordConfirm",
+    maxCharacters: 72,
     fieldLabel: "비밀번호 확인",
     fieldPlaceholder: "비밀번호를 한 번 더 입력",
     inputType: "password",
@@ -347,6 +352,7 @@ const SIGNUP_ACCOUNT_FIELDS: {
   },
   {
     fieldKey: "name",
+    maxCharacters: 50,
     fieldLabel: "이름",
     fieldPlaceholder: "이름",
     inputType: "text",
@@ -354,6 +360,7 @@ const SIGNUP_ACCOUNT_FIELDS: {
   },
   {
     fieldKey: "email",
+    maxCharacters: 254,
     fieldLabel: "이메일",
     fieldPlaceholder: "name@example.com",
     inputType: "email",
@@ -361,6 +368,7 @@ const SIGNUP_ACCOUNT_FIELDS: {
   },
   {
     fieldKey: "phone",
+    maxCharacters: 13,
     fieldLabel: "휴대폰 번호",
     fieldPlaceholder: "'-' 없이 숫자만",
     inputType: "tel",
@@ -717,6 +725,7 @@ function SignupWizard({ siteName }: { siteName: string }) {
                       type={fieldSpec.inputType}
                       autoComplete={fieldSpec.autoCompleteToken}
                       placeholder={fieldSpec.fieldPlaceholder}
+                      maxLength={fieldSpec.maxCharacters}
                       value={accountFieldValues[fieldSpec.fieldKey]}
                       onChange={(changeEvent) =>
                         handleAccountFieldChange(fieldSpec.fieldKey, changeEvent.target.value)

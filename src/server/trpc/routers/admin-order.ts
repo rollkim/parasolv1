@@ -6,6 +6,7 @@ import {
   getAdminOrderDetail,
   listAdminOrders,
   registerShipmentInvoice,
+  updateShipmentInvoice,
 } from "@/server/services/admin-order.service";
 
 import { adminProcedure, router } from "../init";
@@ -70,6 +71,31 @@ export const adminOrderRouter = router({
     .mutation(({ ctx, input }) =>
       withOrderErrorMapping(() =>
         registerShipmentInvoice(ctx.db, {
+          orderNo: input.orderNo,
+          carrierCode: input.carrierCode,
+          trackingNo: input.trackingNo,
+          actor: { role: "admin", id: ctx.adminUserId },
+        }),
+      ),
+    ),
+
+  /** 송장 수정 — 상태 전이 없이 택배사·번호만 바로잡는다(배송중·배송완료에서만) */
+  updateInvoice: adminProcedure
+    .input(
+      z.object({
+        orderNo: orderNoSchema,
+        carrierCode: carrierCodeSchema,
+        trackingNo: z
+          .string()
+          .trim()
+          .min(4, "송장번호를 입력해 주세요.")
+          .max(50)
+          .regex(/^[0-9-]+$/, "송장번호는 숫자와 하이픈만 입력할 수 있습니다."),
+      }),
+    )
+    .mutation(({ ctx, input }) =>
+      withOrderErrorMapping(() =>
+        updateShipmentInvoice(ctx.db, {
           orderNo: input.orderNo,
           carrierCode: input.carrierCode,
           trackingNo: input.trackingNo,

@@ -16,7 +16,12 @@ import {
   OrderAmountMismatchError,
 } from "@/domain/order";
 import { AdminClaimNotFoundError } from "@/server/services/admin-claim.service";
-import { AdminOrderNotFoundError, InvoiceRequiresPreparingError } from "@/server/services/admin-order.service";
+import {
+  AdminOrderNotFoundError,
+  InvoiceEditNotAllowedError,
+  InvoiceRequiresPreparingError,
+  ShipmentMissingError,
+} from "@/server/services/admin-order.service";
 import {
   AdminCustomerNotFoundError,
   CustomerAlreadyWithdrawnError,
@@ -73,6 +78,7 @@ import {
   PaymentRejectedError,
 } from "@/server/payments/payment-gateway";
 import { StockShortageError } from "@/server/services/inventory.service";
+import { RevertBlockedByClaimError } from "@/server/services/order-status.service";
 import { OrderAccessDeniedError } from "@/server/services/order-query.service";
 import { AddressLimitExceededError } from "@/server/services/customer.service";
 import { UnknownBulkPurchaseTypeError } from "@/server/services/bulk-inquiry.service";
@@ -86,6 +92,14 @@ import {
   AdminCouponNotFoundError,
 } from "@/server/services/admin-coupon.service";
 import { CustomerHasNoLocalLoginError } from "@/server/services/admin-customer.service";
+import {
+  AdminAccountNotFoundError,
+  AdminAccountPermissionError,
+  AdminLoginIdTakenError,
+  LastOwnerProtectedError,
+  SelfDeactivationError,
+  WrongCurrentPasswordError,
+} from "@/server/services/admin-account.service";
 import {
   AdminGradeInvalidError,
   AdminGradeNotFoundError,
@@ -154,6 +168,38 @@ export function toOrderTRPCError(error: unknown): unknown {
   }
 
   if (error instanceof CustomerHasNoLocalLoginError) {
+    return new TRPCError({ code: "BAD_REQUEST", message: error.message, cause: error });
+  }
+
+  // 주문 정정(되돌리기·송장 수정) — 상태가 바뀌어 거절된 것이라 CONFLICT
+  if (error instanceof RevertBlockedByClaimError) {
+    return new TRPCError({ code: "CONFLICT", message: error.message, cause: error });
+  }
+  if (error instanceof InvoiceEditNotAllowedError) {
+    return new TRPCError({ code: "CONFLICT", message: error.message, cause: error });
+  }
+  if (error instanceof ShipmentMissingError) {
+    return new TRPCError({ code: "CONFLICT", message: error.message, cause: error });
+  }
+
+  // 관리자 계정 관리 — 문구가 이미 원인+다음 행동을 담는다
+  if (error instanceof AdminAccountPermissionError) {
+    return new TRPCError({ code: "FORBIDDEN", message: error.message, cause: error });
+  }
+  if (error instanceof AdminLoginIdTakenError) {
+    return new TRPCError({ code: "CONFLICT", message: error.message, cause: error });
+  }
+  if (error instanceof AdminAccountNotFoundError) {
+    return new TRPCError({ code: "NOT_FOUND", message: error.message, cause: error });
+  }
+  // 상태가 바뀌어 거절된 것(내 입력 잘못이 아님) — CONFLICT
+  if (error instanceof LastOwnerProtectedError) {
+    return new TRPCError({ code: "CONFLICT", message: error.message, cause: error });
+  }
+  if (error instanceof SelfDeactivationError) {
+    return new TRPCError({ code: "BAD_REQUEST", message: error.message, cause: error });
+  }
+  if (error instanceof WrongCurrentPasswordError) {
     return new TRPCError({ code: "BAD_REQUEST", message: error.message, cause: error });
   }
 

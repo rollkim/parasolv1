@@ -280,6 +280,7 @@ function ProductFormFields({
             <Label htmlFor="product-slug">URL 주소 *</Label>
             <Input
               id="product-slug"
+              maxLength={80}
               size="admin"
               required
               placeholder="oat-cookie-set"
@@ -423,6 +424,7 @@ function ProductFormFields({
               <Label htmlFor="single-price">판매가 *</Label>
               <Input
                 id="single-price"
+              maxLength={9}
                 size="admin"
                 inputMode="numeric"
                 value={singleVariant.price}
@@ -438,6 +440,7 @@ function ProductFormFields({
               <Label htmlFor="single-compare">정가 (선택)</Label>
               <Input
                 id="single-compare"
+              maxLength={9}
                 size="admin"
                 inputMode="numeric"
                 value={singleVariant.compareAtPrice ?? ""}
@@ -454,6 +457,7 @@ function ProductFormFields({
               <Label htmlFor="single-stock">재고 *</Label>
               <Input
                 id="single-stock"
+              maxLength={9}
                 size="admin"
                 inputMode="numeric"
                 value={singleVariant.stock}
@@ -485,6 +489,7 @@ function ProductFormFields({
                     size="admin"
                     className="max-w-[200px]"
                     placeholder="옵션명 (예: 구성)"
+                    maxLength={50}
                     value={optionGroup.name}
                     onChange={(event) =>
                       setOptionGroups((previous) =>
@@ -541,6 +546,7 @@ function ProductFormFields({
                     className="w-[150px]"
                     aria-label={`${optionGroup.name} 옵션값 입력`}
                     placeholder="옵션값 입력 후 Enter"
+                    maxLength={50}
                     value={valueDrafts[groupIndex] ?? ""}
                     onChange={(event) =>
                       setValueDrafts((previous) =>
@@ -599,6 +605,7 @@ function ProductFormFields({
                   </Label>
                   <Input
                     id="bulk-stock"
+              maxLength={9}
                     size="admin"
                     className="ml-auto w-[120px]"
                     inputMode="numeric"

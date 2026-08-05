@@ -7,6 +7,7 @@
     "build": "next build",
     "build:ops": "node scripts/build-ops.mjs",
     "pack:release": "node scripts/pack-release.mjs",
+    "deploy:demo": "node scripts/deploy-demo.mjs",
     "start": "next start",
     "lint": "eslint",
     "db:generate": "drizzle-kit generate",

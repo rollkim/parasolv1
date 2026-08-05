@@ -767,6 +767,7 @@ function AddressFormDialog({
           >
             <Input
               id="addr-recipient"
+              maxLength={50}
               size="modal"
               type="text"
               autoComplete="name"
@@ -790,6 +791,7 @@ function AddressFormDialog({
           >
             <Input
               id="addr-phone"
+              maxLength={13}
               size="modal"
               type="tel"
               autoComplete="tel"
@@ -813,6 +815,7 @@ function AddressFormDialog({
             <div className="flex gap-2">
               <Input
                 id="addr-zipcode"
+              maxLength={5}
                 size="modal"
                 type="text"
                 inputMode="numeric"
@@ -842,6 +845,7 @@ function AddressFormDialog({
           >
             <Input
               id="addr-addr1"
+              maxLength={200}
               size="modal"
               type="text"
               autoComplete="address-line1"
@@ -862,6 +866,7 @@ function AddressFormDialog({
           >
             <Input
               id="addr-addr2"
+              maxLength={200}
               ref={addr2InputRef}
               size="modal"
               type="text"
@@ -883,6 +888,7 @@ function AddressFormDialog({
           >
             <Input
               id="addr-label"
+              maxLength={20}
               size="modal"
               type="text"
               placeholder="예: 우리집, 회사 (선택)"
@@ -1331,6 +1337,7 @@ function ProfileEditForm({ myProfile }: { myProfile: MyProfile }) {
       >
         <Input
           id="profile-name"
+              maxLength={50}
           size="form"
           type="text"
           autoComplete="name"
@@ -1351,6 +1358,7 @@ function ProfileEditForm({ myProfile }: { myProfile: MyProfile }) {
       >
         <Input
           id="profile-email"
+              maxLength={254}
           size="form"
           type="email"
           autoComplete="email"
@@ -1371,6 +1379,7 @@ function ProfileEditForm({ myProfile }: { myProfile: MyProfile }) {
       >
         <Input
           id="profile-phone"
+              maxLength={13}
           size="form"
           type="tel"
           autoComplete="tel"

@@ -19,6 +19,7 @@ import {
 } from "@/server/services/customer.service";
 
 import { publicProcedure, router } from "../init";
+import { emailInput, mobilePhoneInput } from "../shared-input";
 
 /**
  * 인증 라우터 — zod 검증·세션 쿠키·클라이언트 정보(IP/UA) 등 HTTP 관심사만 다루고,
@@ -57,15 +58,8 @@ export const authRouter = router({
         loginId: loginIdSchema,
         password: passwordSchema,
         name: z.string().trim().min(1, "이름을 입력해 주세요.").max(50),
-        email: z.email("이메일 형식이 올바르지 않습니다. 다시 확인해 주세요."),
-        phone: z
-          .string()
-          .transform((rawPhone) => rawPhone.replaceAll("-", ""))
-          .pipe(
-            z
-              .string()
-              .regex(/^01[016789][0-9]{7,8}$/, "휴대폰 번호 형식이 올바르지 않습니다."),
-          ),
+        email: emailInput,
+        phone: mobilePhoneInput,
         // 가입 화면에 존재하는 약관만 허용 — 필수 여부 검증은 서비스가 한다
         agreedTermsCodes: z.array(z.enum(["terms", "privacy", "age", "marketing"])),
       }),

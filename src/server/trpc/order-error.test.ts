@@ -14,7 +14,9 @@ import { BlockedOrderLineError, OrderAmountMismatchError } from "@/domain/order"
 import { AdminClaimNotFoundError } from "@/server/services/admin-claim.service";
 import {
   AdminOrderNotFoundError,
+  InvoiceEditNotAllowedError,
   InvoiceRequiresPreparingError,
+  ShipmentMissingError,
 } from "@/server/services/admin-order.service";
 import {
   AdminCustomerNotFoundError,
@@ -91,6 +93,17 @@ import {
   StockShortageCompensatedError,
 } from "@/server/services/payment.service";
 
+import {
+  AdminAccountNotFoundError,
+  AdminAccountPermissionError,
+  AdminLoginIdTakenError,
+  LastOwnerProtectedError,
+  SelfDeactivationError,
+  WrongCurrentPasswordError,
+} from "@/server/services/admin-account.service";
+
+import { RevertBlockedByClaimError } from "@/server/services/order-status.service";
+
 import { toOrderTRPCError } from "./order-error";
 
 /**
@@ -99,7 +112,18 @@ import { toOrderTRPCError } from "./order-error";
  * (OrderAccessDenied·TermsNotAgreed) 전 오류가 매핑되는지를 테스트가 지킨다.
  */
 const DOMAIN_ERRORS: { name: string; error: Error }[] = [
+  // 관리자 계정 관리 — 전부 운영자 화면에 문구 그대로 뜬다
+  { name: "AdminAccountPermissionError", error: new AdminAccountPermissionError() },
+  { name: "AdminLoginIdTakenError", error: new AdminLoginIdTakenError("admin2") },
+  { name: "AdminAccountNotFoundError", error: new AdminAccountNotFoundError() },
+  { name: "LastOwnerProtectedError", error: new LastOwnerProtectedError() },
+  { name: "SelfDeactivationError", error: new SelfDeactivationError() },
+  { name: "WrongCurrentPasswordError", error: new WrongCurrentPasswordError() },
   { name: "CartNotFoundError", error: new CartNotFoundError() },
+  // 주문 정정 — 되돌리기·송장 수정
+  { name: "RevertBlockedByClaimError", error: new RevertBlockedByClaimError() },
+  { name: "InvoiceEditNotAllowedError", error: new InvoiceEditNotAllowedError() },
+  { name: "ShipmentMissingError", error: new ShipmentMissingError() },
   { name: "TermsNotAgreedError", error: new TermsNotAgreedError([1]) },
   { name: "BlockedOrderLineError", error: new BlockedOrderLineError([1]) },
   { name: "OrderAmountMismatchError", error: new OrderAmountMismatchError(1000, 900) },

@@ -58,6 +58,7 @@ export type OrderSideEffect =
   | "refund"
   | "consume_cart"
   | "set_delivered_at"
+  | "clear_delivered_at"
   | "set_confirmed_at";
 
 type TransitionRule = {
@@ -80,6 +81,16 @@ const TRANSITIONS: readonly TransitionRule[] = [
   { from: "preparing", to: "cancelled", actors: ["customer", "admin"], sideEffects: ["refund", "restore_stock"] },
   { from: "shipping", to: "delivered", actors: ["system", "admin"], sideEffects: ["set_delivered_at"] },
   { from: "delivered", to: "confirmed", actors: ["customer", "system"], sideEffects: ["set_confirmed_at"] },
+
+  // ── 운영 실수 되돌리기 (admin 전용) — QA 요청으로 추가 (2026-08-05) ──
+  // 잘못 누른 전이를 개발자 SQL 없이 화면에서 바로잡는다. 이력은 초크포인트가 남긴다.
+  // confirmed 이후는 되돌리지 않는다 — 적립금이 발생했고 클레임 창이 열렸다(돈이 움직였다).
+  //
+  // 송장을 잘못 등록한 경우: 배송준비중으로 되돌린 뒤 재등록(기존 송장을 덮어쓴다).
+  { from: "shipping", to: "preparing", actors: ["admin"], sideEffects: [] },
+  // 배송완료를 잘못 누른 경우: delivered_at을 **반드시 지운다** — 남겨 두면 자동 구매확정
+  // 배치(배송완료 +N일)가 배송중인 주문을 확정해 버리고, 리뷰 자격도 잘못 열린다.
+  { from: "delivered", to: "shipping", actors: ["admin"], sideEffects: ["clear_delivered_at"] },
 ];
 
 const TERMINAL_STATUSES: readonly OrderStatus[] = ["confirmed", "cancelled"];

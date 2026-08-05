@@ -1,5 +1,7 @@
 import { NextResponse } from "next/server";
 
+import { resolvePublicOrigin } from "@/server/http/request-origin";
+
 /**
  * 토스 failUrl 콜백 — 결제 인증 실패·사용자 취소 시 여기로 리다이렉트된다.
  *
@@ -11,10 +13,13 @@ import { NextResponse } from "next/server";
  */
 export async function GET(request: Request) {
   const requestUrl = new URL(request.url);
+  // 프록시 뒤에서는 request.url이 내부 주소(http://127.0.0.1:3100)라 그대로 쓰면
+  // HTTPS로 결제하던 사용자를 http로 되돌려 보낸다
+  const publicOrigin = resolvePublicOrigin(request);
   const failureCode = requestUrl.searchParams.get("code") ?? "PAY_FAILED";
   const orderNo = requestUrl.searchParams.get("orderId");
 
-  const checkoutUrl = new URL("/checkout", requestUrl.origin);
+  const checkoutUrl = new URL("/checkout", publicOrigin);
   checkoutUrl.searchParams.set("payError", failureCode);
   if (orderNo) checkoutUrl.searchParams.set("orderNo", orderNo);
   // 토스가 준 message는 그대로 노출하지 않는다 — 내부 사정이 섞일 수 있어
