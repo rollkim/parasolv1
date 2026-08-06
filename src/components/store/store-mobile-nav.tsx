@@ -36,6 +36,23 @@ type StoreMobileNavProps = {
   quickLinks: StoreNavLink[]
   loginHref: string
   allProductsHref: string
+  /**
+   * 로그인한 회원 이름 — 비로그인이면 null.
+   *
+   * 이 값이 없으면 드로어가 **로그인 여부와 무관하게** "로그인 / 회원가입"을 띄운다.
+   * 데스크톱 유틸바(utilLinks)만 세션을 반영하던 탓에, 모바일에서는 로그인해도
+   * 계속 로그인 버튼이 보이고 마이페이지로 갈 길이 없었다(QA #1).
+   */
+  customerName: string | null
+  mypageHref: string
+  /**
+   * 로그인 상태일 때 드로어 하단에 놓을 로그아웃 요소 — 비로그인이면 미지정.
+   *
+   * 로그아웃은 링크가 아니라 동작(뮤테이션)이라 quickLinks로 표현할 수 없고,
+   * RSC 경계로 함수를 넘길 수 없어 조립된 노드를 받는다(brandMark와 같은 방식).
+   * 없으면 모바일에서 로그인은 되는데 **나갈 방법이 없다**.
+   */
+  logoutSlot?: React.ReactNode
 }
 
 const drawerRowClassName =
@@ -51,6 +68,9 @@ export function StoreMobileNav({
   quickLinks,
   loginHref,
   allProductsHref,
+  customerName,
+  mypageHref,
+  logoutSlot,
 }: StoreMobileNavProps) {
   const [isDrawerOpen, setIsDrawerOpen] = React.useState(false)
   // 목업 초기값과 동일하게 자식을 가진 첫 대분류만 펼친 상태로 시작한다.
@@ -107,13 +127,16 @@ export function StoreMobileNav({
           <SheetCloseButton aria-label="메뉴 닫기" />
         </SheetHeader>
 
+        {/* 로그인 상태면 마이페이지로 보낸다 — 모바일에는 유틸바가 없어 여기가 유일한 진입점이다 */}
         <Link
-          href={loginHref}
+          href={customerName ? mypageHref : loginHref}
           onClick={closeDrawer}
           className="mx-4 my-[14px] flex shrink-0 items-center gap-2.5 rounded-[calc(var(--radius)-3px)] bg-secondary p-3.5 text-secondary-foreground transition hover:brightness-[0.98]"
         >
           <UserIcon className="size-6" aria-hidden="true" />
-          <span className="flex-1 text-sm font-bold">로그인 / 회원가입</span>
+          <span className="flex-1 text-sm font-bold">
+            {customerName ? `${customerName}님 · 마이페이지` : "로그인 / 회원가입"}
+          </span>
           <ChevronRightIcon className="size-[18px]" aria-hidden="true" />
         </Link>
 
@@ -219,6 +242,15 @@ export function StoreMobileNav({
                 {link.label}
               </Link>
             ))}
+
+            {/* 로그인 상태에서만 — 모바일에는 유틸바가 없어 여기가 유일한 로그아웃 경로다.
+                감싸는 요소에 onClick을 걸지 않는다: div 클릭 핸들러는 키보드로 도달할 수 없어
+                접근성이 깨진다. 로그아웃은 router.refresh()로 헤더가 다시 그려지며 드로어도 닫힌다. */}
+            {logoutSlot ? (
+              <div className="mt-2.5 flex min-h-11 items-center border-t border-border px-2.5 pt-4 text-sm font-semibold text-muted-foreground">
+                {logoutSlot}
+              </div>
+            ) : null}
           </nav>
         </SheetBody>
       </SheetContent>

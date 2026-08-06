@@ -56,6 +56,15 @@ export type StoreHeaderProps = {
   utilLinks?: StoreNavLink[];
   /** 유틸바 끝의 동작 요소 슬롯(로그아웃 버튼 등) — 링크가 아니어서 utilLinks로 표현할 수 없다 */
   utilTrailing?: React.ReactNode;
+  /**
+   * 로그인한 회원 이름 — 비로그인이면 미지정.
+   *
+   * utilLinks는 **데스크톱 유틸바 전용**이라 모바일 드로어에는 닿지 않는다.
+   * 세션 상태를 드로어까지 전달하려면 이 값이 따로 필요하다(QA #1).
+   */
+  customerName?: string | null;
+  /** 모바일 드로어 하단의 로그아웃 슬롯 — utilTrailing은 데스크톱 유틸바 전용이라 따로 받는다 */
+  mobileLogoutSlot?: React.ReactNode;
   drawerQuickLinks?: StoreNavLink[];
   searchPlaceholder?: string;
   /** 모바일 폼은 폭이 좁아 축약 문구를 따로 받는다(미지정 시 데스크톱 문구 사용). */
@@ -211,6 +220,8 @@ export function StoreHeader({
   drawerQuickLinks = DEFAULT_DRAWER_QUICK_LINKS,
   searchPlaceholder = "상품을 검색해 보세요",
   searchPlaceholderMobile,
+  customerName = null,
+  mobileLogoutSlot,
 }: StoreHeaderProps) {
   // '전체'는 category 테이블에 없는 UI 항목이라 컴포넌트가 직접 렌더한다.
   // slug를 undefined로 두면 activeCategorySlug 미지정 화면에서 undefined === undefined로 활성 판정돼
@@ -281,6 +292,9 @@ export function StoreHeader({
               quickLinks={drawerQuickLinks}
               loginHref={STORE_ROUTE.login}
               allProductsHref={STORE_ROUTE.products}
+              customerName={customerName}
+              mypageHref={STORE_ROUTE.mypage}
+              logoutSlot={mobileLogoutSlot}
             />
 
             <Link

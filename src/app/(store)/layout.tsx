@@ -81,6 +81,9 @@ export default async function StoreLayout({
           cartCount={cartItemCount}
           utilLinks={utilLinks}
           utilTrailing={sessionProfile ? <LogoutButton /> : undefined}
+          // utilLinks는 데스크톱 유틸바에만 쓰인다 — 모바일 드로어는 이 값으로 세션을 안다
+          customerName={sessionProfile?.name ?? null}
+          mobileLogoutSlot={sessionProfile ? <LogoutButton /> : undefined}
         />
         {/* id는 헤더의 '본문 바로가기' 앵커 목적지 — 함께 바뀌어야 한다 */}
         <main id="store-main" tabIndex={-1} className="flex-1">
