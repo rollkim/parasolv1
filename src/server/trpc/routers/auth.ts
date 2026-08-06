@@ -11,6 +11,7 @@ import {
   clearLoginAttempts,
   recordLoginFailure,
 } from "@/server/security/rate-limit";
+import { listConfiguredSocialProviders } from "@/server/auth/social-provider";
 import { mergeGuestCartIntoCustomer } from "@/server/services/cart.service";
 import {
   getCustomerSessionProfile,
@@ -135,4 +136,12 @@ export const authRouter = router({
     if (!ctx.customerId) return null;
     return getCustomerSessionProfile(ctx.db, ctx.customerId);
   }),
+
+  /**
+   * 키가 발급된 소셜 제공자 목록 — 화면이 버튼을 그릴지 정한다.
+   *
+   * 키 없는 버튼을 띄우면 눌러 봐야 "준비 중"을 만난다. 발급된 것만 보여 준다.
+   * **시크릿은 내보내지 않는다** — 어느 제공자가 켜졌는지(true/false)만 나간다.
+   */
+  socialProviders: publicProcedure.query(() => listConfiguredSocialProviders()),
 });

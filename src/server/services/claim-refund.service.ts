@@ -102,6 +102,9 @@ async function loadRefundContext(client: TransactionClient | DatabaseClient, cla
       shippingFee: claim.shippingFee,
       feeMethod: claim.feeMethod,
       feeSettledAt: claim.feeSettledAt,
+      refundBankCode: claim.refundBankCode,
+      refundAccountNumber: claim.refundAccountNumber,
+      refundAccountHolder: claim.refundAccountHolder,
       orderId: claim.orderId,
       orderNo: orders.orderNo,
       orderStatus: orders.status,
@@ -216,10 +219,21 @@ export async function refundClaim(
     actor: serializeActor(input.actor),
   };
   if (refundChannel === "pg_api" && refundAmount > 0) {
+    // 가상계좌 결제는 이 값이 없으면 토스가 취소 API 자체를 거부한다(접수 시점에
+    // claim.service가 필수로 받아 저장해 뒀다 — 여기서는 있으면 그대로 실어 보낼 뿐이다).
+    const refundReceiveAccount =
+      context.refundBankCode && context.refundAccountNumber && context.refundAccountHolder
+        ? {
+            bank: context.refundBankCode,
+            accountNumber: context.refundAccountNumber,
+            holderName: context.refundAccountHolder,
+          }
+        : undefined;
     const cancelResult = await gateway.cancel({
       paymentKey: context.paymentKey,
       cancelReason: input.memo?.trim() ? input.memo.trim() : `클레임 ${context.claimNo}`,
       cancelAmount: refundAmount,
+      refundReceiveAccount,
     });
     gatewayRaw = cancelResult.raw;
   }

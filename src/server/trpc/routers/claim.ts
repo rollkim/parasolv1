@@ -1,5 +1,6 @@
 import { z } from "zod";
 
+import { isValidBankCode } from "@/domain/bank-code";
 import { getClaimRequestView } from "@/server/services/claim-view.service";
 import { requestClaim } from "@/server/services/claim.service";
 
@@ -14,6 +15,16 @@ import { withOrderErrorMapping } from "../order-error";
  */
 
 const claimTypeSchema = z.enum(["cancel", "exchange", "return"]);
+
+/** 가상계좌 환불 계좌 — 서버가 최종 판정을 다시 한다(필요 없는 결제수단이면 서비스가 무시). */
+const refundAccountSchema = z.object({
+  bankCode: z.string().refine(isValidBankCode, "은행을 다시 선택해 주세요."),
+  accountNumber: z
+    .string()
+    .trim()
+    .regex(/^[0-9]{1,20}$/, "계좌번호는 숫자만 20자 이하로 입력해 주세요."),
+  accountHolder: z.string().trim().min(1, "예금주명을 입력해 주세요.").max(60),
+});
 
 /** 주문번호 형식 — "YYYYMMDD-####" */
 const orderNoSchema = z
@@ -56,6 +67,8 @@ export const claimRouter = router({
             }),
           )
           .optional(),
+        /** 가상계좌 결제 주문일 때만 실제로 쓰인다 — 그 외엔 서비스가 무시한다 */
+        refundAccount: refundAccountSchema.optional(),
       }),
     )
     .mutation(({ ctx, input }) =>
@@ -66,6 +79,7 @@ export const claimRouter = router({
           reasonCode: input.reasonCode,
           detail: input.detail ?? null,
           targets: input.targets,
+          refundAccount: input.refundAccount ?? null,
           customerId: ctx.customerId,
           guestToken: ctx.guestOrderToken,
         }),

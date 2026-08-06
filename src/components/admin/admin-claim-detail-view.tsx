@@ -405,6 +405,22 @@ export function AdminClaimDetailView({ claimNo }: { claimNo: string }) {
             {claimDetail.request.fault === "seller" ? " — 배송비를 청구하지 않습니다." : ""}
           </p>
 
+          {/* 가상계좌 결제 주문만 뜬다 — 아래 승인 버튼을 누르면 이 계좌로 실제 돈이 나간다.
+              오타(특히 예금주명)를 여기서 한 번 더 확인하고 진행할 것. */}
+          {claimDetail.refundAccount ? (
+            <div className="m-0 mt-2 rounded-[calc(var(--radius)-4px)] border border-primary bg-secondary px-2.5 py-2 text-[12px]">
+              <p className="m-0 font-bold text-secondary-foreground">
+                환불 계좌 — 승인 시 이 계좌로 입금됩니다
+              </p>
+              <p className="m-0 mt-0.5 text-secondary-foreground/80">
+                {claimDetail.refundAccount.bankName}{" "}
+                <span className="font-mono">{claimDetail.refundAccount.accountNumber}</span>
+                {" · "}
+                {claimDetail.refundAccount.accountHolder}
+              </p>
+            </div>
+          ) : null}
+
           {/* 배송비 수취 — 상태와 별개 축이라 따로 보여준다.
               환불금 차감은 받을 것이 없으므로 '입금 대기'로 쓰면 안 된다(없는 할 일이 생긴다) */}
           {claimDetail.fee.method ? (

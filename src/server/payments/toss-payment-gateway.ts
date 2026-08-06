@@ -198,6 +198,10 @@ export function createTossPaymentGateway(secretKey: string): PaymentGateway {
             cancelReason: input.cancelReason,
             // 생략하면 전액 취소(토스 규약). 부분 취소만 금액을 싣는다
             ...(input.cancelAmount === undefined ? {} : { cancelAmount: input.cancelAmount }),
+            // 가상계좌 결제(입금 완료 후) 취소에만 필요 — 카드·계좌이체에 실으면 토스가 거절한다
+            ...(input.refundReceiveAccount === undefined
+              ? {}
+              : { refundReceiveAccount: input.refundReceiveAccount }),
           },
           // 부분 취소는 같은 결제에 여러 번 일어나므로 금액까지 키에 넣어야 서로 다른 취소가 된다
           idempotencyKey: `cancel-${input.paymentKey}-${input.cancelAmount ?? "full"}`,

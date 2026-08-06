@@ -627,29 +627,29 @@ export function CheckoutView() {
               {/* 비로그인 상태에서 '회원 주문'을 disabled로 두면 toggle 변형의 품절 표기(dashed·취소선)가
                   적용돼 '선택 불가'로 읽힌다. 실제로는 로그인하면 되는 것이므로 로그인으로 보낸다. */}
               {checkoutView.isMember ? (
-                <Button
-                  type="button"
-                  variant="toggle"
-                  size="sm-44"
-                  aria-pressed={orderMode === "member"}
-                  onClick={() => switchOrderMode("member")}
-                >
+                // 회원 로그인 상태에서는 토글을 아예 보여주지 않는다 — createOrder는
+                // 화면의 orderMode가 아니라 세션(ctx.customerId)만 본다. 즉 '비회원 주문'을
+                // 눌러도 주문은 그대로 이 계정에 귀속되면서 쿠폰·적립금 입력칸만 사라진다 —
+                // 없는 혜택(익명성) 대신 있는 혜택(쿠폰·적립금)만 잃는 트랩이라 선택지를 없앤다.
+                <span className="rounded-[calc(var(--radius)-4px)] border border-border px-3 py-1.5 text-[13px] font-semibold text-muted-foreground">
                   회원 주문
-                </Button>
+                </span>
               ) : (
-                <Button type="button" variant="outline" size="sm-44" asChild>
-                  <Link href="/login?next=/checkout">로그인하고 주문</Link>
-                </Button>
+                <>
+                  <Button type="button" variant="outline" size="sm-44" asChild>
+                    <Link href="/login?next=/checkout">로그인하고 주문</Link>
+                  </Button>
+                  <Button
+                    type="button"
+                    variant="toggle"
+                    size="sm-44"
+                    aria-pressed={orderMode === "guest"}
+                    onClick={() => switchOrderMode("guest")}
+                  >
+                    비회원 주문
+                  </Button>
+                </>
               )}
-              <Button
-                type="button"
-                variant="toggle"
-                size="sm-44"
-                aria-pressed={orderMode === "guest"}
-                onClick={() => switchOrderMode("guest")}
-              >
-                비회원 주문
-              </Button>
             </div>
           </div>
 

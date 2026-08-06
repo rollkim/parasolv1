@@ -505,6 +505,12 @@ export const claim = pgTable("claim", {
   feeMethod: text("fee_method"),                // deduct_refund(환불차감) / bank_transfer(계좌이체) / card[2차]
   feeSettledAt: timestamp("fee_settled_at", { withTimezone: true }), // NULL이면 미수취 — 교환품 발송 게이트 기준
   feeMemo: text("fee_memo"),                    // 입금자명 등 운영 메모
+  // 가상계좌 환불 계좌 — 토스는 가상계좌 결제(입금 완료 후) 취소 시 이 세 값이 없으면
+  // 취소 API 자체를 거부한다(카드·계좌이체는 원 수단으로 자동환불이라 불필요·null로 둔다).
+  // 고객이 취소/반품 신청 시점에 입력한다(정책 결정 2026-08-05).
+  refundBankCode: text("refund_bank_code"),        // 토스 은행 코드(2자리) — https://docs.tosspayments.com/codes/org-codes
+  refundAccountNumber: text("refund_account_number"),
+  refundAccountHolder: text("refund_account_holder"),
   adminMemo: text("admin_memo"),
   resolvedAt: timestamp("resolved_at", { withTimezone: true }),
   ...audit,

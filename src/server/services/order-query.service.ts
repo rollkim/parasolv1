@@ -1,8 +1,8 @@
 import "server-only";
 
-import { asc, desc, eq, inArray } from "drizzle-orm";
+import { and, asc, desc, eq, inArray, ne } from "drizzle-orm";
 
-import { orderItem, orderItemAddon, orders, payment, shipment } from "@/db/schema";
+import { claim, orderItem, orderItemAddon, orders, payment, shipment } from "@/db/schema";
 import { effectiveListPrice } from "@/domain/cart";
 import { availableClaimTypes, type ClaimType } from "@/domain/claim";
 import {
@@ -197,6 +197,23 @@ async function buildOrderView(
     .limit(1);
 
   const isGuestLookup = audience === "guest_lookup";
+
+  // 취소는 전체 주문 단위라 반려 아닌 취소 건이 하나라도 있으면 더 신청할 게 없다.
+  // 게스트 조회는 애초에 클레임 버튼을 안 보여주므로(아래 availableClaimTypes) 여기서 건너뛴다
+  // — 조회할 필요 없는 곳에서 쿼리를 아끼는 최적화가 아니라, 이 값의 유일한 소비처가 그 분기다.
+  const [activeCancelClaimRow] = isGuestLookup
+    ? []
+    : await client
+        .select({ id: claim.id })
+        .from(claim)
+        .where(
+          and(
+            eq(claim.orderId, orderRow.id),
+            eq(claim.type, "cancel"),
+            ne(claim.status, "rejected"),
+          ),
+        )
+        .limit(1);
   const addonTotal = items.reduce(
     (sum, item) => sum + item.addons.reduce((addonSum, addon) => addonSum + addon.lineTotal, 0),
     0,
@@ -253,6 +270,7 @@ async function buildOrderView(
           orderStatus: orderRow.status,
           deliveredAt: orderRow.deliveredAt,
           now: new Date(),
+          hasActiveCancelClaim: activeCancelClaimRow !== undefined,
         }),
     shipmentSummary: shipmentRow
       ? {

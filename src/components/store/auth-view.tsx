@@ -14,8 +14,8 @@
 //  - placeholder 단독이 아니라 가시 라벨 병기: 값 입력 후 라벨이 사라지는 문제 방지(WCAG 3.3.2).
 //  - 로그인 유지 체크·비밀번호 재설정 없음: 세션 만료는 서버 정책(30일 고정)이라 체크가 동작을 갖지
 //    못하고, 재설정 프로시저는 미구현(후속 배선).
-//  - 간편 로그인(지문/PASS/QR) 미렌더: 3차 기능 숨김 확정. 소셜 3종은 키 발급 대기라 자리만 두고
-//    클릭 시 준비중 토스트를 낸다(native disabled는 클릭 자체가 막혀 안내가 불가능하다).
+//  - 간편 로그인(지문/PASS/QR) 미렌더: 3차 기능 숨김 확정. 소셜 3종은 OAuth로 동작하며,
+//    키가 발급된 제공자만 버튼이 그려진다(auth.socialProviders가 판정).
 //  - 가입 위저드는 4단계(약관/인증/정보/완료)에서 본인 인증을 뺀 3단계: PASS 연동 범위 제외 확정.
 //    이름은 인증 연동 readOnly가 아니라 직접 입력 필드다.
 //  - 약관 '보기' 링크 없음: 약관 본문 화면 미구현(후속 배선).
@@ -27,8 +27,9 @@
 
 import * as React from "react"
 
-import { useMutation } from "@tanstack/react-query"
+import { useMutation, useQuery } from "@tanstack/react-query"
 import { EyeIcon, EyeOffIcon } from "lucide-react"
+import Link from "next/link"
 import { useRouter, useSearchParams } from "next/navigation"
 
 import { Button } from "@/components/ui/button"
@@ -127,6 +128,17 @@ function useNextPath(): string {
   return requestedPath
 }
 
+/** 소셜 콜백이 /login?socialError=CODE 로 되돌린 이유를 사람 말로 옮긴다 */
+const SOCIAL_ERROR_MESSAGES: Record<string, string> = {
+  CANCELLED: "소셜 로그인을 취소했어요.",
+  NOT_CONFIGURED: "이 소셜 로그인은 아직 준비 중이에요. 아이디 로그인을 이용해 주세요.",
+  UNKNOWN_PROVIDER: "지원하지 않는 소셜 로그인이에요.",
+  // 창을 오래 열어 두면 state가 만료된다 — 사용자 잘못이 아니므로 다시 시도만 안내한다
+  STATE_MISMATCH: "로그인 요청이 만료됐어요. 다시 시도해 주세요.",
+  NO_CODE: "소셜 로그인에 실패했어요. 다시 시도해 주세요.",
+  LOGIN_FAILED: "소셜 로그인에 실패했어요. 잠시 후 다시 시도해 주세요.",
+}
+
 function LoginPanel() {
   const trpc = useTRPC()
   const router = useRouter()
@@ -134,6 +146,11 @@ function LoginPanel() {
   const { showToast } = useToast()
 
   const loginMutation = useMutation(trpc.auth.login.mutationOptions())
+  /** 키가 발급된 제공자만 버튼으로 그린다 — 서버가 판정한다(시크릿은 나오지 않는다) */
+  const socialProvidersQuery = useQuery(trpc.auth.socialProviders.queryOptions())
+  const availableSocialProviders = SOCIAL_LOGIN_PROVIDERS.filter((socialProvider) =>
+    (socialProvidersQuery.data ?? []).includes(socialProvider.providerKey),
+  )
 
   const [loginId, setLoginId] = React.useState("")
   const [loginPassword, setLoginPassword] = React.useState("")
@@ -144,6 +161,13 @@ function LoginPanel() {
   }>({})
   // 서버가 판정하는 실패(아이디/비번 불일치)는 특정 필드 귀속이 아니라 폼 레벨로 보여준다
   const [loginFormError, setLoginFormError] = React.useState<string | null>(null)
+
+  // 소셜 콜백 실패는 쿼리로 돌아온다 — 폼 오류와 같은 자리에 같은 모양으로 보여준다
+  const searchParams = useSearchParams()
+  const socialErrorCode = searchParams.get("socialError")
+  const socialErrorMessage = socialErrorCode
+    ? (SOCIAL_ERROR_MESSAGES[socialErrorCode] ?? SOCIAL_ERROR_MESSAGES.LOGIN_FAILED)
+    : null
 
   const handleLoginSubmit = (formSubmitEvent: React.FormEvent<HTMLFormElement>) => {
     formSubmitEvent.preventDefault()
@@ -182,12 +206,6 @@ function LoginPanel() {
         },
       }
     )
-  }
-
-  const handleSocialLoginClick = () => {
-    showToast("소셜 로그인은 준비 중이에요. 아이디 로그인을 이용해 주세요.", {
-      toastVariant: "info",
-    })
   }
 
   return (
@@ -256,9 +274,9 @@ function LoginPanel() {
           )}
         </div>
 
-        {loginFormError && (
+        {(loginFormError || socialErrorMessage) && (
           <p role="alert" className="m-0 text-[13px] font-semibold text-destructive">
-            {loginFormError}
+            {loginFormError ?? socialErrorMessage}
           </p>
         )}
 
@@ -267,23 +285,42 @@ function LoginPanel() {
         </Button>
       </form>
 
-      <LabeledDivider>소셜 계정으로</LabeledDivider>
+      {/* 키가 발급된 제공자만 그린다 — 눌러야 "준비 중"을 만나는 버튼을 두지 않는다 */}
+      {availableSocialProviders.length > 0 ? (
+        <>
+          <LabeledDivider>소셜 계정으로</LabeledDivider>
 
-      <div className="flex flex-col gap-[9px]">
-        {SOCIAL_LOGIN_PROVIDERS.map((socialProvider) => (
-          <button
-            key={socialProvider.providerKey}
-            type="button"
-            onClick={handleSocialLoginClick}
-            className={cn(
-              "flex min-h-[50px] w-full cursor-pointer items-center justify-center rounded-[calc(var(--radius)-2px)] border text-[15px] font-bold transition-[filter] hover:brightness-[0.97]",
-              socialProvider.buttonClassName
-            )}
-          >
-            {socialProvider.buttonLabel}
-          </button>
-        ))}
-      </div>
+          <div className="flex flex-col gap-[9px]">
+            {availableSocialProviders.map((socialProvider) => (
+              // a 태그다 — 서버가 리다이렉트 응답에 state 쿠키를 실어야 해서
+              // fetch가 아니라 브라우저 이동이어야 한다
+              <a
+                key={socialProvider.providerKey}
+                href={`/api/auth/social/${socialProvider.providerKey}/start?next=${encodeURIComponent(nextPath)}`}
+                className={cn(
+                  "flex min-h-[50px] w-full cursor-pointer items-center justify-center rounded-[calc(var(--radius)-2px)] border text-[15px] font-bold no-underline transition-[filter] hover:brightness-[0.97]",
+                  socialProvider.buttonClassName
+                )}
+              >
+                {socialProvider.buttonLabel}
+              </a>
+            ))}
+          </div>
+
+          {/* 소셜 첫 로그인은 곧 가입이다 — 동의 사실을 버튼 옆에 명시한다(법적 요건) */}
+          <p className="m-0 mt-3 text-center text-[12px] leading-relaxed text-muted-foreground">
+            소셜 계정으로 처음 로그인하면 회원가입이 진행되며,{" "}
+            <Link href="/terms" className="underline">
+              이용약관
+            </Link>
+            {" · "}
+            <Link href="/privacy" className="underline">
+              개인정보처리방침
+            </Link>
+            에 동의한 것으로 봅니다.
+          </p>
+        </>
+      ) : null}
     </div>
   )
 }

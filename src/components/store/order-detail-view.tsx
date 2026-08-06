@@ -19,7 +19,7 @@ import * as React from "react"
 
 import { useRouter } from "next/navigation"
 
-import { useMutation, useQuery } from "@tanstack/react-query"
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 
 import { ImagePlaceholder } from "@/components/store/image-placeholder"
 import { Button } from "@/components/ui/button"
@@ -47,6 +47,7 @@ export function OrderDetailView({ orderNo }: { orderNo: string }) {
   const { showToast } = useToast()
 
   const router = useRouter()
+  const queryClient = useQueryClient()
   const orderQuery = useQuery(trpc.order.getMyOrderDetail.queryOptions({ orderNo }))
   const confirmMutation = useMutation(trpc.order.confirmPurchase.mutationOptions())
   const [isConfirming, setIsConfirming] = React.useState(false)
@@ -313,7 +314,13 @@ export function OrderDetailView({ orderNo }: { orderNo: string }) {
                                 toastVariant: "info",
                               })
                               setIsConfirming(false)
-                              router.refresh()
+                              // 이 화면 데이터는 서버 컴포넌트가 아니라 useQuery(클라이언트 캐시)다.
+                              // router.refresh()는 그 캐시를 건드리지 못해 확정 후에도 "배송완료"
+                              // 화면(교환·반품 버튼 포함)이 그대로 남는다 — 버튼이 무반응처럼 보였다.
+                              // 이미 교환·반품이 막힌 상태라 이 화면에 머물 이유도 없어 목록으로 보낸다.
+                              // 마이페이지는 URL 라우팅 없는 단일 페이지라 기본 섹션(orders)으로 간다
+                              void queryClient.invalidateQueries(trpc.order.pathFilter())
+                              router.push("/mypage")
                             },
                             onError: (confirmError) =>
                               showToast(confirmError.message, { toastVariant: "error" }),

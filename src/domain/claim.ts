@@ -230,8 +230,18 @@ export function availableClaimTypes(input: {
   orderStatus: ClaimableOrderStatus;
   deliveredAt: Date | null;
   now: Date;
+  /**
+   * 이미 접수된(반려 제외) 주문취소 건이 있는가.
+   *
+   * 취소는 교환·반품과 달리 **전체 주문 단위**라 "일부만 더 취소"가 없다 —
+   * 있고 없고 둘 뿐이다. 이걸 안 보면 취소 접수 후에도 버튼이 계속 떠서
+   * 다시 누르면 서버가 수량 초과로 거절한다("취소 화면으로 갔다가 거절당함" 버그).
+   * 교환·반품은 품목별 잔여 수량 개념이라 신청 폼이 그 자리에서 처리한다(건드리지 않는다).
+   */
+  hasActiveCancelClaim: boolean;
 }): ClaimType[] {
   return CLAIM_TYPES.filter((claimType) => {
+    if (claimType === "cancel" && input.hasActiveCancelClaim) return false;
     try {
       assertOrderClaimable({ ...input, claimType });
       return true;

@@ -21,6 +21,7 @@ import {
   type ClaimStatus,
   type ClaimType,
 } from "@/domain/claim";
+import { bankNameByCode } from "@/domain/bank-code";
 import { formatPhone } from "@/domain/phone";
 
 import { getActiveCommonCodesWithMeta } from "./common-code.service";
@@ -237,6 +238,12 @@ export type AdminClaimDetail = {
     orderShippingFee: number;
   };
   amounts: { goodsAmount: number; shippingFee: number; refundAmount: number };
+  /**
+   * 가상계좌 결제 주문에서 고객이 신청 시 입력한 환불 계좌 — 그 외엔 null.
+   * 승인 버튼을 누르면 이 계좌로 실제 돈이 나간다 — 화면이 승인 전에 보여줘야
+   * 오타(예금주명 등)를 여기서 잡을 수 있다.
+   */
+  refundAccount: { bankName: string; accountNumber: string; accountHolder: string } | null;
   fee: {
     method: ClaimFeeMethod | null;
     methodLabel: string | null;
@@ -297,6 +304,9 @@ export async function getAdminClaimDetail(
       feeMethod: claim.feeMethod,
       feeSettledAt: claim.feeSettledAt,
       feeMemo: claim.feeMemo,
+      refundBankCode: claim.refundBankCode,
+      refundAccountNumber: claim.refundAccountNumber,
+      refundAccountHolder: claim.refundAccountHolder,
       adminMemo: claim.adminMemo,
       resolvedAt: claim.resolvedAt,
       requestedAt: claim.createdAt,
@@ -392,6 +402,14 @@ export async function getAdminClaimDetail(
       shippingFee: row.shippingFee,
       refundAmount: row.refundAmount,
     },
+    refundAccount:
+      row.refundBankCode && row.refundAccountNumber && row.refundAccountHolder
+        ? {
+            bankName: bankNameByCode(row.refundBankCode) ?? row.refundBankCode,
+            accountNumber: row.refundAccountNumber,
+            accountHolder: row.refundAccountHolder,
+          }
+        : null,
     fee: {
       method: feeMethod,
       methodLabel: feeMethod ? FEE_METHOD_LABELS[feeMethod] : null,

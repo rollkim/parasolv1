@@ -21,10 +21,13 @@ import { useMutation, useQuery } from "@tanstack/react-query"
 
 import { ImagePlaceholder } from "@/components/store/image-placeholder"
 import { Button } from "@/components/ui/button"
+import { Input } from "@/components/ui/input"
+import { Label } from "@/components/ui/label"
 import { RadioGroup, RadioGroupCard } from "@/components/ui/radio-group"
 import { Spinner } from "@/components/ui/spinner"
 import { Textarea } from "@/components/ui/textarea"
 import { useToast } from "@/components/ui/toast"
+import { TOSS_BANK_CODES } from "@/domain/bank-code"
 import {
   calcClaimAmounts,
   calcClaimShippingFee,
@@ -61,6 +64,11 @@ export function ClaimRequestView({
   const [reasonCode, setReasonCode] = React.useState<string>("")
   const [detail, setDetail] = React.useState("")
   const [initialized, setInitialized] = React.useState(false)
+  // 가상계좌 결제 주문일 때만 쓰인다(requestView.requiresRefundAccount) — 토스가
+  // 이 정보 없이는 취소·환불 API 자체를 거부한다
+  const [refundBankCode, setRefundBankCode] = React.useState("")
+  const [refundAccountNumber, setRefundAccountNumber] = React.useState("")
+  const [refundAccountHolder, setRefundAccountHolder] = React.useState("")
 
   const requestView = viewQuery.data
 
@@ -137,6 +145,11 @@ export function ClaimRequestView({
   const blockingReason = (() => {
     if (selectedLines.length === 0) return "신청할 상품을 선택해 주세요."
     if (!reasonCode) return "사유를 선택해 주세요."
+    if (requestView.requiresRefundAccount) {
+      if (!refundBankCode) return "환불받을 은행을 선택해 주세요."
+      if (!refundAccountNumber.trim()) return "환불 계좌번호를 입력해 주세요."
+      if (!refundAccountHolder.trim()) return "예금주명을 입력해 주세요."
+    }
     return null
   })()
 
@@ -161,6 +174,13 @@ export function ClaimRequestView({
               orderItemId: target.orderItemId,
               quantity,
             })),
+        refundAccount: requestView?.requiresRefundAccount
+          ? {
+              bankCode: refundBankCode,
+              accountNumber: refundAccountNumber.replace(/[^0-9]/g, ""),
+              accountHolder: refundAccountHolder.trim(),
+            }
+          : undefined,
       },
       {
         onSuccess: (created) => {
@@ -324,6 +344,61 @@ export function ClaimRequestView({
             />
           </label>
         </section>
+
+        {/* 가상계좌 결제 주문만 뜬다 — 카드·계좌이체는 원 결제수단으로 자동환불되어 필요 없다.
+            토스는 이 정보 없이는 가상계좌 결제의 취소 API 자체를 거부한다. */}
+        {requestView.requiresRefundAccount ? (
+          <section
+            aria-labelledby="claim-refund-account-heading"
+            className="rounded-[var(--radius)] border border-border bg-card p-5"
+          >
+            <h2 id="claim-refund-account-heading" className="m-0 font-heading text-base font-extrabold">
+              환불받을 계좌
+            </h2>
+            <p className="m-0 mt-1 text-[13px] text-muted-foreground">
+              가상계좌로 결제한 주문이라 환불 계좌 정보가 필요해요.
+            </p>
+            <div className="mt-3 flex flex-col gap-2.5">
+              <div>
+                <Label htmlFor="claim-refund-bank">은행</Label>
+                <select
+                  id="claim-refund-bank"
+                  value={refundBankCode}
+                  onChange={(event) => setRefundBankCode(event.target.value)}
+                  className="mt-1.5 h-11 w-full rounded-[calc(var(--radius)-2px)] border border-input bg-card px-3 text-[14px]"
+                >
+                  <option value="">은행 선택</option>
+                  {TOSS_BANK_CODES.map((bank) => (
+                    <option key={bank.code} value={bank.code}>
+                      {bank.name}
+                    </option>
+                  ))}
+                </select>
+              </div>
+              <div>
+                <Label htmlFor="claim-refund-account-number">계좌번호</Label>
+                <Input
+                  id="claim-refund-account-number"
+                  inputMode="numeric"
+                  maxLength={20}
+                  placeholder="'-' 없이 숫자만"
+                  value={refundAccountNumber}
+                  onChange={(event) => setRefundAccountNumber(event.target.value)}
+                />
+              </div>
+              <div>
+                <Label htmlFor="claim-refund-account-holder">예금주명</Label>
+                <Input
+                  id="claim-refund-account-holder"
+                  maxLength={60}
+                  placeholder="예금주명"
+                  value={refundAccountHolder}
+                  onChange={(event) => setRefundAccountHolder(event.target.value)}
+                />
+              </div>
+            </div>
+          </section>
+        ) : null}
       </div>
 
       {/* 금액 요약 — 서버 접수와 같은 도메인 함수로 계산한 값이다 */}

@@ -6,6 +6,7 @@ import {
   allowedFeeMethods,
   assertClaimTransition,
   availableClaimActions,
+  availableClaimTypes,
   assertClaimableQuantity,
   assertExchangeFeeSettled,
   assertManualRefundReference,
@@ -154,6 +155,43 @@ describe("클레임 가능 조건", () => {
         now,
       }),
     ).toThrow(OrderNotClaimableError);
+  });
+});
+
+describe("availableClaimTypes — 화면 버튼 노출용 목적지", () => {
+  const now = new Date("2026-07-28T12:00:00+09:00");
+
+  it("이미 접수된(반려 아닌) 취소 건이 있으면 취소를 목록에서 뺀다", () => {
+    // 실제 버그: 취소 접수 후에도 주문 상태는 여전히 paid/preparing이라, 이 플래그가
+    // 없으면 버튼이 계속 떠서 다시 눌렀을 때 서버가 수량 초과로 거절했다
+    expect(
+      availableClaimTypes({
+        orderStatus: "paid",
+        deliveredAt: null,
+        now,
+        hasActiveCancelClaim: true,
+      }),
+    ).not.toContain("cancel");
+  });
+
+  it("취소 건이 없으면(또는 전부 반려) paid·preparing에서 취소가 뜬다", () => {
+    for (const orderStatus of ["paid", "preparing"] as const) {
+      expect(
+        availableClaimTypes({ orderStatus, deliveredAt: null, now, hasActiveCancelClaim: false }),
+      ).toContain("cancel");
+    }
+  });
+
+  it("취소 접수 여부는 교환·반품에는 영향을 주지 않는다 — 그쪽은 품목별 잔여수량으로 폼이 따로 처리한다", () => {
+    const deliveredAt = new Date(now.getTime() - DAY_MS);
+    const withActiveCancel = availableClaimTypes({
+      orderStatus: "delivered",
+      deliveredAt,
+      now,
+      hasActiveCancelClaim: true,
+    });
+    expect(withActiveCancel).toContain("exchange");
+    expect(withActiveCancel).toContain("return");
   });
 });
 

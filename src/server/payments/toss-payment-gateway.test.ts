@@ -209,6 +209,24 @@ describe("취소", () => {
     });
   });
 
+  it("가상계좌 환불 계좌를 실으면 그대로 body에 담는다 — 없으면(위 테스트) 아예 빠져야 한다", async () => {
+    const fetchMock = mockFetchOnce({ ok: true, status: 200, body: {} });
+    const gateway = createTossPaymentGateway(SECRET);
+    await gateway.cancel({
+      paymentKey: "pk_1",
+      cancelReason: "가상계좌 환불",
+      cancelAmount: 5000,
+      refundReceiveAccount: { bank: "88", accountNumber: "110123456789", holderName: "홍길동" },
+    });
+    expect(
+      JSON.parse((fetchMock.mock.calls[0] as unknown as [string, RequestInit])[1].body as string),
+    ).toEqual({
+      cancelReason: "가상계좌 환불",
+      cancelAmount: 5000,
+      refundReceiveAccount: { bank: "88", accountNumber: "110123456789", holderName: "홍길동" },
+    });
+  });
+
   it("부분 취소 멱등키는 금액을 포함한다 — 같은 결제의 다른 취소가 같은 키면 두 번째가 삼켜진다", async () => {
     const fetchMock = mockFetchOnce({ ok: true, status: 200, body: {} });
     const gateway = createTossPaymentGateway(SECRET);

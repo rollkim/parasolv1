@@ -46,6 +46,12 @@ export type GatewayCancelInput = {
    * 잔액 검증은 호출자(payment_cancellation 합계)가 한다.
    */
   cancelAmount?: number;
+  /**
+   * 가상계좌 결제에만 필요하다(토스 문서 확인). 카드·계좌이체는 원 결제수단으로
+   * 자동환불되므로 생략한다 — 억지로 채우면 토스가 오히려 거절한다.
+   * bank는 토스 은행 코드(도메인 bank-code.ts 참고).
+   */
+  refundReceiveAccount?: { bank: string; accountNumber: string; holderName: string };
 };
 
 export type GatewayCancelResult = { raw: unknown };

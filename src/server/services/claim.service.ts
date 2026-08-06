@@ -9,7 +9,9 @@ import {
   orderItem,
   orderItemAddon,
   orders,
+  payment,
 } from "@/db/schema";
+import { isValidBankCode } from "@/domain/bank-code";
 import {
   assertClaimableQuantity,
   assertOrderClaimable,
@@ -73,6 +75,22 @@ export class ClaimTargetEmptyError extends Error {
   }
 }
 
+export class RefundAccountRequiredError extends Error {
+  constructor() {
+    super(
+      "가상계좌로 결제한 주문은 환불받을 계좌 정보가 필요합니다. 은행·계좌번호·예금주명을 입력해 주세요.",
+    );
+    this.name = "RefundAccountRequiredError";
+  }
+}
+
+export class InvalidBankCodeError extends Error {
+  constructor(readonly bankCode: string) {
+    super("은행을 다시 선택해 주세요.");
+    this.name = "InvalidBankCodeError";
+  }
+}
+
 export type RequestClaimInput = {
   orderNo: string;
   claimType: ClaimType;
@@ -84,6 +102,11 @@ export type RequestClaimInput = {
    * 교환·반품은 라인·수량 단위 부분 신청(D5).
    */
   targets?: { orderItemId: number; quantity: number }[];
+  /**
+   * 가상계좌 결제 주문의 환불 계좌 — 토스가 이 정보 없이는 취소 API를 거부한다.
+   * 카드·계좌이체 결제는 원 수단으로 자동환불되므로 입력해도 저장하지 않는다(무의미한 값 방지).
+   */
+  refundAccount?: { bankCode: string; accountNumber: string; accountHolder: string } | null;
   /** 소유 증명 — 회원은 세션, 비회원은 주문 생성 때 발급한 게스트 토큰 */
   customerId: number | null;
   guestToken: string | null;
@@ -184,6 +207,32 @@ export async function requestClaim(
     const reasonPolicy = await loadReasonPolicy(tx, input.reasonCode);
     assertReasonAllowsType(input.reasonCode, reasonPolicy.meta, input.claimType);
 
+    // 가상계좌 결제는 환불 계좌가 없으면 나중에 환불 처리 자체가 막힌다 —
+    // 접수 시점에 걸러야 "취소는 접수됐는데 환불을 못 하는" 상태가 안 생긴다.
+    // 유효 결제행(실패 제외) 기준 — payment.service의 조회 조건과 동일하게 맞춘다
+    const [paymentRow] = await tx
+      .select({ method: payment.method })
+      .from(payment)
+      .where(and(eq(payment.orderId, orderRow.id), ne(payment.status, "failed")))
+      .limit(1);
+    const isVirtualAccountPayment = paymentRow?.method === "가상계좌";
+
+    let refundAccount: { bankCode: string; accountNumber: string; accountHolder: string } | null =
+      null;
+    if (isVirtualAccountPayment) {
+      if (
+        !input.refundAccount?.bankCode ||
+        !input.refundAccount.accountNumber ||
+        !input.refundAccount.accountHolder
+      ) {
+        throw new RefundAccountRequiredError();
+      }
+      if (!isValidBankCode(input.refundAccount.bankCode)) {
+        throw new InvalidBankCodeError(input.refundAccount.bankCode);
+      }
+      refundAccount = input.refundAccount;
+    }
+
     // 주문 품목 + 라인별 추가상품 합계(추가상품은 라인 전량 클레임일 때만 금액에 포함 — D11)
     const orderItemRows = await tx
       .select({
@@ -278,6 +327,9 @@ export async function requestClaim(
         shippingFee: amounts.shippingFee,
         refundAmount: amounts.refundAmount,
         feeMethod,
+        refundBankCode: refundAccount?.bankCode ?? null,
+        refundAccountNumber: refundAccount?.accountNumber ?? null,
+        refundAccountHolder: refundAccount?.accountHolder ?? null,
       })
       .returning({ id: claim.id });
 

@@ -2,7 +2,7 @@ import "server-only";
 
 import { and, asc, eq, inArray, ne } from "drizzle-orm";
 
-import { claim, claimItem, orderItem, orderItemAddon, orders } from "@/db/schema";
+import { claim, claimItem, orderItem, orderItemAddon, orders, payment } from "@/db/schema";
 import {
   assertOrderClaimable,
   allowedFeeMethods,
@@ -57,6 +57,12 @@ export type ClaimRequestView = {
   wholeOrderOnly: boolean;
   targets: ClaimRequestTarget[];
   reasons: ClaimRequestReason[];
+  /**
+   * 가상계좌로 결제됐는가 — 참이면 화면이 환불 계좌 입력칸을 필수로 보여준다.
+   * 토스는 가상계좌 결제(입금 완료 후) 취소에 refundReceiveAccount가 없으면
+   * 취소 API 자체를 거부한다(카드·계좌이체는 원 수단 자동환불이라 불필요).
+   */
+  requiresRefundAccount: boolean;
   /** 클레임 배송비 계산의 기준 — 화면이 도메인 함수에 그대로 넘긴다 */
   baseShippingFee: number;
   /** 주문 배송비 — 취소 환불액에 더해진다 */
@@ -191,12 +197,21 @@ export async function getClaimRequestView(
 
   const shippingPolicy = await loadShippingPolicy(database);
 
+  // 유효 결제행(실패 제외) 기준 — payment.service의 조회 조건과 동일하게 맞춘다
+  const [paymentRow] = await database
+    .select({ method: payment.method })
+    .from(payment)
+    .where(and(eq(payment.orderId, orderRow.id), ne(payment.status, "failed")))
+    .limit(1);
+
   return {
     orderNo: orderRow.orderNo,
     claimType: input.claimType,
     wholeOrderOnly: input.claimType === "cancel",
     targets,
     reasons,
+    // 토스 응답 method 원문 그대로 "가상계좌"로 온다(문서 확인) — 다른 표기를 지어내지 않는다
+    requiresRefundAccount: paymentRow?.method === "가상계좌",
     baseShippingFee: shippingPolicy.baseFee,
     orderShippingFee: orderRow.shippingFee,
     orderCouponDiscount: orderRow.couponDiscount,
