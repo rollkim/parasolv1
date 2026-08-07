@@ -23,6 +23,8 @@ import {
 } from "@/components/ui/select";
 import type { ProductSort } from "@/server/services/product.service";
 
+import { ScrollRail } from "./scroll-rail";
+
 export type ProductListCategoryChip = { slug: string; name: string };
 
 export type ProductListControlsProps = {
@@ -88,11 +90,16 @@ export function ProductListControls({
     // [탭 순서] 목업 L121 주석의 7 카테고리 → 8 정렬을 DOM 순서로 그대로 구현 — tabindex 조작 없음
     <div className="mb-4 flex flex-wrap items-center gap-3">
       {hasCategoryChips ? (
-        <div
+        <ScrollRail
           role="group"
           aria-label="카테고리 필터"
+          // 이 레일은 페이지 배경 위에 있다 — 페이드를 card로 만들면 회색 띠처럼 보인다
+          surface="background"
+          // md에서는 flex-wrap이라 스크롤이 사라진다 → 장식도 함께 감춘다
+          decorationsMobileOnly
+          wrapperClassName="min-w-0 basis-full md:flex-1 md:basis-auto"
           // 모바일은 가로 스크롤, 데스크톱은 줄바꿈. -my는 스크롤 컨테이너가 포커스 링을 세로로 자르지 않게 하는 여유분
-          className="-my-1 flex min-w-0 basis-full gap-2 overflow-x-auto py-1 md:flex-1 md:basis-auto md:flex-wrap md:overflow-visible"
+          className="-my-1 flex gap-2 overflow-x-auto py-1 pb-2 md:flex-wrap md:overflow-visible md:pb-1"
         >
           {chipItems.map((chipItem) => (
             <button
@@ -102,12 +109,15 @@ export function ProductListControls({
               onClick={() =>
                 router.push(productListHref(chipItem.slug, activeSort, activeKeyword))
               }
-              className="inline-flex min-h-11 shrink-0 cursor-pointer items-center rounded-full border border-border bg-card px-[15px] text-[13px] font-semibold whitespace-nowrap text-foreground transition-colors hover:bg-muted aria-pressed:border-primary aria-pressed:bg-primary aria-pressed:text-primary-foreground aria-pressed:hover:bg-primary"
+              // 선택은 딥그린 솔리드가 아니라 소프트 그린(secondary = primary 계열 연한 색)이다.
+              // 위 대분류 탭과 형태·농도를 다르게 해야 두 줄이 형제가 아니라 상하로 읽힌다.
+              // 색만으로 알리지 않도록 굵기(600)와 테두리 색을 함께 바꾼다.
+              className="inline-flex min-h-11 shrink-0 cursor-pointer items-center rounded-full border border-border bg-card px-[15px] text-[13px] whitespace-nowrap text-foreground transition-[colors,transform] duration-100 hover:bg-muted active:scale-[0.96] aria-pressed:border-primary aria-pressed:bg-secondary aria-pressed:font-semibold aria-pressed:text-primary aria-pressed:hover:bg-secondary"
             >
               {chipItem.name}
             </button>
           ))}
-        </div>
+        </ScrollRail>
       ) : null}
 
       <div className="ml-auto flex items-center gap-2">

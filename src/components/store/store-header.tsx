@@ -19,6 +19,8 @@ import { Input } from "@/components/ui/input";
 import { cn } from "@/lib/utils";
 
 import { CartCountBadge } from "./cart-count-badge";
+import { ScrollRail } from "./scroll-rail";
+import { StoreCategoryLink } from "./store-category-link";
 import { StoreMobileNav } from "./store-mobile-nav";
 
 /** 대분류 + (선택) 중분류. category 테이블(slug/name/parent_id)에서 조립해 주입한다. */
@@ -47,11 +49,6 @@ export type StoreHeaderProps = {
   /** site_setting의 상호. 워드마크와 홈 링크 접근명에 쓰인다 — 하드코딩 금지 대상. */
   siteName: string;
   categories: StoreCategoryNode[];
-  /**
-   * 현재 카테고리 페이지의 slug. 상품목록의 미필터 상태는 ALL_CATEGORY_SLUG("all")를 넘긴다.
-   * 미지정이면 어느 항목도 활성이 아니다 — 카테고리 페이지가 아닌 화면(홈·장바구니 등)이 여기 해당한다.
-   */
-  activeCategorySlug?: string;
   cartCount?: number;
   utilLinks?: StoreNavLink[];
   /** 유틸바 끝의 동작 요소 슬롯(로그아웃 버튼 등) — 링크가 아니어서 utilLinks로 표현할 수 없다 */
@@ -213,7 +210,6 @@ function StoreSearchForm({
 export function StoreHeader({
   siteName,
   categories,
-  activeCategorySlug,
   cartCount = 0,
   utilLinks = DEFAULT_UTIL_LINKS,
   utilTrailing,
@@ -224,14 +220,20 @@ export function StoreHeader({
   mobileLogoutSlot,
 }: StoreHeaderProps) {
   // '전체'는 category 테이블에 없는 UI 항목이라 컴포넌트가 직접 렌더한다.
-  // slug를 undefined로 두면 activeCategorySlug 미지정 화면에서 undefined === undefined로 활성 판정돼
-  // 홈·장바구니에서도 '전체'가 현재 페이지로 낭독된다 — 실제 키를 준다.
-  const navItems: { slug: string; name: string; href: string }[] = [
-    { slug: ALL_CATEGORY_SLUG, name: "전체", href: STORE_ROUTE.products },
+  // 활성 판정은 StoreCategoryLink가 클라이언트에서 한다 — 레이아웃은 searchParams를 못 받는다.
+  const navItems: {
+    slug: string;
+    name: string;
+    href: string;
+    /** 중분류를 보고 있어도 부모 대분류가 활성이어야 한다 */
+    childSlugs: string[];
+  }[] = [
+    { slug: ALL_CATEGORY_SLUG, name: "전체", href: STORE_ROUTE.products, childSlugs: [] },
     ...categories.map((categoryNode) => ({
       slug: categoryNode.slug,
       name: categoryNode.name,
       href: categoryHref(categoryNode.slug),
+      childSlugs: (categoryNode.children ?? []).map((childNode) => childNode.slug),
     })),
   ];
 
@@ -383,37 +385,55 @@ export function StoreHeader({
             className="hidden flex-wrap gap-1.5 border-t border-border md:flex"
           >
             {navItems.map((navItem) => (
-              <Link
+              <StoreCategoryLink
                 key={navItem.slug}
+                slug={navItem.slug}
                 href={navItem.href}
-                aria-current={
-                  navItem.slug === activeCategorySlug ? "page" : undefined
-                }
+                childSlugs={navItem.childSlugs}
                 className="inline-flex min-h-[46px] items-center px-3 text-sm font-semibold text-foreground transition-colors hover:text-primary aria-[current=page]:text-primary"
               >
                 {navItem.name}
-              </Link>
+              </StoreCategoryLink>
             ))}
           </nav>
         </div>
       </header>
 
-      {/* 모바일 카테고리 칩 스트립 — 목업에서도 header 바깥 형제 요소다 */}
+      {/* 모바일 대분류 탭 — 목업에서도 header 바깥 형제 요소다.
+          핸드오프 "카테고리 내비게이션 수정" v2.0의 핵심을 적용: 대분류는 필 칩이 아니라
+          **텍스트 탭 + 밑줄**이다. 아래 하위 분류가 필 칩이라, 둘 다 칩이면 상하 관계가
+          형제처럼 보인다 — 형태(탭/칩)·배경(card/background)·높이로 위계를 셋 다 분리한다.
+
+          밑줄은 핸드오프처럼 하나를 움직이지 않고 탭마다 하나씩 둔다. 우리 대분류는
+          클라이언트 탭 전환이 아니라 Link 페이지 이동이라, 이동해 온 화면에서는 밑줄이
+          이미 제자리에 있다 — 움직일 구간이 없다. */}
       <div className="border-b border-border bg-card md:hidden">
-        <div className="mx-auto flex w-full max-w-[1280px] gap-2 overflow-x-auto px-4 py-3">
+        <ScrollRail
+          surface="card"
+          wrapperClassName="mx-auto w-full max-w-[1280px]"
+          // 밑줄이 현재 위치를 이미 알려주므로 진행 트랙은 쓰지 않는다(핸드오프도 탭 레일엔 트랙 없음)
+          showTrack={false}
+          className="flex overflow-x-auto pr-10 pl-3"
+        >
           {navItems.map((navItem) => (
-            <Link
+            <StoreCategoryLink
               key={navItem.slug}
+              slug={navItem.slug}
               href={navItem.href}
-              aria-current={
-                navItem.slug === activeCategorySlug ? "page" : undefined
+              childSlugs={navItem.childSlugs}
+              // 선택을 색만으로 알리지 않도록 굵기(700)를 함께 쓴다
+              className="relative inline-flex h-[46px] shrink-0 items-center px-3 text-[14.5px] whitespace-nowrap text-muted-foreground transition-opacity active:opacity-60 aria-[current=page]:font-bold aria-[current=page]:text-foreground"
+              activeSlot={
+                <span
+                  aria-hidden="true"
+                  className="absolute inset-x-3 bottom-0 h-[2.5px] rounded-sm bg-primary"
+                />
               }
-              className="inline-flex min-h-11 shrink-0 items-center rounded-full border border-border bg-card px-[15px] text-[13px] font-semibold whitespace-nowrap text-foreground aria-[current=page]:border-primary aria-[current=page]:bg-primary aria-[current=page]:text-primary-foreground"
             >
               {navItem.name}
-            </Link>
+            </StoreCategoryLink>
           ))}
-        </div>
+        </ScrollRail>
       </div>
     </>
   );
