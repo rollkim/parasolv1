@@ -152,26 +152,30 @@ export function AdminOrderListView() {
           <ul className="m-0 flex list-none flex-col gap-2 p-0">
             {listResult?.cards.map((orderCard) => (
               <li key={orderCard.orderNo}>
+                {/* 모바일은 세로 3단(주문번호·상태 / 상품·주문자 / 날짜·금액), md 이상에서 한 줄.
+                    한 줄로 두면 상품명이 min-w-0이라 0까지 눌려 한글이 세로로 쪼개진다 */}
                 <Link
                   href={`/admin/orders/${orderCard.orderNo}`}
-                  className="flex flex-wrap items-center gap-3 rounded-[var(--radius)] border border-border bg-card p-3.5 transition-colors hover:border-primary focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring"
+                  className="flex flex-col gap-2 rounded-[var(--radius)] border border-border bg-card p-3.5 transition-colors hover:border-primary focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring md:flex-row md:flex-wrap md:items-center md:gap-3"
                 >
-                  <span className="w-[132px] shrink-0 font-mono text-[13px] font-bold">
-                    {orderCard.orderNo}
-                  </span>
+                  <div className="flex flex-wrap items-center gap-2 md:contents">
+                    <span className="shrink-0 font-mono text-[13px] font-bold md:w-[132px]">
+                      {orderCard.orderNo}
+                    </span>
 
-                  <span
-                    className={cn(
-                      "shrink-0 rounded-[5px] border px-2 py-0.5 text-[12px] font-bold",
-                      orderCard.orderStatus === "cancelled"
-                        ? "border-destructive text-destructive"
-                        : "border-primary text-primary",
-                    )}
-                  >
-                    {orderCard.orderStatusLabel}
-                  </span>
+                    <span
+                      className={cn(
+                        "shrink-0 rounded-[5px] border px-2 py-0.5 text-[12px] font-bold",
+                        orderCard.orderStatus === "cancelled"
+                          ? "border-destructive text-destructive"
+                          : "border-primary text-primary",
+                      )}
+                    >
+                      {orderCard.orderStatusLabel}
+                    </span>
+                  </div>
 
-                  <span className="min-w-0 flex-1 text-sm">
+                  <span className="min-w-0 text-sm md:flex-1">
                     <b className="font-semibold">{orderCard.leadProductName}</b>
                     {orderCard.itemCount > 1 ? (
                       <span className="text-muted-foreground"> 외 {orderCard.itemCount - 1}건</span>
@@ -182,19 +186,21 @@ export function AdminOrderListView() {
                     </span>
                   </span>
 
-                  {/* 배송준비 상태인데 송장이 없으면 '해야 할 일'이라 눈에 띄게 둔다 */}
-                  {orderCard.orderStatus === "preparing" && !orderCard.hasTrackingNo ? (
-                    <span className="shrink-0 rounded-[5px] bg-secondary px-2 py-0.5 text-[12px] font-bold text-secondary-foreground">
-                      송장 필요
-                    </span>
-                  ) : null}
+                  <div className="flex flex-wrap items-center gap-2 md:contents">
+                    {/* 배송준비 상태인데 송장이 없으면 '해야 할 일'이라 눈에 띄게 둔다 */}
+                    {orderCard.orderStatus === "preparing" && !orderCard.hasTrackingNo ? (
+                      <span className="shrink-0 rounded-[5px] bg-secondary px-2 py-0.5 text-[12px] font-bold text-secondary-foreground">
+                        송장 필요
+                      </span>
+                    ) : null}
 
-                  <span className="shrink-0 text-[12px] text-muted-foreground">
-                    {formatDate(orderCard.orderedAt)}
-                  </span>
-                  <span className="shrink-0 text-sm font-bold">
-                    {formatKrw(orderCard.grandTotal)}
-                  </span>
+                    <span className="shrink-0 text-[12px] text-muted-foreground">
+                      {formatDate(orderCard.orderedAt)}
+                    </span>
+                    <span className="shrink-0 text-sm font-bold">
+                      {formatKrw(orderCard.grandTotal)}
+                    </span>
+                  </div>
                 </Link>
               </li>
             ))}

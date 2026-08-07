@@ -347,11 +347,14 @@ export function AdminCustomerListView() {
                 <Link
                   href={`/admin/customers/${customerCard.customerId}`}
                   className={cn(
-                    "flex flex-wrap items-center gap-3 rounded-[var(--radius)] border border-border bg-card p-3.5 transition-colors hover:border-primary focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring",
+                    // 모바일은 세로 2단, md 이상에서 한 줄. 한 줄로 두면 이름이 min-w-0이라
+                    // 0까지 눌려 한글이 세로로 쪼개진다(flex-wrap이 발동하지 않는다)
+                    "flex flex-col gap-2 rounded-[var(--radius)] border border-border bg-card p-3.5 transition-colors hover:border-primary focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring",
+                    "md:flex-row md:flex-wrap md:items-center md:gap-3",
                     customerCard.isWithdrawn && "opacity-60",
                   )}
                 >
-                  <span className="min-w-0 flex-1 text-sm">
+                  <span className="min-w-0 text-sm md:flex-1">
                     <span className="flex items-center gap-1.5">
                       <b className="font-semibold">{customerCard.name}</b>
                       {/* 등급 — 미배정(null)은 기본 등급이라 뱃지를 달지 않는다(전원 '일반' 도배 방지) */}
@@ -367,28 +370,31 @@ export function AdminCustomerListView() {
                     </span>
                   </span>
 
-                  {/* 상태는 색이 아니라 문구가 전달한다 */}
-                  <span
-                    className={cn(
-                      "shrink-0 rounded-[5px] border px-2 py-0.5 text-[12px] font-bold",
-                      customerCard.isWithdrawn
-                        ? "border-border text-muted-foreground"
-                        : customerCard.isActive
-                          ? "border-primary text-primary"
-                          : "border-destructive text-destructive",
-                    )}
-                  >
-                    {customerCard.statusLabel}
-                  </span>
+                  {/* 상태부 — 모바일에서는 아래 단으로 내려가 자기들끼리 줄바꿈한다 */}
+                  <span className="flex flex-wrap items-center gap-2 md:contents">
+                    {/* 상태는 색이 아니라 문구가 전달한다 */}
+                    <span
+                      className={cn(
+                        "shrink-0 rounded-[5px] border px-2 py-0.5 text-[12px] font-bold",
+                        customerCard.isWithdrawn
+                          ? "border-border text-muted-foreground"
+                          : customerCard.isActive
+                            ? "border-primary text-primary"
+                            : "border-destructive text-destructive",
+                      )}
+                    >
+                      {customerCard.statusLabel}
+                    </span>
 
-                  <span className="shrink-0 text-[12px] text-muted-foreground">
-                    주문 {customerCard.orderCount}건
-                  </span>
-                  <span className="shrink-0 text-sm font-bold">
-                    {formatKrw(customerCard.totalSpending)}
-                  </span>
-                  <span className="shrink-0 text-[12px] text-muted-foreground">
-                    {formatDate(customerCard.joinedAt)} 가입
+                    <span className="shrink-0 text-[12px] text-muted-foreground">
+                      주문 {customerCard.orderCount}건
+                    </span>
+                    <span className="shrink-0 text-sm font-bold">
+                      {formatKrw(customerCard.totalSpending)}
+                    </span>
+                    <span className="shrink-0 text-[12px] text-muted-foreground">
+                      {formatDate(customerCard.joinedAt)} 가입
+                    </span>
                   </span>
                 </Link>
               </li>

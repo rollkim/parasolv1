@@ -232,17 +232,21 @@ export function AdminClaimListView() {
               <li key={claimCard.claimNo}>
                 <Link
                   href={`/admin/claims/${claimCard.claimNo}`}
-                  className="flex flex-wrap items-center gap-3 rounded-[var(--radius)] border border-border bg-card p-3.5 transition-colors hover:border-primary focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring"
+                  // 모바일은 세로 3단, md 이상에서 한 줄. 한 줄로 두면 상품명이 min-w-0이라
+                  // 0까지 눌려 한글이 세로로 쪼개진다(flex-wrap이 발동하지 않는다)
+                  className="flex flex-col gap-2 rounded-[var(--radius)] border border-border bg-card p-3.5 transition-colors hover:border-primary focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring md:flex-row md:flex-wrap md:items-center md:gap-3"
                 >
-                  <span className="w-[148px] shrink-0 font-mono text-[13px] font-bold">
-                    {claimCard.claimNo}
+                  <span className="flex flex-wrap items-center gap-2 md:contents">
+                    <span className="shrink-0 font-mono text-[13px] font-bold md:w-[148px]">
+                      {claimCard.claimNo}
+                    </span>
+
+                    <span className="shrink-0 rounded-[6px] bg-secondary px-2 py-0.5 text-[12px] font-bold text-secondary-foreground">
+                      {claimCard.claimTypeLabel}
+                    </span>
                   </span>
 
-                  <span className="shrink-0 rounded-[6px] bg-secondary px-2 py-0.5 text-[12px] font-bold text-secondary-foreground">
-                    {claimCard.claimTypeLabel}
-                  </span>
-
-                  <span className="min-w-0 flex-1 text-sm">
+                  <span className="min-w-0 text-sm md:flex-1">
                     <b className="font-semibold">{claimCard.leadProductName}</b>
                     {claimCard.itemCount > 1 ? (
                       <span className="text-muted-foreground"> 외 {claimCard.itemCount - 1}건</span>
@@ -252,28 +256,30 @@ export function AdminClaimListView() {
                     </span>
                   </span>
 
-                  {/* 미입금 교환은 발송이 막혀 있는 건이라 목록에서 보여야 한다 */}
-                  {claimCard.feeAwaiting ? (
-                    <span className="shrink-0 rounded-[5px] bg-secondary px-2 py-0.5 text-[12px] font-bold text-secondary-foreground">
-                      입금 대기
+                  <span className="flex flex-wrap items-center gap-2 md:contents">
+                    {/* 미입금 교환은 발송이 막혀 있는 건이라 목록에서 보여야 한다 */}
+                    {claimCard.feeAwaiting ? (
+                      <span className="shrink-0 rounded-[5px] bg-secondary px-2 py-0.5 text-[12px] font-bold text-secondary-foreground">
+                        입금 대기
+                      </span>
+                    ) : null}
+
+                    <span
+                      className={cn(
+                        "shrink-0 rounded-[5px] border px-2 py-0.5 text-[12px] font-bold",
+                        claimCard.claimStatus === "requested"
+                          ? "border-destructive text-destructive"
+                          : claimCard.claimStatus === "rejected"
+                            ? "border-border text-muted-foreground"
+                            : "border-primary text-primary",
+                      )}
+                    >
+                      {claimCard.claimStatusLabel}
                     </span>
-                  ) : null}
 
-                  <span
-                    className={cn(
-                      "shrink-0 rounded-[5px] border px-2 py-0.5 text-[12px] font-bold",
-                      claimCard.claimStatus === "requested"
-                        ? "border-destructive text-destructive"
-                        : claimCard.claimStatus === "rejected"
-                          ? "border-border text-muted-foreground"
-                          : "border-primary text-primary",
-                    )}
-                  >
-                    {claimCard.claimStatusLabel}
-                  </span>
-
-                  <span className="shrink-0 text-[12px] text-muted-foreground">
-                    {formatDate(claimCard.requestedAt)}
+                    <span className="shrink-0 text-[12px] text-muted-foreground">
+                      {formatDate(claimCard.requestedAt)}
+                    </span>
                   </span>
                 </Link>
               </li>

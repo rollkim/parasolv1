@@ -11,7 +11,7 @@
 import * as React from "react"
 import Link from "next/link"
 
-import { ChevronDownIcon, ChevronRightIcon, UserIcon } from "lucide-react"
+import { ChevronDownIcon, ChevronRightIcon, LogOutIcon, UserIcon } from "lucide-react"
 
 import {
   Sheet,
@@ -244,10 +244,20 @@ export function StoreMobileNav({
             ))}
 
             {/* 로그인 상태에서만 — 모바일에는 유틸바가 없어 여기가 유일한 로그아웃 경로다.
-                감싸는 요소에 onClick을 걸지 않는다: div 클릭 핸들러는 키보드로 도달할 수 없어
-                접근성이 깨진다. 로그아웃은 router.refresh()로 헤더가 다시 그려지며 드로어도 닫힌다. */}
+                아이콘은 슬롯 안이 아니라 여기서 그린다: 슬롯의 LogoutButton은 데스크톱
+                유틸바와 공유하는 컴포넌트라, 거기에 아이콘을 넣으면 데스크톱까지 바뀐다.
+                감싸는 요소에 onClick을 걸지 않는다 — div 클릭 핸들러는 키보드로 도달할 수 없다. */}
             {logoutSlot ? (
-              <div className="mt-2.5 flex min-h-11 items-center border-t border-border px-2.5 pt-4 text-sm font-semibold text-muted-foreground">
+              // [&>button]:flex-1 : 슬롯 버튼이 행 전체를 채우게 해 터치 영역을 44px로 확보한다.
+              // 글자 폭만큼만 누를 수 있으면 모바일에서 자꾸 빗나간다(KWCAG 터치 타깃).
+              <div
+                className={cn(
+                  drawerRowClassName,
+                  "mt-2.5 min-h-11 border-t border-border pt-4 text-sm font-semibold text-muted-foreground",
+                  "[&>button]:flex-1 [&>button]:py-2.5 [&>button]:text-left",
+                )}
+              >
+                <LogOutIcon className="size-[18px] shrink-0" aria-hidden="true" />
                 {logoutSlot}
               </div>
             ) : null}

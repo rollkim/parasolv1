@@ -381,7 +381,8 @@ function BannerPanel() {
                   <li
                     key={bannerCard.bannerId}
                     className={cn(
-                      "flex flex-wrap items-center gap-3 rounded-[calc(var(--radius)-4px)] border border-border p-3",
+                      // 모바일은 세로 스택, md 이상에서 한 줄(제목이 min-w-0이라 눌리면 세로로 쪼개진다)
+                      "flex flex-col gap-2.5 rounded-[calc(var(--radius)-4px)] border border-border p-3 md:flex-row md:flex-wrap md:items-center md:gap-3",
                       !bannerCard.isLiveNow && "opacity-70",
                     )}
                   >
@@ -393,7 +394,7 @@ function BannerPanel() {
                         className="h-10 w-16 shrink-0 rounded-[6px] border border-border object-cover"
                       />
                     ) : null}
-                    <span className="min-w-0 flex-1 text-[13px]">
+                    <span className="min-w-0 text-[13px] md:flex-1">
                       <b className="font-semibold">{bannerCard.title ?? "(제목 없음)"}</b>
                       <span className="mt-0.5 block text-[12px] text-muted-foreground">
                         {[
@@ -743,11 +744,12 @@ function SectionPanel() {
             <li
               key={section.sectionId}
               className={cn(
-                "flex flex-wrap items-center gap-3 rounded-[calc(var(--radius)-4px)] border border-border p-3",
+                // 모바일은 세로 스택, md 이상에서 한 줄(제목이 min-w-0이라 눌리면 세로로 쪼개진다)
+                      "flex flex-col gap-2.5 rounded-[calc(var(--radius)-4px)] border border-border p-3 md:flex-row md:flex-wrap md:items-center md:gap-3",
                 !section.isActive && "opacity-60",
               )}
             >
-              <span className="min-w-0 flex-1 text-[13px]">
+              <span className="min-w-0 text-[13px] md:flex-1">
                 <b className="font-semibold">{section.title}</b>
                 <span className="mt-0.5 block text-[12px] text-muted-foreground">
                   {[

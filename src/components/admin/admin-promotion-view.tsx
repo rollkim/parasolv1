@@ -497,9 +497,10 @@ export function AdminPromotionView() {
               return (
                 <li
                   key={row.promotionId}
-                  className="flex flex-wrap items-center gap-3 rounded-[var(--radius)] border border-border bg-card p-3.5"
+                  // 모바일은 세로 스택, md 이상에서 한 줄(제목이 min-w-0이라 눌리면 세로로 쪼개진다)
+                  className="flex flex-col gap-2.5 rounded-[var(--radius)] border border-border bg-card p-3.5 md:flex-row md:flex-wrap md:items-center md:gap-3"
                 >
-                  <div className="min-w-0 flex-1">
+                  <div className="min-w-0 md:flex-1">
                     <div className="flex flex-wrap items-center gap-2">
                       <b className="text-sm font-semibold">{row.title}</b>
                       <span

@@ -587,9 +587,11 @@ export function AdminCouponView() {
               return (
                 <li
                   key={row.couponId}
-                  className="flex flex-wrap items-center gap-3 rounded-[var(--radius)] border border-border bg-card p-3.5"
+                  // 모바일은 세로 스택, md 이상에서 한 줄. 한 줄로 두면 이름이 min-w-0이라
+                  // 0까지 눌려 한글이 세로로 쪼개진다(flex-wrap이 발동하지 않는다)
+                  className="flex flex-col gap-2.5 rounded-[var(--radius)] border border-border bg-card p-3.5 md:flex-row md:flex-wrap md:items-center md:gap-3"
                 >
-                  <div className="min-w-0 flex-1">
+                  <div className="min-w-0 md:flex-1">
                     <div className="flex flex-wrap items-center gap-2">
                       <b className="text-sm font-semibold">{row.name}</b>
                       {/* 상태는 색이 아니라 글자로 전달한다(KWCAG) */}
@@ -619,7 +621,7 @@ export function AdminCouponView() {
                   </div>
 
                   {/* 발급 현황 — 목록에 없으면 소진 여부를 감으로 판단하게 된다 */}
-                  <div className="shrink-0 text-right text-[12px]">
+                  <div className="shrink-0 text-[12px] md:text-right">
                     <span className="block font-bold text-foreground">
                       발급 {row.issuedCount}
                       {row.totalQuantity !== null ? ` / ${row.totalQuantity}` : ""}

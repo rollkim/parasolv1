@@ -163,8 +163,11 @@ export function AdminStoryListView() {
             {listResult?.cards.map((storyCard) => (
               <li
                 key={storyCard.articleId}
-                className="flex flex-wrap items-center gap-3 rounded-[var(--radius)] border border-border bg-card p-3.5"
+                // 모바일은 세로 2단, md 이상에서 한 줄. 한 줄로 두면 제목이 min-w-0이라
+                // 0까지 눌려 한글이 세로로 쪼개진다(flex-wrap이 발동하지 않는다)
+                className="flex flex-col gap-2.5 rounded-[var(--radius)] border border-border bg-card p-3.5 md:flex-row md:flex-wrap md:items-center md:gap-3"
               >
+                <div className="flex min-w-0 items-center gap-3 md:contents">
                 <span className="size-11 shrink-0 overflow-hidden rounded-[6px] border border-border bg-muted">
                   {storyCard.coverImagePath ? (
                     // 제목이 바로 옆에 있으므로 이미지는 장식으로 둔다(중복 낭독 방지)
@@ -186,6 +189,10 @@ export function AdminStoryListView() {
                     {[storyCard.categoryName, storyCard.slug].filter(Boolean).join(" · ")}
                   </span>
                 </Link>
+                </div>
+
+                {/* 상태부 — 모바일에서는 아래 단으로 내려가 자기들끼리 줄바꿈한다 */}
+                <div className="flex flex-wrap items-center gap-2 pl-[56px] md:contents md:pl-0">
 
                 {storyCard.isFeatured ? (
                   <span className="shrink-0 rounded-[5px] border border-primary px-2 py-0.5 text-[12px] font-bold text-primary">
@@ -221,6 +228,7 @@ export function AdminStoryListView() {
                 >
                   삭제
                 </Button>
+                </div>
               </li>
             ))}
           </ul>
