@@ -325,19 +325,18 @@ export function AdminProductListView() {
 
           <ul className="m-0 flex list-none flex-col gap-2 p-0">
             {listResult?.cards.map((productCard) => (
-              // 모바일은 세로 2단(식별부 / 상태부), md 이상에서 한 줄.
-              // 한 줄 유지가 안 되는 이유: 이름이 min-w-0이라 flexbox가 "이름을 0까지 줄이면
-              // 다 들어간다"고 판단해 flex-wrap이 발동하지 않는다 → 이름만 극단적으로 눌려
-              // 한글이 한 글자씩 세로로 쪼개진다. 폭이 좁을 때는 아예 단을 나눈다.
+              // 체크박스·썸네일은 항상 왼쪽 고정, 나머지(이름·상태)는 하나의 열로 묶는다.
+              // 그 열이 모바일에선 세로로 쌓이므로 상태부가 상품명과 같은 왼쪽선에 자동 정렬된다
+              // — 들여쓰기를 픽셀로 찍으면 체크박스·썸네일 크기가 바뀔 때마다 어긋난다.
+              // md 이상에서는 md:contents로 상태부를 부모 행에 펼쳐 기존 한 줄 배치를 유지한다.
               <li
                 key={productCard.productId}
                 className={cn(
-                  "flex flex-col gap-2.5 rounded-[var(--radius)] border border-border bg-card p-3.5",
-                  "md:flex-row md:flex-wrap md:items-center md:gap-3",
+                  "flex items-start gap-3 rounded-[var(--radius)] border border-border bg-card p-3.5",
+                  "md:items-center",
                   productCard.productStatus === "hidden" && "opacity-60",
                 )}
               >
-                <div className="flex min-w-0 items-center gap-3 md:flex-1">
                 <Checkbox
                   aria-label={`${productCard.name} 선택`}
                   checked={selectedIds.includes(productCard.productId)}
@@ -371,9 +370,11 @@ export function AdminProductListView() {
                   )}
                 </span>
 
+                {/* 본문 열 — 모바일 세로, md에서 가로 */}
+                <div className="flex min-w-0 flex-1 flex-col gap-2 md:flex-row md:flex-wrap md:items-center md:gap-3">
                 <Link
                   href={`/admin/products/${productCard.productId}`}
-                  className="min-w-0 flex-1 text-sm focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring"
+                  className="min-w-0 text-sm focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring md:flex-1"
                 >
                   <b className="font-semibold">{productCard.name}</b>
                   <span className="mt-0.5 block text-[12px] break-all text-muted-foreground">
@@ -382,11 +383,9 @@ export function AdminProductListView() {
                       .join(" · ")}
                   </span>
                 </Link>
-                </div>
 
-                {/* 상태부 — 모바일에서는 아래 단으로 내려가고, 좁으면 자기들끼리 줄바꿈한다.
-                    썸네일(44px)+간격만큼 들여써 위 단의 이름과 세로줄을 맞춘다 */}
-                <div className="flex flex-wrap items-center gap-2 pl-[68px] md:contents md:pl-0">
+                {/* 상태부 — 모바일에서는 이름 아래로 내려가고, 좁으면 자기들끼리 줄바꿈한다 */}
+                <div className="flex flex-wrap items-center gap-2 md:contents">
                   <span className="shrink-0 rounded-[5px] border border-border px-2 py-0.5 text-[12px] font-bold">
                     {productCard.productStatusLabel}
                   </span>
@@ -403,6 +402,7 @@ export function AdminProductListView() {
                   <span className="shrink-0 text-sm font-bold">
                     {formatKrw(productCard.minPrice)}
                   </span>
+                </div>
                 </div>
               </li>
             ))}
