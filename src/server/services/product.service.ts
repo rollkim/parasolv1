@@ -1,6 +1,6 @@
 import "server-only";
 
-import { and, asc, count, desc, eq, ilike, inArray, isNull, or } from "drizzle-orm";
+import { and, asc, count, desc, eq, exists, ilike, inArray, isNull, or, sql } from "drizzle-orm";
 
 import type { db as Database } from "@/db";
 import {
@@ -268,32 +268,41 @@ export async function getProductListPage(
     if (categoryIds.length === 0) {
       return { cards: [], totalCount: 0, page, pageSize };
     }
-    categoryFilter = inArray(productCategory.categoryId, categoryIds);
+    // 조인이 아니라 EXISTS로 거른다. 상품은 대분류·중분류 양쪽에 매핑될 수 있어
+    // product_category를 조인하면 같은 상품이 여러 행으로 늘어나는데,
+    // 그걸 selectDistinct로 덮으면 두 가지가 깨진다:
+    //  ① 개수 쿼리에는 DISTINCT가 없어 총 개수가 부풀고,
+    //  ② SELECT DISTINCT는 ORDER BY 식이 select 목록에 있어야 해서
+    //     카드에 싣지 않는 sales_count로 정렬하는 인기순이 SQL 오류가 된다.
+    // EXISTS는 행을 늘리지 않으므로 목록·개수가 같은 조건 하나를 그대로 쓴다.
+    categoryFilter = exists(
+      database
+        .select({ matched: sql`1` })
+        .from(productCategory)
+        .where(
+          and(
+            eq(productCategory.productId, product.id),
+            inArray(productCategory.categoryId, categoryIds),
+          ),
+        ),
+    );
   }
 
-  const baseFrom = (selection: Parameters<typeof database.selectDistinct>[0]) =>
-    categoryFilter
-      ? database
-          .selectDistinct(selection as typeof productCardSelection)
-          .from(product)
-          .leftJoin(maker, eq(product.makerId, maker.id))
-          .innerJoin(productCategory, eq(productCategory.productId, product.id))
-          .where(and(listedProduct, categoryFilter))
-      : database
-          .select(selection as typeof productCardSelection)
-          .from(product)
-          .leftJoin(maker, eq(product.makerId, maker.id))
-          .where(listedProduct);
+  /** 목록·개수가 반드시 같은 조건을 봐야 페이지 수가 맞는다 */
+  const listFilter = categoryFilter
+    ? and(listedProduct, categoryFilter)
+    : listedProduct;
 
-  const [countRow] = categoryFilter
-    ? await database
-        .select({ totalCount: count() })
-        .from(product)
-        .innerJoin(productCategory, eq(productCategory.productId, product.id))
-        .where(and(listedProduct, categoryFilter))
-    : await database.select({ totalCount: count() }).from(product).where(listedProduct);
+  const [countRow] = await database
+    .select({ totalCount: count() })
+    .from(product)
+    .where(listFilter);
 
-  const rows = await baseFrom(productCardSelection)
+  const rows = await database
+    .select(productCardSelection)
+    .from(product)
+    .leftJoin(maker, eq(product.makerId, maker.id))
+    .where(listFilter)
     .orderBy(...sortClause(sort))
     .limit(pageSize)
     .offset((page - 1) * pageSize);
